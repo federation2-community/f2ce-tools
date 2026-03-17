@@ -175,7 +175,7 @@ UI.style.disabled_button_css = [[
         border-width: 1px;
         border-radius: 3px;
         border-color: rgba(60, 60, 65, 120);
-        color: rgba(80, 80, 85, 180);
+        color: rgba(255,255,255,0.65);
         font-size: 11px;
         font-weight: bold;
     }
