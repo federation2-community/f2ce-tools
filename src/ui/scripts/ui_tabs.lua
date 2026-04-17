@@ -101,9 +101,9 @@ function ui_build_tab_content()
     local text_size = 12
 
         --put spynet console in spynet tab
-    UI.spynet_window = Geyser.MiniConsole:new(
+    UI.general_window = Geyser.MiniConsole:new(
         {
-            name      = "UI.spynet_window",
+            name      = "UI.general_window",
             x         = "0%",
             y         = "0%",
             width     = "100%",

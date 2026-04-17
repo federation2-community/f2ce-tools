@@ -1,37 +1,41 @@
 -- =============================================================================
--- ui_chat_core  —  persistent chat history + timestamp toggle
--- Mudlet Script location: ui > ui_chat_core
+-- ui_chat_core  —  persistent chat history, styled rendering, timestamp toggle
 -- =============================================================================
 
 UI      = UI or {}
 UI.chat = UI.chat or {
-    history         = {},
-    show_timestamps = false,
-    loaded          = false,
+    history      = {},
+    loaded       = false,
+    show_ts      = false,
+    last_speaker = nil,   -- "from..type" key for grouping consecutive messages
 }
 
 local _MAX_DAYS = 7
 local _MAX_MSGS = 2000
 
--- Message type colors (hecho #RRGGBB format)
-local COLOR_COM       = "#4fa3a3"   -- teal:     com/say from others
-local COLOR_TELL_IN   = "#FF5C5C"   -- red:      tell received
-local COLOR_SELF_COM  = "#70c890"   -- green:    own com/say
-local COLOR_SELF_TELL = "#FF9040"   -- orange:   own tell sent
-local COLOR_CONNECT   = "#4a9a4a"   -- green:    connected marker
-local COLOR_DISCONN   = "#9a4a4a"   -- dark red: disconnected marker
-local COLOR_SEP       = "#3c3c3c"   -- dim:      separator chrome
-local COLOR_DATE      = "#2a4a5a"   -- dim blue: date group header
+-- ── Visual style per message type ─────────────────────────────────────────
+-- gutter : colored left bar character (▎ for received, ▎▸ for self)
+-- name   : speaker name color
+-- text   : message body color
 
--- Export so handlers and aliases can reference them without hardcoding
-UI.chat.colors = {
-    com       = COLOR_COM,
-    tell_in   = COLOR_TELL_IN,
-    self_com  = COLOR_SELF_COM,
-    self_tell = COLOR_SELF_TELL,
+local _STYLE = {
+    com      = { gutter = "#4fa3a3", glyph = "▎ ", name = "#7fd4d4", text = "#b8e8e8" },
+    say      = { gutter = "#4fa3a3", glyph = "▎ ", name = "#7fd4d4", text = "#b8e8e8" },
+    tell_in  = { gutter = "#FF5C5C", glyph = "▎ ", name = "#FF8888", text = "#FFcece" },
+    self_com = { gutter = "#70c890", glyph = "▎▸", name = "#90dca8", text = "#bce8cc" },
+    self_tell= { gutter = "#FF9040", glyph = "▎▸", name = "#FFb060", text = "#FFd4a8" },
 }
 
--- File paths
+-- Exported so aliases can reference exact sender color without hardcoding
+UI.chat.colors = {
+    com       = _STYLE.com.gutter,
+    tell_in   = _STYLE.tell_in.gutter,
+    self_com  = _STYLE.self_com.gutter,
+    self_tell = _STYLE.self_tell.gutter,
+}
+
+-- ── Persistence paths ─────────────────────────────────────────────────────
+
 local function _chat_dir()  return getMudletHomeDir() .. "/fed2-tools/chat" end
 local function _chat_path() return _chat_dir() .. "/history" end
 local function _ensure_dir()
@@ -44,7 +48,7 @@ end
 function ui_chat_save()
     _ensure_dir()
     local cutoff = os.time() - (_MAX_DAYS * 86400)
-    local kept   = {}
+    local kept = {}
     for _, r in ipairs(UI.chat.history) do
         if r.t and r.t >= cutoff then table.insert(kept, r) end
     end
@@ -66,65 +70,117 @@ function ui_chat_load()
         end
     end
     UI.chat.loaded = true
-    f2t_debug_log("[chat] loaded %d messages from disk", #UI.chat.history)
+    f2t_debug_log("[chat] loaded %d records", #UI.chat.history)
 end
 
--- ── Rendering ─────────────────────────────────────────────────────────────
+-- ── Line formatter ────────────────────────────────────────────────────────
+-- Produces an hecho-format string for one record.
+-- Status records: always use pre-formatted r.line.
+-- Chat records:   build from style table; respect grouping and timestamps.
 
-local function _fmt_ts(t) return os.date("%H:%M", t) end
-
-local function _echo_record(r)
-    if not UI.chat_window then return end
-    local line = r.line
-    if UI.chat.show_timestamps and r.type ~= "status" and r.t then
-        line = COLOR_SEP .. "[" .. _fmt_ts(r.t) .. "] " .. line
+local function _format_line(r, is_continuation, show_ts)
+    if r.type == "status" then
+        return r.line or ""
     end
-    UI.chat_window:hecho(line)
+
+    local st = _STYLE[r.type] or _STYLE.com
+
+    local ts_str = ""
+    if show_ts and r.t then
+        ts_str = "#404040[" .. os.date("%H:%M", r.t) .. "] "
+    end
+
+    local gutter = st.gutter .. st.glyph .. " "
+
+    if is_continuation then
+        return ts_str .. gutter .. "#383838  " .. st.text .. r.msg .. "\n"
+    end
+
+    local name_part
+    if r.type == "self_tell" then
+        -- You → Recipient
+        name_part = st.name .. "You #606060→ " .. st.name .. r.from .. " #505050» "
+    elseif r.type == "tell_in" then
+        -- Sender → you
+        name_part = st.name .. r.from .. " #606060→ you #505050» "
+    else
+        name_part = st.name .. r.from .. " #505050» "
+    end
+
+    return ts_str .. gutter .. name_part .. st.text .. r.msg .. "\n"
 end
 
--- Replay the full history into the chat window.
--- "Chat History" / date headers / "Live" chrome lines are ONLY emitted
--- when timestamp mode is active.  When off, the window shows undecorated
--- scrollback with no visual clutter.
+-- ── Echo one record ───────────────────────────────────────────────────────
+
+local function _echo_record(r, is_continuation)
+    if not UI.chat_window then return end
+    local show_ts = UI.chat.show_ts
+    -- Never group when timestamps are shown (every message gets full attribution)
+    local group = is_continuation and not show_ts
+    UI.chat_window:hecho(_format_line(r, group, show_ts))
+end
+
+-- ── Replay ────────────────────────────────────────────────────────────────
+-- Clears the window and replays history.
+-- The "Chat History" / date dividers / "Live" chrome only appear when
+-- timestamps are toggled on; the default view is clean undecorated scrollback.
+
 function ui_chat_replay()
     if not UI.chat_window then return end
     UI.chat_window:clear()
     if #UI.chat.history == 0 then return end
 
-    local show_ts = UI.chat.show_timestamps
+    local show_ts = UI.chat.show_ts
 
     if show_ts then
-        UI.chat_window:hecho(COLOR_SEP .. "─── Chat History ──────────────────────────\n")
+        UI.chat_window:hecho("#383838─── Chat History ──────────────────────────\n")
     end
 
     local last_day = ""
+    local prev     = nil
+
     for _, r in ipairs(UI.chat.history) do
+        -- Date group header (timestamps-on only)
         if show_ts and r.t and r.type ~= "status" then
             local day = os.date("%Y-%m-%d", r.t)
             if day ~= last_day then
                 UI.chat_window:hecho(
-                    COLOR_DATE .. "── " .. os.date("%A, %b %d", r.t) .. " ──\n")
+                    "#1e3a4a── " .. os.date("%A, %b %d", r.t) .. " ──\n")
                 last_day = day
             end
         end
-        _echo_record(r)
+
+        -- Grouping: suppress sender when consecutive same speaker + same type
+        local is_cont = prev
+            and (r.type ~= "status") and (prev.type ~= "status")
+            and (prev.from == r.from) and (prev.type == r.type)
+
+        _echo_record(r, is_cont)
+        prev = r
     end
 
     if show_ts then
-        UI.chat_window:hecho(COLOR_SEP .. "─── Live ─────────────────────────────────\n")
+        UI.chat_window:hecho("#383838─── Live ─────────────────────────────────\n")
+    end
+
+    -- Seed last_speaker so live messages group correctly after replay
+    if prev and prev.type ~= "status" then
+        UI.chat.last_speaker = prev.from .. prev.type
+    else
+        UI.chat.last_speaker = nil
     end
 end
 
 -- ── Timestamp toggle ──────────────────────────────────────────────────────
 
 function ui_chat_toggle_timestamps()
-    UI.chat.show_timestamps = not UI.chat.show_timestamps
+    UI.chat.show_ts = not UI.chat.show_ts
     if UI.chat_ts_btn then
-        if UI.chat.show_timestamps then
+        if UI.chat.show_ts then
             UI.chat_ts_btn:echo("<center><font color='#78c8c8'>⏱</font></center>")
             UI.chat_ts_btn:setToolTip("Timestamps ON — click to hide")
         else
-            UI.chat_ts_btn:echo("<center><font color='#3d3d3d'>⏱</font></center>")
+            UI.chat_ts_btn:echo("<center><font color='#3a3a3a'>⏱</font></center>")
             UI.chat_ts_btn:setToolTip("Timestamps OFF — click to show")
         end
     end
@@ -132,28 +188,51 @@ function ui_chat_toggle_timestamps()
 end
 
 -- ── Public write API ──────────────────────────────────────────────────────
+-- Handlers and aliases call this. hecho_line is accepted but ignored —
+-- we regenerate format dynamically so stored records remain format-agnostic.
 
--- mtype    : "com" | "tell_in" | "say" | "self_com" | "self_tell" | "status"
--- hecho_line: full display string in hecho #RRGGBB format, ending with \n
-function ui_chat_add(mtype, from, message, hecho_line)
-    local r = { t = os.time(), type = mtype, from = from, msg = message, line = hecho_line }
+function ui_chat_add(mtype, from, message, _ignored)
+    local r = { t = os.time(), type = mtype, from = from, msg = message }
     table.insert(UI.chat.history, r)
-    _echo_record(r)
+
+    local is_cont = false
+    if mtype ~= "status" then
+        local key = from .. mtype
+        is_cont = (UI.chat.last_speaker == key)
+        UI.chat.last_speaker = key
+    else
+        UI.chat.last_speaker = nil
+    end
+
+    _echo_record(r, is_cont)
     ui_chat_save()
 end
 
 -- ── Connection status markers ─────────────────────────────────────────────
+-- Always written regardless of timestamp mode.
 
 function ui_chat_on_connect()
     local ts = os.date("%H:%M")
-    ui_chat_add("status", "", "Connected",
-        string.format(COLOR_CONNECT .. "── Connected %s ─────────────────────────\n", ts))
+    local r  = {
+        t    = os.time(), type = "status", from = "", msg = "Connected",
+        line = string.format("#3a7a3a── Connected %s ─────────────────────────\n", ts),
+    }
+    table.insert(UI.chat.history, r)
+    UI.chat.last_speaker = nil
+    if UI.chat_window then UI.chat_window:hecho(r.line) end
+    ui_chat_save()
 end
 
 function ui_chat_on_disconnect()
     local ts = os.date("%H:%M")
-    ui_chat_add("status", "", "Disconnected",
-        string.format(COLOR_DISCONN .. "── Disconnected %s ──────────────────────\n", ts))
+    local r  = {
+        t    = os.time(), type = "status", from = "", msg = "Disconnected",
+        line = string.format("#7a3a3a── Disconnected %s ──────────────────────\n", ts),
+    }
+    table.insert(UI.chat.history, r)
+    UI.chat.last_speaker = nil
+    if UI.chat_window then UI.chat_window:hecho(r.line) end
+    ui_chat_save()
 end
 
 -- ── Init ──────────────────────────────────────────────────────────────────
@@ -161,30 +240,18 @@ end
 function ui_chat_init()
     if not UI.chat.loaded then ui_chat_load() end
     ui_chat_replay()
-    f2t_debug_log("[chat] init complete")
+    f2t_debug_log("[chat] init complete, %d records", #UI.chat.history)
 end
 
 function ui_echo_com()
-    local from = gmcp.comm.com.from
-    local msg  = gmcp.comm.com.message
-    -- Use the color constant from ui_chat_core so it stays in sync
-    local color = (UI.chat and UI.chat.colors and UI.chat.colors.com) or "#4fa3a3"
-    ui_chat_add("com", from, msg,
-        string.format("%s%s: \"%s\"\n", color, from, msg))
+    ui_chat_add("com", gmcp.comm.com.from, gmcp.comm.com.message)
 end
  
 function ui_echo_tell()
-    local from = gmcp.comm.tell.from
-    local msg  = gmcp.comm.tell.message
-    local color = (UI.chat and UI.chat.colors and UI.chat.colors.tell_in) or "#FF5C5C"
-    ui_chat_add("tell_in", from, msg,
-        string.format("%s%s tells you: \"%s\"\n", color, from, msg))
+    ui_chat_add("tell_in", gmcp.comm.tell.from, gmcp.comm.tell.message)
 end
  
 function ui_echo_say()
-    local from = gmcp.comm.say.from
-    local msg  = gmcp.comm.say.message
-    local color = (UI.chat and UI.chat.colors and UI.chat.colors.com) or "#4fa3a3"
-    ui_chat_add("say", from, msg,
-        string.format("%s%s says: \"%s\"\n", color, from, msg))
+    ui_chat_add("say", gmcp.comm.say.from, gmcp.comm.say.message)
 end
+ 
