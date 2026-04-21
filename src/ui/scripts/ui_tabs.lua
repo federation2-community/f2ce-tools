@@ -23,7 +23,7 @@ function ui_build_tabs()
         UI.right_frame
     )
 
-    -- Place Exchange/Commodities tabs In Top Left Navigation Frame (default location)
+    -- Place General/Exchange/Commodities tabs In Top Left Navigation Frame (default location)
     UI.tab_top_left = Adjustable.TabWindow:new(
         {
             name             = "UI.tab_left",
@@ -32,7 +32,7 @@ function ui_build_tabs()
             width            = "100%",
             height           = "100%",
             tabBarHeight     = "8%",
-            tabs             = {"Spynet","Exchange", "Commodities"},
+            tabs             = {"General","Exchange", "Commodities"},
             activeTabStyle   = UI.style.active_tab_css,
             inactiveTabStyle = UI.style.inactive_tab_css,
             footerStyle      = UI.style.footer_css,
@@ -100,7 +100,7 @@ end
 function ui_build_tab_content()
     local text_size = 12
 
-        --put spynet console in spynet tab
+        --put general console in general tab
     UI.general_window = Geyser.MiniConsole:new(
         {
             name      = "UI.general_window",
@@ -113,7 +113,7 @@ function ui_build_tab_content()
             fontSize  = text_size,
             color     = "black",
         },
-        UI.tab_top_left.Spynetcenter
+        UI.tab_top_left.Generalcenter
     )
 
     --put Exchange console in Exchange tab
