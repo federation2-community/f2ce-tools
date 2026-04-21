@@ -139,15 +139,13 @@ function ui_build()
 end
 
 function ui_register_trigger()
-    f2t_ui_register_trigger("echoExchange")
-    f2t_ui_register_trigger("echoExchangeBuy")
-    f2t_ui_register_trigger("echoExchangeQuantity")
-    f2t_ui_register_trigger("echoExchangeSell")
+    f2t_ui_register_trigger("exchange")
     f2t_ui_register_trigger("findBestProfitHide")
     f2t_ui_register_trigger("galaxySystemEnd")
     f2t_ui_register_trigger("galaxySystemLine")
     f2t_ui_register_trigger("haulingJob")
     f2t_ui_register_trigger("haulingStart")
+    f2t_ui_register_trigger("chatInbound")
     f2t_ui_register_trigger("movementPlayer")
     f2t_ui_register_trigger("promotions")
     f2t_ui_register_trigger("spynetReport")
@@ -162,8 +160,7 @@ function ui_register_trigger()
 end
 
 function ui_register_alias()
-    f2t_ui_register_alias("echoSendChat")
-    f2t_ui_register_alias("echoSendTell")
+    f2t_ui_register_alias("chatOutbound")
 
     ui_aliased = true
     f2t_debug_log("[ui] registered aliases")
@@ -175,9 +172,6 @@ function ui_register_event()
     f2t_ui_register_event("gmcp.char"                          , "ui_update_header")
     f2t_ui_register_event("gmcp.room.info"                     , "ui_on_gmcp_room_info")
     f2t_ui_register_event("gmcp.char.vitals.tools"             , "ui_remote_access_status")
-    f2t_ui_register_event("gmcp.comm.com"                      , "ui_echo_com")
-    f2t_ui_register_event("gmcp.comm.tell"                     , "ui_echo_tell")
-    f2t_ui_register_event("gmcp.comm.say"                      , "ui_echo_say")
     f2t_ui_register_event("sysConnectionEvent"                 , "ui_chat_on_connect")
     f2t_ui_register_event("sysDisconnectionEvent"              , "ui_chat_on_disconnect")
 

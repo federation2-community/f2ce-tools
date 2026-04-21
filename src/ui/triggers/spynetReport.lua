@@ -1,16 +1,21 @@
 -- @patterns:
---   - pattern: SPYNET REPORT: (\w+) (\w+) has (entered|left) Federation DataSpace
+--   - pattern: SPYNET REPORT: (\w+) (\w+)( \[[^\]]+\])? has (entered|left) Federation DataSpace
 --     type: regex
 
---does some basic formatting and redirects the login/logout notice to the overflow window.
---does not catch players with [ ] titles
 local rank   = matches[2]
 local name   = matches[3]
-local action = matches[4]
+local role   = (matches[4] and matches[4] ~= "") and matches[4] or ""
+local action = matches[5]
 
-local name_color = (UI.who and UI.who.name_colors and UI.who.name_colors[name])
-    and "<" .. UI.who.name_colors[name] .. ">"
-    or "<white>"
+ui_general_add("spynet", function(win)
+    local nc
+    if UI.who and UI.who.name_colors and UI.who.name_colors[name] then
+        nc = "<" .. UI.who.name_colors[name] .. ">"
+    else
+        if ui_who_request_refresh then ui_who_request_refresh() end
+        nc = "<light_gray>"
+    end
+    win:cecho("<white>SPYNET REPORT: " .. nc .. "<b>" .. rank .. " " .. name .. "</b><white>" .. role .. " has <b>" .. action .. "</b> Federation DataSpace.\n<reset>")
+end)
 
-UI.general_window:cecho("<white>SPYNET REPORT: <b>" .. rank .. " </b>" .. name_color .. "<b>" .. name .. "</b><white> has <b>" .. action .. "</b> Federation DataSpace.\n<reset>")
-tempLineTrigger(0, 2, [[deleteLine()]]) --delete the current line and the next line, to catch the newline after every SPYNET REPORT
+tempLineTrigger(0, 2, [[deleteLine()]])

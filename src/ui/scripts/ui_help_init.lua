@@ -14,11 +14,13 @@ f2t_register_help("ui", {
         {cmd = "ui status", desc = "Show detailed UI status"},
         {cmd = "ui settings", desc = "List all UI settings"},
         {cmd = "ui settings set hide_movement_messages <true|false>", desc = "Hide player/ship movement messages from main console (default: true)"},
+        {cmd = "ui settings set hide_chat_messages <true|false>", desc = "Hide inbound chat from main console, route to Chat tab only (default: true)"},
     },
     examples = {
         "ui off    # Hide UI for clean gameplay",
         "ui on     # Restore UI",
         "ui settings set hide_movement_messages false  # Show movements in main console too",
+        "ui settings set hide_chat_messages false      # Show chat in main console too",
     }
 })
 
@@ -33,6 +35,8 @@ f2t_register_help("ui settings", {
     examples = {
         "ui settings set hide_movement_messages false  # Show movements in main console",
         "ui settings set hide_movement_messages true   # Route movements to General tab only",
+        "ui settings set hide_chat_messages false      # Show chat in main console too",
+        "ui settings set hide_chat_messages true       # Route chat to Chat tab only",
         "ui settings clear hide_movement_messages      # Reset to default (true)",
     }
 })

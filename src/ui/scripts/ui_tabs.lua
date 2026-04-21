@@ -116,6 +116,22 @@ function ui_build_tab_content()
         UI.tab_top_left.Generalcenter
     )
 
+    -- ── General tab filter button ─────────────────────────────────────────
+    UI.general_filter_btn = Geyser.Label:new({
+        name   = "UI.general_filter_btn",
+        x      = "93%", y = "1%",
+        width  = "6%",  height = "5%",
+    }, UI.tab_top_left.Generalcenter)
+    UI.general_filter_btn:setStyleSheet([[
+        QLabel{ background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
+                border-radius:3px; border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255); font-size:10px; font-weight:bold; }
+        QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
+    ]])
+    UI.general_filter_btn:echo("<center>A</center>")
+    UI.general_filter_btn:setToolTip("Show all")
+    UI.general_filter_btn:setClickCallback(function() ui_general_cycle_filter() end)
+
     --put Exchange console in Exchange tab
     UI.exchange_window = Geyser.MiniConsole:new(
         {

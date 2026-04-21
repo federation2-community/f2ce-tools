@@ -12,6 +12,17 @@ f2t_settings_register("ui", "enabled", {
     end
 })
 
+f2t_settings_register("ui", "hide_chat_messages", {
+    description = "Hide inbound chat (com/tell/say) from main console (route to Chat tab only)",
+    default = true,
+    validator = function(value)
+        if value ~= true and value ~= false and value ~= "true" and value ~= "false" then
+            return false, "Must be true or false"
+        end
+        return true
+    end
+})
+
 f2t_settings_register("ui", "hide_movement_messages", {
     description = "Hide player/ship movement messages from main console (route to General tab only)",
     default = true,

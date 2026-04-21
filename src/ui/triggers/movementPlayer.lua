@@ -9,12 +9,17 @@
 local name = matches[2]
 local rest = line:sub(#name + 1)
 
-local name_color = (UI.who and UI.who.name_colors and UI.who.name_colors[name])
-    and "<" .. UI.who.name_colors[name] .. ">"
-    or "<white>"
-
-UI.general_window:cecho(name_color .. "<b>" .. name .. "</b><reset>")
-UI.general_window:hecho("#2d6e2d" .. rest .. "\n")
+ui_general_add("movement", function(win)
+    local nc
+    if UI.who and UI.who.name_colors and UI.who.name_colors[name] then
+        nc = "<" .. UI.who.name_colors[name] .. ">"
+    else
+        if ui_who_request_refresh then ui_who_request_refresh() end
+        nc = "<light_gray>"
+    end
+    win:cecho(nc .. "<b>" .. name .. "</b><reset>")
+    win:hecho("#2d6e2d" .. rest .. "\n")
+end)
 
 if f2t_settings_get("ui", "hide_movement_messages") then
     tempLineTrigger(0, 2, [[deleteLine()]])

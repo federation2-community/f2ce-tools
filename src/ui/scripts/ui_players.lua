@@ -222,8 +222,9 @@ function ui_who_end()
 
     ui_table_set_data("who_list", UI.who.players)
 
-    -- Replay chat so existing speaker names pick up the freshly populated rank colors
-    if ui_chat_replay then ui_chat_replay() end
+    -- Replay chat and general so speaker names pick up the freshly populated rank colors
+    if ui_chat_replay    then ui_chat_replay()    end
+    if ui_general_replay then ui_general_replay() end
 end
 
 -- ── Refresh ───────────────────────────────────────────────────────────────
@@ -232,6 +233,18 @@ function ui_who_refresh()
     UI.who.ui_requested = true
     if UI.who_header then UI.who_header:echo("  👥  Refreshing…") end
     send("who", false)
+end
+
+-- Debounced auto-refresh triggered when an unknown name is encountered during
+-- rendering. Batches multiple unknown names from the same burst into one refresh.
+local _auto_refresh_pending = false
+function ui_who_request_refresh()
+    if _auto_refresh_pending or UI.who.parsing then return end
+    _auto_refresh_pending = true
+    tempTimer(1.5, function()
+        _auto_refresh_pending = false
+        ui_who_refresh()
+    end)
 end
 
 -- ── Table init ────────────────────────────────────────────────────────────

@@ -111,11 +111,12 @@ end
 -- ── Internal rendering ────────────────────────────────────────────────────
 
 local function _rank_cecho(name)
-    -- Returns a cecho <colorname> tag if the player is in the who list
     if UI.who and UI.who.name_colors and UI.who.name_colors[name] then
         return "<" .. UI.who.name_colors[name] .. ">"
     end
-    return nil
+    -- Unknown player — request a background who refresh, render as light gray for now
+    if ui_who_request_refresh then ui_who_request_refresh() end
+    return "<light_gray>"
 end
 
 local function _raw_line(name)
@@ -165,7 +166,7 @@ local function _render_record(r, is_cont, show_ts)
     end
 
     -- New speaker: resolve rank color (cecho tag) then emit name + separator + body
-    local nc   = _rank_cecho(r.from) or st.name_cecho
+    local nc   = _rank_cecho(r.from)
     local hint = _raw_line(r.from) or ("tell " .. r.from)
 
     if r.type == "self_tell" then
@@ -331,19 +332,3 @@ function ui_chat_init()
     f2t_debug_log("[chat] init complete, %d records", #UI.chat.history)
 end
 
--- =============================================================================
--- GMCP comm handlers
--- Redefines ui_echo_com / ui_echo_tell / ui_echo_say from the original ui_chat.
--- =============================================================================
-
-function ui_echo_com()
-    ui_chat_add("com", gmcp.comm.com.from, gmcp.comm.com.message)
-end
-
-function ui_echo_tell()
-    ui_chat_add("tell_in", gmcp.comm.tell.from, gmcp.comm.tell.message)
-end
-
-function ui_echo_say()
-    ui_chat_add("say", gmcp.comm.say.from, gmcp.comm.say.message)
-end

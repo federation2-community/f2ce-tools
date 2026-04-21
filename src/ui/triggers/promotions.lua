@@ -16,5 +16,10 @@
 --   - pattern:  has earned membership in the Adventurer's Guild and become an 
 --     type: substring
 
-UI.general_window:cecho(matches[1])
-tempLineTrigger(0, 2, [[deleteLine()]]) --delete the current line and the next line, to catch the newline after every SPYNET REPORT
+local captured_line = line
+
+ui_general_add("promotion", function(win)
+    win:cecho(captured_line .. "\n")
+end)
+
+tempLineTrigger(0, 2, [[deleteLine()]])
