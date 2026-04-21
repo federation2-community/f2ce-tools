@@ -14,6 +14,7 @@ A Mudlet package for [Federation 2 Community Edition](https://federation2.com) t
 | Auto-Refuel | `f2t settings` | Automatically refuels your ship when landing at shuttlepads. Triggers when fuel drops below your configured threshold. |
 | Stamina Monitor | `f2t settings` | Detects low stamina and navigates to buy food. Pauses active automation, refills stamina, then returns you to where you were. |
 | Death Monitor | `f2t settings` | Handles death automatically by stopping all automation and running `insure`. Permanently locks the death room so navigation avoids it. |
+| UI | `ui` | Replaces the default Mudlet layout with a purpose-built interface: resizable frames, tabbed output windows, an embedded map, and rank-aware tabs for hauling and trading. |
 
 ## Installation
 
@@ -24,13 +25,11 @@ A Mudlet package for [Federation 2 Community Edition](https://federation2.com) t
 
 ### Before Installing
 
-**Important:** Uninstall any existing mapper packages before installing fed2-tools. This includes:
-- Mudlet's `generic-mapper`
-- Any other mapping scripts or packages
-
-Having multiple mappers active will cause conflicts.
+**Important:** Uninstall any existing mapper packages before installing fed2-tools. fed2-tools will automatically uninstall `generic_mapper` if it is present, but any other mapping scripts or packages should be removed manually beforehand.
 
 To uninstall in Mudlet: Go to **Package Manager** → select the package → **Uninstall**
+
+Having multiple mappers active will cause conflicts.
 
 ### Install fed2-tools
 
@@ -107,6 +106,22 @@ To enable:
 
 ```
 f2t settings set death_monitor_enabled true
+```
+
+### 5. Enable the UI
+
+The UI component replaces the default Mudlet layout with a purpose-built interface for Federation 2. It organizes the screen into resizable frames with tabbed output windows — General, Exchange, Commodities, Chat, and Who on the left; the embedded map, Hauling, and Trading on the right. Chat and movement messages are routed to their own tabs to keep the main console clean. Hauling and Trading tabs are shown or hidden automatically based on your rank.
+
+```
+ui on     # Enable the UI
+ui off    # Disable the UI and restore the default Mudlet map widget
+```
+
+You can also control whether movement and chat messages are duplicated in the main console:
+
+```
+ui settings set hide_movement_messages false   # Show movement messages in main console too
+ui settings set hide_chat_messages false       # Show chat in main console too
 ```
 
 ## Quick Reference
@@ -250,122 +265,11 @@ All components use a consistent settings interface:
 
 ```
 <component> settings                    # List all settings
-<component> settings get <name>         # Get specific setting
-<component> settings set <name> <value> # Set a setting
-<component> settings clear <name>       # Reset to default
+<component> settings get <n>         # Get specific setting
+<component> settings set <n> <value> # Set a setting
+<component> settings clear <n>       # Reset to default
 ```
 
 ### Common Settings
 
 Settings are organized by component. Use `<component> settings` to see all settings for a component.
-
-**System settings** (`f2t settings`):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| refuel_threshold | 50 | Auto-refuel threshold (0=disabled, 1-99=refuel at/below %) |
-| stamina_threshold | 25 | Stamina % to trigger food run (0=disabled, 1-99=buy food at below %)|
-| food_source | Sol.Earth.454 | Where to buy food |
-| death_monitor_enabled | true | Auto-lock death rooms |
-| safe_room | (empty) | Safe destination for hauling (e.g., "earth") |
-
-**Map settings** (`map settings`):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| enabled | true | Enable auto-mapping |
-| planet_nav_default | shuttlepad | Where `nav <planet>` goes |
-
-**Hauling settings** (`haul settings`):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| margin_threshold | 40 | Minimum profit margin % |
-| cycle_pause | 60 | Seconds to pause after 5 trades |
-| use_safe_room | false | Return to safe_room when stopping |
-
-**Price settings** (`price settings`):
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| results_count | 5 | Number of results shown |
-
-## Getting Help
-
-### In-Game Help
-
-Every command supports help by adding `help` after the command:
-
-```
-nav help
-map help
-haul help
-price help
-factory help
-po help
-bb help
-bs help
-f2t help
-```
-
-### Reporting Issues
-
-If you encounter a bug or have a feature request:
-
-1. Enable debug logging: `f2t debug on`
-2. Reproduce the issue
-3. Copy the relevant output from Mudlet
-4. Open an issue at [GitHub Issues](https://github.com/ping65510/fed2-tools/issues) with:
-   - What you were trying to do
-   - What happened instead
-   - The debug output
-   - Your character rank (if relevant)
-
-## Contributing
-
-Contributions are welcome! Here's how to get started:
-
-### Workflow
-
-1. Fork the repository on GitHub.
-
-2. Clone your fork and create a branch:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/fed2-tools.git
-   cd fed2-tools
-   git checkout -b feature/my-feature
-   ```
-
-3. Build the package:
-   ```bash
-   pwsh ./build.ps1
-   ```
-   This creates `build/fed2-tools.mpackage`.
-
-4. Install in Mudlet via **Package Manager** → **Install** and test your changes.
-
-5. Commit and push to your fork:
-   ```bash
-   git add .
-   git commit -m "feat: description of your change"
-   git push origin feature/my-feature
-   ```
-
-6. Open a pull request from your fork to the main repository on GitHub.
-
-### Project Structure
-
-- `src/` - Source files organized by component
-- `build.ps1` - Build script (PowerShell 7)
-- `CLAUDE.md` - Technical documentation for AI assistants and developers
-
-Each component in `src/` has its own folder with `aliases/`, `triggers/`, `scripts/`, and optionally `resources/` subdirectories.
-
-## License
-
-This project is licensed under the MIT License.
-
-## Resources
-
-- [Federation 2 Community Edition](https://federation2.com)
-- [Mudlet](https://www.mudlet.org/)
