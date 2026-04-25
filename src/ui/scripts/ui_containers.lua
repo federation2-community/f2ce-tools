@@ -349,6 +349,9 @@ function ui_on_container_reposition(event, container_name)
 
     -- Update previous state
     ui_capture_state()
+
+    -- Keep the gear icon at the correct corner
+    if ui_reposition_gear_icon then ui_reposition_gear_icon() end
 end
 
 -- Handle window resize
@@ -383,6 +386,9 @@ function ui_on_window_resize()
 
         if ui_refresh_local_players_layout then ui_refresh_local_players_layout() end
     end
+
+    -- Keep the gear icon at the correct corner
+    if ui_reposition_gear_icon then ui_reposition_gear_icon() end
 
     -- Update state after resize
     ui_capture_state()

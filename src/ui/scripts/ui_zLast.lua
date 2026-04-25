@@ -120,11 +120,53 @@ function ui_remote_access_status()
     end
 end
 
+-- ── Floating gear icon ─────────────────────────────────────────────────────────
+-- Sits just outside the corner where left_frame's right border meets
+-- top_left_frame's bottom border:
+--   • gear's LEFT  edge = left_frame's RIGHT edge   (outside, to the right)
+--   • gear's TOP   edge = top_left_frame's BOTTOM edge (outside, below)
+-- Free-floating on the main window (no parent container).
+
+local _GEAR_SIZE = 26
+
+function ui_build_gear_icon()
+    UI.gear_icon = Geyser.Label:new({
+        name   = "UI.gear_icon",
+        x      = 0,
+        y      = 0,
+        width  = _GEAR_SIZE,
+        height = _GEAR_SIZE,
+    })
+    UI.gear_icon:setStyleSheet(UI.style.button_css)
+    UI.gear_icon:setFontSize(13)
+    UI.gear_icon:echo("<center>⚙</center>")
+    UI.gear_icon:setClickCallback("ui_toggle_settings")
+
+    -- Position it correctly, then raise above other widgets
+    ui_reposition_gear_icon()
+    UI.gear_icon:raise()
+end
+
+-- Reposition gear icon based on current container geometry.
+-- Called after window resize and container reposition events.
+function ui_reposition_gear_icon()
+    if not UI.gear_icon or not UI.left_frame or not UI.top_left_frame then return end
+
+    -- Gear LEFT edge = left_frame's right edge (just outside the frame, to its right)
+    local gx = UI.left_frame:get_x() + UI.left_frame:get_width()
+    -- Gear TOP edge = top_left_frame's bottom edge (just below the frame)
+    local gy = UI.top_left_frame:get_y() + UI.top_left_frame:get_height()
+
+    UI.gear_icon:move(gx, gy)
+    UI.gear_icon:raise()
+end
+
 function ui_build()
     ui_create_containers()
     ui_build_tabs()
     ui_build_tab_content()
     ui_build_header()
+    ui_build_gear_icon()
     ui_build_quick_buttons()
     ui_build_movement()
     ui_hauling()
@@ -169,6 +211,7 @@ end
 
 function ui_register_event()
     f2t_ui_register_event("AdjustableContainerRepositionFinish", "ui_on_container_reposition")
+    f2t_ui_register_event("AdjustableContainerRepositionFinish", "ui_settings_on_reposition")
     f2t_ui_register_event("sysWindowResizeEvent"               , "ui_on_window_resize")
     f2t_ui_register_event("gmcp.char"                          , "ui_update_header")
     f2t_ui_register_event("gmcp.room.info"                     , "ui_on_gmcp_room_info")
