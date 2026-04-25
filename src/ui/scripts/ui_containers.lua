@@ -153,6 +153,7 @@ function ui_create_containers()
     })
     UI.local_players_dropdown:setStyleSheet(UI.style.local_players_dropdown_standalone_css)
     UI.local_players_dropdown:hide()
+    f2t_ui_register_container("UI.local_players_dropdown", UI.local_players_dropdown)
 
     -- Right-edge border strip: shown only when LP extends below cargo's bottom.
     -- Width is 2px matching the other panel borders; height and position are set dynamically.
@@ -168,6 +169,7 @@ function ui_create_containers()
         background: transparent;
     ]])
     UI.lp_overflow_border:hide()
+    f2t_ui_register_container("UI.lp_overflow_border", UI.lp_overflow_border)
 
     -- Gap filler for standalone mode: fills the height gap left by top_right_frame
     UI.local_players_gap_filler = Geyser.Label:new({
@@ -180,6 +182,7 @@ function ui_create_containers()
     })
     UI.local_players_gap_filler:setStyleSheet(UI.style.local_players_gap_filler_css)
     UI.local_players_gap_filler:hide()
+    f2t_ui_register_container("UI.local_players_gap_filler", UI.local_players_gap_filler)
 
     -- Gap filler - seamless top section with label
     UI.cargo_gap_filler = Geyser.Label:new({
@@ -192,6 +195,7 @@ function ui_create_containers()
     })
     UI.cargo_gap_filler:setStyleSheet(UI.style.cargo_gap_filler_css)
     UI.cargo_gap_filler:hide()
+    f2t_ui_register_container("UI.cargo_gap_filler", UI.cargo_gap_filler)
 
     -- Create the cargo dropdown container
     UI.cargo_dropdown = Adjustable.Container:new({
@@ -207,6 +211,7 @@ function ui_create_containers()
     })
     UI.cargo_dropdown:lockContainer("border")
     UI.cargo_dropdown:hide()
+    f2t_ui_register_container("UI.cargo_dropdown", UI.cargo_dropdown)
 
     -- Capture initial state
     tempTimer(0.1, ui_capture_state)

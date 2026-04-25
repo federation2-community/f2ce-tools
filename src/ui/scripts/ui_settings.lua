@@ -56,6 +56,9 @@ local _SIDE_EFFECTS = {
     ["shared.debug"] = function(value)
         F2T_DEBUG = value
     end,
+    ["ui.enabled"] = function(value)
+        expandAlias("ui " .. (value and "on" or "off"))
+    end,
 }
 
 -- ── Close any open dropdown ──────────────────────────────────────────────────
