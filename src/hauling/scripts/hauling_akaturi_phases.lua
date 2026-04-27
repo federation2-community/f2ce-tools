@@ -8,6 +8,16 @@ function f2t_hauling_phase_akaturi_get_job()
         return false
     end
 
+    -- Deferred pause: pause between Akaturi contracts
+    if F2T_HAULING_STATE.pause_requested then
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
+        F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
+        cecho("\n<green>[hauling]<reset> Paused between Akaturi contracts\n")
+        f2t_debug_log("[hauling/akaturi] Deferred pause activated between contracts")
+        return false
+    end
+
     f2t_debug_log("[hauling/akaturi] Starting get job phase")
 
     -- Check if we've completed all 25 jobs
@@ -108,7 +118,8 @@ function f2t_hauling_phase_akaturi_parse_pickup()
     if not lines or #lines == 0 then
         cecho("\n<red>[hauling]<reset> No job output captured, retrying...\n")
         tempTimer(2, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == "akaturi_parsing_pickup" then
                 F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
                 f2t_hauling_phase_akaturi_get_job()
             end
@@ -123,7 +134,8 @@ function f2t_hauling_phase_akaturi_parse_pickup()
         cecho("\n<red>[hauling]<reset> Failed to parse pickup location from job output\n")
         cecho("\n<red>[hauling]<reset> Retrying...\n")
         tempTimer(2, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == "akaturi_parsing_pickup" then
                 F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
                 f2t_hauling_phase_akaturi_get_job()
             end
@@ -226,7 +238,7 @@ function f2t_hauling_phase_akaturi_navigate_pickup()
         f2t_map_navigate(contract.pickup_planet)
 
         -- Pause hauling
-        f2t_hauling_pause()
+        f2t_hauling_pause(true)
         return false
     end
 
@@ -336,7 +348,7 @@ function f2t_hauling_phase_akaturi_navigate_delivery()
         cecho("\n<yellow>[hauling]<reset> Please find the delivery room manually and resume hauling.\n")
 
         f2t_map_navigate(contract.delivery_planet)
-        f2t_hauling_pause()
+        f2t_hauling_pause(true)
         return false
     end
 
@@ -617,7 +629,7 @@ function f2t_hauling_check_nav_to_planet_for_pickup_complete()
                 local room_name = F2T_HAULING_STATE.akaturi_contract.pickup_room or "the pickup room"
                 cecho(string.format("\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
                 cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
-                f2t_hauling_pause()
+                f2t_hauling_pause(true)
 
             elseif result == "stopped" then
                 cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
@@ -657,7 +669,7 @@ function f2t_hauling_check_nav_to_planet_for_delivery_complete()
                 local room_name = F2T_HAULING_STATE.akaturi_contract.delivery_room or "the delivery room"
                 cecho(string.format("\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
                 cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
-                f2t_hauling_pause()
+                f2t_hauling_pause(true)
 
             elseif result == "stopped" then
                 cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")

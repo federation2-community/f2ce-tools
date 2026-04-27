@@ -5,22 +5,26 @@
 -- Deficit and Excess Detection
 -- ========================================
 
---- Find commodities with stock deficit (stock_current == -525) across owned planets
+--- Find commodities with stock at or below deficit threshold across owned planets
 --- @param planet_exchange_data table {[planet_name] = exchange_data_array}
 --- @return table Array of {type="deficit", commodity=string, target_planet=string, sell_planet=string}
 function f2t_po_hauling_find_deficits(planet_exchange_data)
     local deficits = {}
+    local threshold = tonumber(f2t_settings_get("hauling", "po_deficit_threshold")) or -525
+
+    f2t_debug_log("[hauling/po-queue] Deficit threshold: %d", threshold)
 
     for planet, exchange_data in pairs(planet_exchange_data) do
         for _, item in ipairs(exchange_data) do
-            if item.stock_current and item.stock_current == -525 then
-                f2t_debug_log("[hauling/po-queue] Deficit found: %s on %s (stock: %d)",
-                    item.name, planet, item.stock_current)
+            if item.stock_current and item.stock_current <= threshold then
+                local lots = math.min(7, math.ceil(math.abs(item.stock_current) / 75))
+                f2t_debug_log("[hauling/po-queue] Deficit found: %s on %s (stock: %d, lots: %d)",
+                    item.name, planet, item.stock_current, lots)
                 table.insert(deficits, {
                     type = "deficit",
                     commodity = item.name,
                     target_planet = planet,
-                    lots = 7,
+                    lots = lots,
                     -- For deficit: sell_planet = target (deliver to planet with deficit)
                     sell_planet = planet,
                     sell_system = F2T_HAULING_STATE.po_current_system,
@@ -36,18 +40,20 @@ function f2t_po_hauling_find_deficits(planet_exchange_data)
     return deficits
 end
 
---- Find commodities with excess stock (stock_current == stock_max) across owned planets
+--- Find commodities with stock at or above excess threshold across owned planets
 --- @param planet_exchange_data table {[planet_name] = exchange_data_array}
 --- @return table Array of {type="excess", commodity=string, target_planet=string, buy_planet=string}
 function f2t_po_hauling_find_excesses(planet_exchange_data)
     local excesses = {}
+    local threshold = tonumber(f2t_settings_get("hauling", "po_excess_threshold")) or 20000
+
+    f2t_debug_log("[hauling/po-queue] Excess threshold: %d", threshold)
 
     for planet, exchange_data in pairs(planet_exchange_data) do
         for _, item in ipairs(exchange_data) do
-            if item.stock_current and item.stock_max and
-               item.stock_current == item.stock_max and item.stock_max > 0 then
-                f2t_debug_log("[hauling/po-queue] Excess found: %s on %s (stock: %d/%d)",
-                    item.name, planet, item.stock_current, item.stock_max)
+            if item.stock_current and item.stock_current >= threshold then
+                f2t_debug_log("[hauling/po-queue] Excess found: %s on %s (stock: %d)",
+                    item.name, planet, item.stock_current)
                 table.insert(excesses, {
                     type = "excess",
                     commodity = item.name,
@@ -176,19 +182,28 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
                         return
                     end
 
-                    -- top_sell = exchanges selling (where we buy)
-                    if analysis and #analysis.top_sell > 0 then
-                        local best = analysis.top_sell[1]
-                        job.buy_planet = best.planet
-                        job.buy_system = best.system
-                        job.resolved = true
-                        table.insert(resolved_jobs, job)
-                        f2t_debug_log("[hauling/po-queue] Deficit resolved from cartel: %s:%s",
-                            best.system, best.planet)
-                    else
+                    -- top_sell = exchanges selling (where we buy), skip same planet as sell destination
+                    local found = false
+                    if analysis and analysis.top_sell then
+                        for _, candidate in ipairs(analysis.top_sell) do
+                            if candidate.planet ~= job.sell_planet then
+                                job.buy_planet = candidate.planet
+                                job.buy_system = candidate.system
+                                job.resolved = true
+                                table.insert(resolved_jobs, job)
+                                f2t_debug_log("[hauling/po-queue] Deficit resolved from cartel: %s:%s",
+                                    candidate.system, candidate.planet)
+                                found = true
+                                break
+                            else
+                                f2t_debug_log("[hauling/po-queue] Skipping %s (same as sell planet)", candidate.planet)
+                            end
+                        end
+                    end
+                    if not found then
                         f2t_debug_log("[hauling/po-queue] No source found for %s, skipping",
                             job.commodity)
-                        cecho(string.format("\n<yellow>[hauling/po]<reset> No source found for %s deficit on %s, skipping\n",
+                        cecho(string.format("\n<yellow>[hauling]<reset> No source found for %s deficit on %s, skipping\n",
                             job.commodity, job.target_planet))
                     end
 
@@ -218,19 +233,28 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
                         return
                     end
 
-                    -- top_buy = exchanges buying (where we sell)
-                    if analysis and #analysis.top_buy > 0 then
-                        local best = analysis.top_buy[1]
-                        job.sell_planet = best.planet
-                        job.sell_system = best.system
-                        job.resolved = true
-                        table.insert(resolved_jobs, job)
-                        f2t_debug_log("[hauling/po-queue] Excess resolved to cartel: %s:%s",
-                            best.system, best.planet)
-                    else
+                    -- top_buy = exchanges buying (where we sell), skip same planet as buy source
+                    local found = false
+                    if analysis and analysis.top_buy then
+                        for _, candidate in ipairs(analysis.top_buy) do
+                            if candidate.planet ~= job.buy_planet then
+                                job.sell_planet = candidate.planet
+                                job.sell_system = candidate.system
+                                job.resolved = true
+                                table.insert(resolved_jobs, job)
+                                f2t_debug_log("[hauling/po-queue] Excess resolved to cartel: %s:%s",
+                                    candidate.system, candidate.planet)
+                                found = true
+                                break
+                            else
+                                f2t_debug_log("[hauling/po-queue] Skipping %s (same as buy planet)", candidate.planet)
+                            end
+                        end
+                    end
+                    if not found then
                         f2t_debug_log("[hauling/po-queue] No destination found for %s, skipping",
                             job.commodity)
-                        cecho(string.format("\n<yellow>[hauling/po]<reset> No destination found for %s excess on %s, skipping\n",
+                        cecho(string.format("\n<yellow>[hauling]<reset> No destination found for %s excess on %s, skipping\n",
                             job.commodity, job.target_planet))
                     end
 
@@ -292,6 +316,7 @@ function f2t_po_hauling_bundle_jobs(jobs, ship_lots)
                 local secondary = group_jobs[i + 1]
 
                 primary.bundled_commodity = secondary.commodity
+                primary.bundled_lots = secondary.lots
                 primary.bundled_buy_planet = secondary.buy_planet
                 primary.bundled_buy_system = secondary.buy_system
                 primary.bundled_sell_planet = secondary.sell_planet
@@ -361,7 +386,7 @@ function f2t_po_hauling_build_queue(planet_exchange_data, owned_planets, callbac
         return
     end
 
-    cecho(string.format("\n<green>[hauling/po]<reset> Found <orange>%d<reset> deficit(s) and <yellow>%d<reset> excess(es), resolving sources...\n",
+    cecho(string.format("\n<green>[hauling]<reset> Found <orange>%d<reset> deficit(s) and <yellow>%d<reset> excess(es), resolving sources...\n",
         #deficits, #excesses))
 
     -- Resolve all sources/destinations

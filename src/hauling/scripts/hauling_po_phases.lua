@@ -9,29 +9,46 @@
 --- Since PO scanning is fully remote, no need to return from safe room
 --- @param message string Message to show before pausing
 local function po_cycle_pause_and_rescan(message)
-    local cycle_pause = f2t_settings_get("hauling", "cycle_pause") or 60
+    local cycle_pause = tonumber(f2t_settings_get("hauling", "cycle_pause")) or 60
     local use_safe_room = f2t_settings_get("hauling", "use_safe_room")
     local safe_room = f2t_settings_get("shared", "safe_room")
 
+    -- Kill any stale cycle pause timer from a previous cycle or session
+    if F2T_HAULING_STATE.cycle_pause_timer_id then
+        killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
+        F2T_HAULING_STATE.cycle_pause_timer_id = nil
+    end
+
     if cycle_pause > 0 then
+        F2T_HAULING_STATE.current_phase = "cycle_pausing"
+        F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
+
         if use_safe_room and safe_room and safe_room ~= "" then
-            cecho(string.format("\n<green>[hauling/po]<reset> %s, going to safe room for <yellow>%d seconds<reset>...\n",
+            cecho(string.format("\n<green>[hauling]<reset> %s, going to safe room for <yellow>%d seconds<reset>...\n",
                 message, cycle_pause))
-            f2t_debug_log("[hauling/po] Navigating to safe room for cycle pause")
+            f2t_debug_log("[hauling/po] Navigating to safe room for cycle pause (%d seconds)", cycle_pause)
             f2t_map_navigate(safe_room)
 
             -- Navigation will complete well within the cycle pause window
-            tempTimer(cycle_pause, function()
-                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
-                    cecho("\n<green>[hauling/po]<reset> Pause complete, re-scanning...\n")
+            F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                F2T_HAULING_STATE.cycle_pause_end_time = nil
+                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                    and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                    if not F2T_HAULING_STATE.pause_requested then
+                        cecho("\n<green>[hauling]<reset> Pause complete, re-scanning...\n")
+                    end
                     f2t_hauling_transition("po_scanning_system")
                 end
             end)
         else
-            cecho(string.format("\n<green>[hauling/po]<reset> %s, pausing for <yellow>%d seconds<reset> before re-scanning...\n",
+            cecho(string.format("\n<green>[hauling]<reset> %s, pausing for <yellow>%d seconds<reset> before re-scanning...\n",
                 message, cycle_pause))
-            tempTimer(cycle_pause, function()
-                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                F2T_HAULING_STATE.cycle_pause_end_time = nil
+                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                    and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
                     f2t_hauling_transition("po_scanning_system")
                 end
             end)
@@ -55,7 +72,7 @@ function f2t_hauling_phase_po_scan_system()
         end
 
         if not planet_names or #planet_names == 0 then
-            cecho("\n<red>[hauling/po]<reset> No planets with exchanges found in system\n")
+            cecho("\n<red>[hauling]<reset> No planets with exchanges found in system\n")
             f2t_hauling_do_stop()
             return
         end
@@ -83,12 +100,12 @@ function f2t_hauling_phase_po_scan_exchanges()
         end
 
         if #owned_planets == 0 then
-            cecho("\n<red>[hauling/po]<reset> No owned planets found in this system\n")
+            cecho("\n<red>[hauling]<reset> No owned planets found in this system\n")
             f2t_hauling_do_stop()
             return
         end
 
-        cecho(string.format("\n<green>[hauling/po]<reset> Found <cyan>%d<reset> owned planet(s): %s\n",
+        cecho(string.format("\n<green>[hauling]<reset> Found <cyan>%d<reset> owned planet(s): %s\n",
             #owned_planets, table.concat(owned_planets, ", ")))
 
         F2T_HAULING_STATE.po_scan_count = F2T_HAULING_STATE.po_scan_count + 1
@@ -113,7 +130,7 @@ function f2t_hauling_phase_po_build_queue()
         end
 
         if #job_queue == 0 then
-            cecho("\n<yellow>[hauling/po]<reset> No deficits or excesses found, nothing to do\n")
+            cecho("\n<yellow>[hauling]<reset> No deficits or excesses found, nothing to do\n")
             po_cycle_pause_and_rescan("Nothing to do")
             return
         end
@@ -132,7 +149,7 @@ function f2t_hauling_phase_po_build_queue()
             end
         end
 
-        cecho(string.format("\n<green>[hauling/po]<reset> Queue built: <cyan>%d<reset> jobs (%d deficit, %d excess)\n",
+        cecho(string.format("\n<green>[hauling]<reset> Queue built: <cyan>%d<reset> jobs (%d deficit, %d excess)\n",
             #job_queue, deficit_count, excess_count))
 
         -- Start with first job
@@ -150,10 +167,20 @@ function f2t_hauling_phase_po_next_job()
         return
     end
 
+    -- Deferred pause: pause between PO jobs
+    if F2T_HAULING_STATE.pause_requested then
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
+        F2T_HAULING_STATE.current_phase = "po_next_job"
+        cecho("\n<green>[hauling]<reset> Paused between jobs\n")
+        f2t_debug_log("[hauling/po] Deferred pause activated between jobs")
+        return
+    end
+
     -- Check graceful stop
     if F2T_HAULING_STATE.stopping then
         f2t_debug_log("[hauling/po] Graceful stop complete")
-        cecho("\n<green>[hauling/po]<reset> Stopping now...\n")
+        cecho("\n<green>[hauling]<reset> Stopping now...\n")
         f2t_hauling_do_stop()
         return
     end
@@ -164,7 +191,7 @@ function f2t_hauling_phase_po_next_job()
     if not queue or index > #queue then
         -- Queue exhausted, cycle pause then re-scan
         f2t_debug_log("[hauling/po] Job queue exhausted, cycling")
-        cecho("\n<green>[hauling/po]<reset> All jobs complete\n")
+        cecho("\n<green>[hauling]<reset> All jobs complete\n")
         po_cycle_pause_and_rescan("All jobs complete")
         return
     end
@@ -178,7 +205,7 @@ function f2t_hauling_phase_po_next_job()
         job.buy_planet or "?", job.sell_planet or "?")
 
     local type_color = job.type == "deficit" and "orange" or "yellow"
-    cecho(string.format("\n<green>[hauling/po]<reset> Job %d/%d: <%s>%s<reset> <cyan>%s<reset> (%s → %s)\n",
+    cecho(string.format("\n<green>[hauling]<reset> Job %d/%d: <%s>%s<reset> <cyan>%s<reset> (%s → %s)\n",
         index, #queue, type_color, job.type, job.commodity,
         job.buy_planet or "?", job.sell_planet or "?"))
 
@@ -199,20 +226,20 @@ end
 function f2t_hauling_phase_po_navigate_to_buy()
     local job = F2T_HAULING_STATE.po_current_job
     if not job then
-        cecho("\n<red>[hauling/po]<reset> No current job\n")
+        cecho("\n<red>[hauling]<reset> No current job\n")
         f2t_hauling_do_stop()
         return
     end
 
     local destination = string.format("%s exchange", job.buy_planet)
-    cecho(string.format("\n<green>[hauling/po]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n",
+    cecho(string.format("\n<green>[hauling]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n",
         job.buy_planet))
     f2t_debug_log("[hauling/po] Navigating to buy: %s", destination)
 
     local nav_result = f2t_map_navigate(destination)
 
     if nav_result == false then
-        cecho(string.format("\n<red>[hauling/po]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
+        cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
         f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
         F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
         f2t_hauling_phase_po_next_job()
@@ -230,7 +257,7 @@ end
 function f2t_hauling_phase_po_buy()
     local job = F2T_HAULING_STATE.po_current_job
     if not job then
-        cecho("\n<red>[hauling/po]<reset> No current job\n")
+        cecho("\n<red>[hauling]<reset> No current job\n")
         f2t_hauling_do_stop()
         return
     end
@@ -238,9 +265,17 @@ function f2t_hauling_phase_po_buy()
     -- Check if cargo hold has leftover cargo from a previous partial sell
     local existing_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
     if existing_cargo and #existing_cargo > 0 then
-        cecho(string.format("\n<yellow>[hauling/po]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
+        F2T_HAULING_STATE.cargo_clear_attempts = (F2T_HAULING_STATE.cargo_clear_attempts or 0) + 1
+        if F2T_HAULING_STATE.cargo_clear_attempts > 2 then
+            cecho(string.format("\n<red>[hauling]<reset> Failed to clear cargo after %d attempts, stopping\n",
+                F2T_HAULING_STATE.cargo_clear_attempts - 1))
+            f2t_debug_log("[hauling/po] Cargo clear attempts exhausted (%d), stopping", F2T_HAULING_STATE.cargo_clear_attempts - 1)
+            f2t_hauling_do_stop()
+            return
+        end
+        cecho(string.format("\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
             #existing_cargo))
-        f2t_debug_log("[hauling/po] Cargo hold has %d lots, selling before buying", #existing_cargo)
+        f2t_debug_log("[hauling/po] Cargo hold has %d lots, selling before buying (attempt %d)", #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
         -- Sell leftover cargo first, then retry this buy
         f2t_bulk_sell_start(nil, nil, function(commodity_sold, lots_sold, status, error_msg)
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -249,12 +284,19 @@ function f2t_hauling_phase_po_buy()
             -- Check again after selling
             local still_has_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
             if still_has_cargo and #still_has_cargo > 0 then
-                cecho(string.format("\n<yellow>[hauling/po]<reset> Still %d lots unsold, skipping job\n", #still_has_cargo))
-                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-                f2t_hauling_phase_po_next_job()
+                cecho(string.format("\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
+                f2t_debug_log("[hauling/po] Jettisoning %d unsellable lots", #still_has_cargo)
+                f2t_hauling_jettison_cargo(function()
+                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                        return
+                    end
+                    -- Retry buy (counter already incremented)
+                    f2t_hauling_transition("po_buying")
+                end)
                 return
             end
-            -- Cargo clear, proceed with buy
+            -- Cargo clear, reset counter and proceed
+            F2T_HAULING_STATE.cargo_clear_attempts = 0
             f2t_hauling_transition("po_buying")
         end)
         return
@@ -263,7 +305,7 @@ function f2t_hauling_phase_po_buy()
     local commodity = job.commodity
     local lots = job.lots
 
-    cecho(string.format("\n<green>[hauling/po]<reset> Buying %d lots of <cyan>%s<reset>...\n", lots, commodity))
+    cecho(string.format("\n<green>[hauling]<reset> Buying %d lots of <cyan>%s<reset>...\n", lots, commodity))
     f2t_debug_log("[hauling/po] Buying %d lots of %s", lots, commodity)
 
     f2t_bulk_buy_start(commodity, lots, function(bought_commodity, lots_bought, status, error_msg)
@@ -275,7 +317,7 @@ function f2t_hauling_phase_po_buy()
             bought_commodity, lots_bought, status)
 
         if status == "error" or lots_bought == 0 then
-            cecho(string.format("\n<red>[hauling/po]<reset> Buy failed for %s: %s\n",
+            cecho(string.format("\n<red>[hauling]<reset> Buy failed for %s: %s\n",
                 commodity, error_msg or "unknown error"))
             -- Skip this job, move to next
             F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
@@ -283,26 +325,27 @@ function f2t_hauling_phase_po_buy()
             return
         end
 
-        cecho(string.format("\n<green>[hauling/po]<reset> Bought %d lots of <cyan>%s<reset>\n",
+        cecho(string.format("\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset>\n",
             lots_bought, commodity))
 
         -- Check if bundled with second commodity from same source
         if job.bundled_commodity and job.bundled_buy_planet == job.buy_planet then
             -- Same source, buy second commodity here
-            f2t_debug_log("[hauling/po] Bundled buy: same source, buying %s", job.bundled_commodity)
-            cecho(string.format("\n<green>[hauling/po]<reset> Buying bundled %d lots of <cyan>%s<reset>...\n",
-                lots, job.bundled_commodity))
+            local bundled_lots = job.bundled_lots or lots
+            f2t_debug_log("[hauling/po] Bundled buy: same source, buying %s (%d lots)", job.bundled_commodity, bundled_lots)
+            cecho(string.format("\n<green>[hauling]<reset> Buying bundled %d lots of <cyan>%s<reset>...\n",
+                bundled_lots, job.bundled_commodity))
 
-            f2t_bulk_buy_start(job.bundled_commodity, lots, function(b_commodity, b_lots, b_status, b_error)
+            f2t_bulk_buy_start(job.bundled_commodity, bundled_lots, function(b_commodity, b_lots, b_status, b_error)
                 if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                     return
                 end
 
                 if b_status == "error" or b_lots == 0 then
-                    cecho(string.format("\n<yellow>[hauling/po]<reset> Bundled buy failed for %s, continuing with primary\n",
+                    cecho(string.format("\n<yellow>[hauling]<reset> Bundled buy failed for %s, continuing with primary\n",
                         job.bundled_commodity))
                 else
-                    cecho(string.format("\n<green>[hauling/po]<reset> Bought %d lots of <cyan>%s<reset>\n",
+                    cecho(string.format("\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset>\n",
                         b_lots, job.bundled_commodity))
                 end
 
@@ -330,14 +373,14 @@ function f2t_hauling_phase_po_bundled_buy_navigate()
     end
 
     local dest = string.format("%s exchange", job.bundled_buy_planet)
-    cecho(string.format("\n<green>[hauling/po]<reset> Navigating to bundled buy: <cyan>%s exchange<reset>\n",
+    cecho(string.format("\n<green>[hauling]<reset> Navigating to bundled buy: <cyan>%s exchange<reset>\n",
         job.bundled_buy_planet))
     f2t_debug_log("[hauling/po] Navigating to bundled buy: %s", dest)
 
     local nav_result = f2t_map_navigate(dest)
 
     if nav_result == false then
-        cecho(string.format("\n<yellow>[hauling/po]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
+        cecho(string.format("\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
             job.bundled_buy_planet))
         f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
         f2t_hauling_transition("po_navigating_to_sell")
@@ -357,9 +400,9 @@ function f2t_hauling_phase_po_bundled_buy()
     end
 
     local commodity = job.bundled_commodity
-    local lots = job.lots
+    local lots = job.bundled_lots or job.lots
 
-    cecho(string.format("\n<green>[hauling/po]<reset> Buying bundled %d lots of <cyan>%s<reset>...\n",
+    cecho(string.format("\n<green>[hauling]<reset> Buying bundled %d lots of <cyan>%s<reset>...\n",
         lots, commodity))
     f2t_debug_log("[hauling/po] Buying bundled: %d lots of %s", lots, commodity)
 
@@ -369,10 +412,10 @@ function f2t_hauling_phase_po_bundled_buy()
         end
 
         if status == "error" or lots_bought == 0 then
-            cecho(string.format("\n<yellow>[hauling/po]<reset> Bundled buy failed for %s, continuing with primary\n",
+            cecho(string.format("\n<yellow>[hauling]<reset> Bundled buy failed for %s, continuing with primary\n",
                 commodity))
         else
-            cecho(string.format("\n<green>[hauling/po]<reset> Bought %d lots of <cyan>%s<reset>\n",
+            cecho(string.format("\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset>\n",
                 lots_bought, commodity))
         end
 
@@ -388,20 +431,20 @@ end
 function f2t_hauling_phase_po_navigate_to_sell()
     local job = F2T_HAULING_STATE.po_current_job
     if not job then
-        cecho("\n<red>[hauling/po]<reset> No current job\n")
+        cecho("\n<red>[hauling]<reset> No current job\n")
         f2t_hauling_do_stop()
         return
     end
 
     local destination = string.format("%s exchange", job.sell_planet)
-    cecho(string.format("\n<green>[hauling/po]<reset> Navigating to sell location: <cyan>%s exchange<reset>\n",
+    cecho(string.format("\n<green>[hauling]<reset> Navigating to sell location: <cyan>%s exchange<reset>\n",
         job.sell_planet))
     f2t_debug_log("[hauling/po] Navigating to sell: %s", destination)
 
     local nav_result = f2t_map_navigate(destination)
 
     if nav_result == false then
-        cecho(string.format("\n<red>[hauling/po]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
+        cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
         f2t_debug_log("[hauling/po] Navigation to sell location failed, skipping job")
         -- We have cargo but can't sell - skip to next job
         F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
@@ -418,7 +461,7 @@ end
 
 --- Sell all cargo at current location
 function f2t_hauling_phase_po_sell()
-    cecho("\n<green>[hauling/po]<reset> Selling all cargo...\n")
+    cecho("\n<green>[hauling]<reset> Selling all cargo...\n")
     f2t_debug_log("[hauling/po] Selling all cargo")
 
     -- Sell everything (bs command)
@@ -430,9 +473,15 @@ function f2t_hauling_phase_po_sell()
         f2t_debug_log("[hauling/po] Sell complete: lots=%d, status=%s", lots_sold, status)
 
         if lots_sold > 0 then
-            -- Track cycle
+            -- Track cycle and type-specific counter
             F2T_HAULING_STATE.total_cycles = F2T_HAULING_STATE.total_cycles + 1
-            cecho(string.format("\n<green>[hauling/po]<reset> Sold %d lots (cycle %d)\n",
+            local job = F2T_HAULING_STATE.po_current_job
+            if job and job.type == "deficit" then
+                F2T_HAULING_STATE.po_deficit_cycles = F2T_HAULING_STATE.po_deficit_cycles + 1
+            else
+                F2T_HAULING_STATE.po_excess_cycles = F2T_HAULING_STATE.po_excess_cycles + 1
+            end
+            cecho(string.format("\n<green>[hauling]<reset> Sold %d lots (cycle %d)\n",
                 lots_sold, F2T_HAULING_STATE.total_cycles))
         end
 
@@ -441,7 +490,7 @@ function f2t_hauling_phase_po_sell()
         if cargo and #cargo > 0 then
             -- Partial sell - find next sell location
             f2t_debug_log("[hauling/po] Partial sell, %d lots remaining", #cargo)
-            cecho(string.format("\n<yellow>[hauling/po]<reset> %d lots remain unsold, finding next sell location...\n", #cargo))
+            cecho(string.format("\n<yellow>[hauling]<reset> %d lots remain unsold, finding next sell location...\n", #cargo))
             f2t_hauling_po_find_next_sell()
             return
         end
@@ -468,14 +517,14 @@ end
 
 --- Find next sell location when exchange stopped buying our cargo
 --- Uses price check to find any exchange that will buy, navigates there
-local PO_MAX_SELL_ATTEMPTS = 3
-
 function f2t_hauling_po_find_next_sell()
     F2T_HAULING_STATE.po_sell_attempts = F2T_HAULING_STATE.po_sell_attempts + 1
 
-    if F2T_HAULING_STATE.po_sell_attempts > PO_MAX_SELL_ATTEMPTS then
-        cecho(string.format("\n<yellow>[hauling/po]<reset> Tried %d sell locations, jettisoning remaining cargo\n",
-            PO_MAX_SELL_ATTEMPTS))
+    local max_attempts = tonumber(f2t_settings_get("hauling", "po_max_sell_attempts")) or 3
+
+    if F2T_HAULING_STATE.po_sell_attempts > max_attempts then
+        cecho(string.format("\n<yellow>[hauling]<reset> Tried %d sell locations, jettisoning remaining cargo\n",
+            max_attempts))
         f2t_debug_log("[hauling/po] Max sell attempts reached, jettisoning")
         f2t_hauling_jettison_cargo(function()
             F2T_HAULING_STATE.po_sell_attempts = 0
@@ -498,7 +547,7 @@ function f2t_hauling_po_find_next_sell()
     local commodity = cargo and #cargo > 0 and cargo[1].commodity or job.commodity
 
     f2t_debug_log("[hauling/po] Finding next sell location for %s (attempt %d/%d)",
-        commodity, F2T_HAULING_STATE.po_sell_attempts, PO_MAX_SELL_ATTEMPTS)
+        commodity, F2T_HAULING_STATE.po_sell_attempts, max_attempts)
 
     f2t_price_check_commodity(commodity, function(commodity_name, parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -506,28 +555,38 @@ function f2t_hauling_po_find_next_sell()
         end
 
         if not analysis or not analysis.top_buy then
-            cecho(string.format("\n<yellow>[hauling/po]<reset> No price data for %s, skipping to next job\n", commodity))
+            cecho(string.format("\n<yellow>[hauling]<reset> No price data for %s, skipping to next job\n", commodity))
             F2T_HAULING_STATE.po_sell_attempts = 0
             F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
             f2t_hauling_phase_po_next_job()
             return
         end
 
-        -- Pick the Nth best buyer based on attempt number
-        if #analysis.top_buy >= F2T_HAULING_STATE.po_sell_attempts then
-            local next_sell = analysis.top_buy[F2T_HAULING_STATE.po_sell_attempts]
+        -- Find next viable buyer, skipping the planet we bought from
+        local found = false
+        local viable_index = 0
+        for _, candidate in ipairs(analysis.top_buy) do
+            if candidate.planet == job.buy_planet then
+                f2t_debug_log("[hauling/po] Skipping %s (same as buy planet)", candidate.planet)
+            else
+                viable_index = viable_index + 1
+                if viable_index == F2T_HAULING_STATE.po_sell_attempts then
+                    f2t_debug_log("[hauling/po] Next sell location: %s:%s at %d ig/ton",
+                        candidate.system, candidate.planet, candidate.price)
+                    cecho(string.format("\n<green>[hauling]<reset> Trying sell location: <cyan>%s exchange<reset>\n",
+                        candidate.planet))
 
-            f2t_debug_log("[hauling/po] Next sell location: %s:%s at %d ig/ton",
-                next_sell.system, next_sell.planet, next_sell.price)
-            cecho(string.format("\n<green>[hauling/po]<reset> Trying sell location: <cyan>%s exchange<reset>\n",
-                next_sell.planet))
+                    job.sell_planet = candidate.planet
+                    job.sell_system = candidate.system
+                    f2t_hauling_transition("po_navigating_to_sell")
+                    found = true
+                    break
+                end
+            end
+        end
 
-            -- Update job sell location and navigate
-            job.sell_planet = next_sell.planet
-            job.sell_system = next_sell.system
-            f2t_hauling_transition("po_navigating_to_sell")
-        else
-            cecho(string.format("\n<yellow>[hauling/po]<reset> No more exchanges buying %s, jettisoning remaining cargo\n",
+        if not found then
+            cecho(string.format("\n<yellow>[hauling]<reset> No more exchanges buying %s, jettisoning remaining cargo\n",
                 commodity))
             f2t_hauling_jettison_cargo(function()
                 F2T_HAULING_STATE.po_sell_attempts = 0
@@ -545,7 +604,7 @@ end
 --- Re-scan exchanges remotely after selling to check for new deficits
 function f2t_hauling_phase_po_check_deficits()
     f2t_debug_log("[hauling/po] Phase: po_checking_deficits")
-    cecho("\n<green>[hauling/po]<reset> Checking for new deficits...\n")
+    cecho("\n<green>[hauling]<reset> Checking for new deficits...\n")
 
     local owned_planets = F2T_HAULING_STATE.po_owned_planets
 
@@ -561,7 +620,7 @@ function f2t_hauling_phase_po_check_deficits()
         local new_deficits = f2t_po_hauling_find_deficits(fresh_exchange_data)
 
         if #new_deficits > 0 then
-            cecho(string.format("\n<green>[hauling/po]<reset> Found <cyan>%d<reset> new deficit(s), resolving...\n",
+            cecho(string.format("\n<green>[hauling]<reset> Found <cyan>%d<reset> new deficit(s), resolving...\n",
                 #new_deficits))
 
             -- Resolve sources for new deficits
@@ -583,7 +642,7 @@ function f2t_hauling_phase_po_check_deficits()
                     end
 
                     f2t_debug_log("[hauling/po] Inserted %d deficit jobs at front of queue", #bundled)
-                    cecho(string.format("\n<green>[hauling/po]<reset> Added %d deficit job(s) to front of queue\n",
+                    cecho(string.format("\n<green>[hauling]<reset> Added %d deficit job(s) to front of queue\n",
                         #bundled))
                 end
 
@@ -634,11 +693,11 @@ function f2t_hauling_check_po_nav_complete()
             end
 
         elseif result == "stopped" then
-            cecho("\n<yellow>[hauling/po]<reset> Navigation stopped by user, stopping hauling\n")
+            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
             f2t_hauling_stop()
 
         elseif result == "failed" then
-            cecho(string.format("\n<red>[hauling/po]<reset> Cannot reach destination (path blocked)\n"))
+            cecho(string.format("\n<red>[hauling]<reset> Cannot reach destination (path blocked)\n"))
             f2t_debug_log("[hauling/po] Skipping job due to navigation failure")
             F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
             f2t_hauling_phase_po_next_job()

@@ -179,6 +179,7 @@ function f2t_map_explore_init_area(area_id, mode_fields)
     F2T_MAP_EXPLORE_STATE = {
         active = true,
         paused = false,
+        pause_requested = false,
         phase = "navigating",
 
         starting_room_id = current_room,
@@ -426,14 +427,6 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
             end
             return true
         end
-    end
-
-    -- Start stamina monitoring if enabled (standalone mode only)
-    -- Nested mode: parent layer handles stamina monitoring
-    local stamina_threshold = f2t_settings_get("shared", "stamina_threshold") or 0
-    if not on_complete_callback and stamina_threshold > 0 then
-        f2t_stamina_start_monitoring()
-        f2t_debug_log("[map-explore] Started stamina monitoring (threshold=%d)", stamina_threshold)
     end
 
     -- Start exploration
@@ -858,6 +851,7 @@ function f2t_map_explore_stop()
     F2T_MAP_EXPLORE_STATE = {
         active = false,
         paused = false,
+        pause_requested = false,
         phase = nil,
         visited_rooms = {},
         frontier_stack = {},
@@ -906,28 +900,46 @@ function f2t_map_explore_pause()
         return
     end
 
-    if F2T_MAP_EXPLORE_STATE.paused then
+    if F2T_MAP_EXPLORE_STATE.paused or F2T_MAP_EXPLORE_STATE.pause_requested then
         cecho("\n<yellow>[map-explore]<reset> Exploration already paused\n")
         return
     end
 
-    -- Stop any active speedwalk first to prevent conflicts
-    -- (e.g., stamina food trip starting while exploration speedwalk is active)
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[map-explore] Stopping active speedwalk before pause")
-        f2t_map_speedwalk_stop()
+    -- Deferred pause: let current operation complete, pause at next phase boundary
+    F2T_MAP_EXPLORE_STATE.pause_requested = true
+    cecho(string.format("\n<yellow>[map]<reset> Will pause after current operation... (phase: <cyan>%s<reset>)\n",
+        F2T_MAP_EXPLORE_STATE.phase or "unknown"))
+
+    f2t_debug_log("[map-explore] Deferred pause requested (phase: %s)", F2T_MAP_EXPLORE_STATE.phase or "unknown")
+end
+
+-- Check and activate deferred pause at a phase boundary
+-- Returns true if pause was activated (caller should return early)
+function f2t_map_explore_check_deferred_pause()
+    if not F2T_MAP_EXPLORE_STATE.pause_requested then
+        return false
     end
 
+    F2T_MAP_EXPLORE_STATE.pause_requested = false
     F2T_MAP_EXPLORE_STATE.paused = true
-    cecho("\n<yellow>[map]<reset> Exploration paused\n")
+    cecho(string.format("\n<yellow>[map]<reset> Exploration paused at phase: <cyan>%s<reset>\n",
+        F2T_MAP_EXPLORE_STATE.phase or "unknown"))
     cecho("  Use <white>map explore resume<reset> to continue\n")
-
-    f2t_debug_log("[map-explore] Paused")
+    f2t_debug_log("[map-explore] Deferred pause activated at phase: %s", F2T_MAP_EXPLORE_STATE.phase or "unknown")
+    return true
 end
 
 function f2t_map_explore_resume()
     if not F2T_MAP_EXPLORE_STATE.active then
         cecho("\n<yellow>[map-explore]<reset> No exploration in progress\n")
+        return
+    end
+
+    -- Cancel a pending deferred pause that hasn't activated yet
+    if F2T_MAP_EXPLORE_STATE.pause_requested then
+        F2T_MAP_EXPLORE_STATE.pause_requested = false
+        cecho("\n<green>[map]<reset> Pending pause cancelled\n")
+        f2t_debug_log("[map-explore] Pending pause cancelled")
         return
     end
 
@@ -1169,6 +1181,7 @@ function f2t_map_explore_complete()
     F2T_MAP_EXPLORE_STATE = {
         active = false,
         paused = false,
+        pause_requested = false,
         phase = nil,
         visited_rooms = {},
         frontier_stack = {},
@@ -1242,6 +1255,11 @@ function f2t_map_explore_next_step()
         return
     end
 
+    -- Deferred pause: convert pause_requested to actual pause at phase boundary
+    if f2t_map_explore_check_deferred_pause() then
+        return
+    end
+
     -- Guard: Check if waiting for death recovery
     if F2T_MAP_EXPLORE_STATE.phase == "paused_death" then
         return
@@ -1303,6 +1321,11 @@ end
 function f2t_map_explore_on_room_change()
     -- Guard: Check if active
     if not F2T_MAP_EXPLORE_STATE.active then
+        return
+    end
+
+    -- Skip if paused (another system like stamina monitor is navigating)
+    if F2T_MAP_EXPLORE_STATE.paused then
         return
     end
 

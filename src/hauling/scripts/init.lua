@@ -5,6 +5,7 @@
 F2T_HAULING_STATE = {
     active = false,
     paused = false,
+    pause_requested = false, -- Deferred pause: set by user, converted to paused at next phase boundary
     paused_room_id = nil, -- Room ID where hauling was paused (for location validation on resume)
     stopping = false,     -- Graceful stop requested (finish current cycle)
     mode = nil,           -- Current hauling mode: "ac", "akaturi", "exchange"
@@ -88,13 +89,21 @@ F2T_HAULING_STATE = {
     po_deficit_count = 0,            -- Deficits found in last scan
     po_excess_count = 0,             -- Excesses found in last scan
     po_sell_attempts = 0,            -- Sell attempt counter for partial sell retry
-    po_scan_planets = {}             -- Planets to scan during exchange scan
+    cargo_clear_attempts = 0,        -- Retry counter for sell-then-jettison in buy phase
+    po_scan_planets = {},            -- Planets to scan during exchange scan
+    po_deficit_cycles = 0,           -- Total deficit cycles completed this session
+    po_excess_cycles = 0,            -- Total excess cycles completed this session
+
+    -- Cycle pause tracking
+    cycle_pause_timer_id = nil,      -- Timer ID for cycle pause (so we can kill it on stop)
+    cycle_pause_end_time = nil,      -- os.time() when current cycle pause should end (for resume)
 }
 
 -- Settings registration
 f2t_settings_register("hauling", "margin_threshold", {
     description = "Minimum profit margin % to continue trading a commodity",
     default = 40,
+    min = 0, max = 100,
     validator = function(value)
         local num = tonumber(value)
         if not num or num < 0 or num > 100 then
@@ -107,6 +116,7 @@ f2t_settings_register("hauling", "margin_threshold", {
 f2t_settings_register("hauling", "cycle_pause", {
     description = "Seconds to pause after completing all 5 commodities (0 = no pause)",
     default = 60,
+    min = 0, max = 300,
     validator = function(value)
         local num = tonumber(value)
         if not num or num < 0 or num > 300 then
@@ -141,9 +151,49 @@ f2t_settings_register("hauling", "excluded_commodities", {
 f2t_settings_register("hauling", "po_mode", {
     description = "PO hauling mode: 'both' (deficit + excess) or 'deficit' (deficit only)",
     default = "both",
+    choices = {"both", "deficit"},
     validator = function(value)
         if value ~= "both" and value ~= "deficit" then
             return false, "Must be 'both' or 'deficit'"
+        end
+        return true
+    end
+})
+
+f2t_settings_register("hauling", "po_deficit_threshold", {
+    description = "Stock level at or below which deficit hauling triggers",
+    default = -525,
+    min = -525, max = -75,
+    validator = function(value)
+        local num = tonumber(value)
+        if not num or num < -525 or num > -75 then
+            return false, "Must be a number between -525 and -75"
+        end
+        return true
+    end
+})
+
+f2t_settings_register("hauling", "po_excess_threshold", {
+    description = "Stock level at or above which excess selling triggers",
+    default = 20000,
+    min = 750, max = 20000,
+    validator = function(value)
+        local num = tonumber(value)
+        if not num or num < 750 or num > 20000 then
+            return false, "Must be a number between 750 and 20000"
+        end
+        return true
+    end
+})
+
+f2t_settings_register("hauling", "po_max_sell_attempts", {
+    description = "Maximum sell locations to try before jettisoning cargo",
+    default = 3,
+    min = 1, max = 10,
+    validator = function(value)
+        local num = tonumber(value)
+        if not num or num < 1 or num > 10 then
+            return false, "Must be a number between 1 and 10"
         end
         return true
     end

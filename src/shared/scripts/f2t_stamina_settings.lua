@@ -5,6 +5,7 @@
 f2t_settings_register("shared", "stamina_threshold", {
     description = "Stamina threshold to trigger food buying (0=disabled, 1-99=trigger at this %)",
     default = 25,
+    min = 0, max = 99,
     validator = function(value)
         local num = tonumber(value)
         if not num or num < 0 or num > 99 then

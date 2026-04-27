@@ -5,6 +5,7 @@
 f2t_settings_register("shared", "refuel_threshold", {
     description = "Auto-refuel threshold (0=disabled, 1-99=refuel when at/below this %)",
     default = 50,
+    min = 0, max = 99,
     validator = function(value)
         local num = tonumber(value)
         if not num or num < 0 or num > 99 then

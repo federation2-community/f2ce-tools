@@ -1,7 +1,8 @@
 {
   "name": "fed2-tools",
-  "author": "Your Name",
-  "description": "Federation 2 Community Edition Mudlet tools collection",
+  "author": "Colborn(ping65510) & jackrungh",
+  "title": "Federation 2 Community Edition Mudlet Tools & GUI",
+  "description": "A Mudlet package for Federation 2 Community Edition that provides mapping, navigation, hauling, automated trading, factory management, and quality-of-life improvements. Frontended by an optional, customizable GUI.",
   "mudletVersion": "4.0+",
   "dependencies": []
 }

@@ -45,6 +45,15 @@ function f2t_map_explore_galaxy_start()
         return { auto_resume = true }
     end)
 
+    -- Register with stamina monitor for this session
+    f2t_stamina_register_client({
+        pause_callback = f2t_map_explore_pause,
+        resume_callback = f2t_map_explore_resume,
+        check_active = function()
+            return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
+        end
+    })
+
     -- Initialize exploration state for galaxy mode
     F2T_MAP_EXPLORE_STATE.active = true
     F2T_MAP_EXPLORE_STATE.mode = "galaxy"
@@ -151,6 +160,11 @@ function f2t_map_explore_galaxy_next_cartel()
     end
 
     if F2T_MAP_EXPLORE_STATE.mode ~= "galaxy" then
+        return
+    end
+
+    -- Deferred pause: pause between cartels
+    if f2t_map_explore_check_deferred_pause() then
         return
     end
 
@@ -360,6 +374,10 @@ function f2t_map_explore_galaxy_abort()
     -- (called during initialization errors, before actual exploration starts)
 
     f2t_debug_log("[map-explore-galaxy] Aborting galaxy exploration")
+
+    -- Clean up navigation ownership and stamina registration
+    f2t_map_clear_nav_owner()
+    f2t_stamina_unregister_client()
 
     -- Reset all galaxy-related state
     F2T_MAP_EXPLORE_STATE.active = false

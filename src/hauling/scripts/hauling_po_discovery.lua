@@ -17,7 +17,7 @@ function f2t_po_hauling_scan_system(callback)
         -- First scan: get system from GMCP and verify ownership
         system_name = gmcp.room and gmcp.room.info and gmcp.room.info.system
         if not system_name then
-            cecho("\n<red>[hauling/po]<reset> Cannot determine current system\n")
+            cecho("\n<red>[hauling]<reset> Cannot determine current system\n")
             callback(nil, nil)
             return
         end
@@ -27,7 +27,7 @@ function f2t_po_hauling_scan_system(callback)
         local player_name = gmcp.char and gmcp.char.vitals and gmcp.char.vitals.name
 
         if not owner or not player_name or owner ~= player_name then
-            cecho(string.format("\n<red>[hauling/po]<reset> Current system <cyan>%s<reset> is not owned by you (owner: %s)\n",
+            cecho(string.format("\n<red>[hauling]<reset> Current system <cyan>%s<reset> is not owned by you (owner: %s)\n",
                 system_name, owner or "unknown"))
             callback(nil, nil)
             return
@@ -38,7 +38,7 @@ function f2t_po_hauling_scan_system(callback)
     end
 
     f2t_debug_log("[hauling/po] Scanning system: %s", system_name)
-    cecho(string.format("\n<green>[hauling/po]<reset> Scanning system <cyan>%s<reset> for planets...\n", system_name))
+    cecho(string.format("\n<green>[hauling]<reset> Scanning system <cyan>%s<reset> for planets...\n", system_name))
 
     f2t_map_di_system_capture_start(system_name, function(planet_names, planets_without_exchange)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -46,7 +46,7 @@ function f2t_po_hauling_scan_system(callback)
         end
 
         if not planet_names or #planet_names == 0 then
-            cecho("\n<red>[hauling/po]<reset> No planets found in system\n")
+            cecho("\n<red>[hauling]<reset> No planets found in system\n")
             callback(nil, nil)
             return
         end
@@ -83,7 +83,7 @@ function f2t_po_hauling_scan_exchanges(planet_names, callback)
     end
 
     f2t_debug_log("[hauling/po] Remote scanning exchanges for %d planets", #planet_names)
-    cecho(string.format("\n<green>[hauling/po]<reset> Capturing exchange data for %d planets...\n", #planet_names))
+    cecho(string.format("\n<green>[hauling]<reset> Capturing exchange data for %d planets...\n", #planet_names))
 
     local scan_data = {}
     local owned_planets = {}
@@ -123,7 +123,7 @@ function f2t_po_hauling_scan_exchanges(planet_names, callback)
         end)
 
         if not started then
-            cecho(string.format("\n<yellow>[hauling/po]<reset> Exchange capture busy, skipping %s\n", planet))
+            cecho(string.format("\n<yellow>[hauling]<reset> Exchange capture busy, skipping %s\n", planet))
             f2t_debug_log("[hauling/po] Exchange capture busy, skipping %s", planet)
             tempTimer(0.5, function()
                 scan_next()
@@ -187,7 +187,7 @@ function f2t_po_hauling_rescan_exchanges(owned_planets, callback)
         end)
 
         if not started then
-            cecho(string.format("\n<yellow>[hauling/po]<reset> Exchange capture busy, skipping rescan of %s\n", planet))
+            cecho(string.format("\n<yellow>[hauling]<reset> Exchange capture busy, skipping rescan of %s\n", planet))
             f2t_debug_log("[hauling/po] Exchange capture busy during rescan, skipping %s", planet)
             -- Use stale data for this planet if available
             if F2T_HAULING_STATE.po_planet_exchange_data[planet] then

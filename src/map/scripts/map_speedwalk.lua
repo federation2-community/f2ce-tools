@@ -75,6 +75,7 @@ function doSpeedWalk()
     F2T_SPEEDWALK_CURRENT_STEP = 0
     F2T_SPEEDWALK_DESTINATION_ROOM_ID = tonumber(speedWalkPath[#speedWalkPath])  -- Store destination (number)
     F2T_SPEEDWALK_LAST_COMMAND = nil
+    F2T_SPEEDWALK_LAST_RESULT = nil  -- Clear stale result from previous speedwalk
 
     -- Reset verification state
     F2T_SPEEDWALK_EXPECTED_ROOM_ID = nil

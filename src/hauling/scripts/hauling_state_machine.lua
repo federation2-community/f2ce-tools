@@ -21,6 +21,7 @@ function f2t_hauling_start(requested_mode)
 
     F2T_HAULING_STATE.active = true
     F2T_HAULING_STATE.paused = false
+    F2T_HAULING_STATE.pause_requested = false
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.cycle_count = 0
 
@@ -38,6 +39,8 @@ function f2t_hauling_start(requested_mode)
     F2T_HAULING_STATE.total_cycles = 0
     F2T_HAULING_STATE.session_profit = 0
     F2T_HAULING_STATE.commodity_history = {}
+    F2T_HAULING_STATE.po_deficit_cycles = 0
+    F2T_HAULING_STATE.po_excess_cycles = 0
 
     -- Load margin threshold from settings
     F2T_HAULING_STATE.margin_threshold_pct = f2t_settings_get("hauling", "margin_threshold")
@@ -51,6 +54,7 @@ function f2t_hauling_start(requested_mode)
     end
 
     -- Register with stamina monitor for this session
+    -- Stamina monitor uses deferred pause (waits for current operation to complete)
     f2t_stamina_register_client({
         pause_callback = f2t_hauling_pause,
         resume_callback = f2t_hauling_resume,
@@ -135,6 +139,9 @@ function f2t_hauling_stop()
         cecho("\n<yellow>[hauling]<reset> Hauling not active\n")
         return
     end
+
+    -- Stop supersedes any pending deferred pause
+    F2T_HAULING_STATE.pause_requested = false
 
     -- For AC jobs, check if we've accepted a job (even if cargo not yet collected)
     -- We should finish any job that's past the selection phase
@@ -235,6 +242,8 @@ function f2t_hauling_terminate()
     cecho("\n<yellow>[hauling]<reset> Terminating hauling immediately...\n")
     f2t_debug_log("[hauling] Immediate termination requested")
 
+    F2T_HAULING_STATE.pause_requested = false
+
     -- Stop any active speedwalk
     if F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Stopping speedwalk due to termination")
@@ -277,10 +286,18 @@ function f2t_hauling_finish_stop()
     if F2T_HAULING_STATE.total_cycles > 0 then
         cecho("\n<green>[hauling]<reset> Final Session Statistics:\n")
         cecho(string.format("  Total Cycles: <cyan>%d<reset>\n", F2T_HAULING_STATE.total_cycles))
-        cecho(string.format("  Session Profit: <green>%d ig<reset>\n", F2T_HAULING_STATE.session_profit))
 
-        local avg_profit = math.floor(F2T_HAULING_STATE.session_profit / F2T_HAULING_STATE.total_cycles)
-        cecho(string.format("  Avg Profit/Cycle: <cyan>%d ig<reset>\n", avg_profit))
+        if F2T_HAULING_STATE.mode == "po" or
+           (F2T_HAULING_STATE.po_deficit_cycles > 0 or F2T_HAULING_STATE.po_excess_cycles > 0) then
+            cecho(string.format("  Deficit Cycles: <orange>%d<reset>\n",
+                F2T_HAULING_STATE.po_deficit_cycles))
+            cecho(string.format("  Excess Cycles: <yellow>%d<reset>\n",
+                F2T_HAULING_STATE.po_excess_cycles))
+        else
+            cecho(string.format("  Session Profit: <green>%d ig<reset>\n", F2T_HAULING_STATE.session_profit))
+            local avg_profit = math.floor(F2T_HAULING_STATE.session_profit / F2T_HAULING_STATE.total_cycles)
+            cecho(string.format("  Avg Profit/Cycle: <cyan>%d ig<reset>\n", avg_profit))
+        end
     end
 
     cecho("\n<green>[hauling]<reset> Hauling automation stopped\n")
@@ -303,6 +320,14 @@ function f2t_hauling_finish_stop()
         f2t_debug_log("[hauling] Cleaned up event handlers for mode: %s", F2T_HAULING_STATE.mode or "unknown")
     end
 
+    -- Kill any pending cycle pause timer
+    if F2T_HAULING_STATE.cycle_pause_timer_id then
+        killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
+        F2T_HAULING_STATE.cycle_pause_timer_id = nil
+        f2t_debug_log("[hauling] Killed pending cycle pause timer")
+    end
+    F2T_HAULING_STATE.cycle_pause_end_time = nil
+
     -- Unregister from stamina monitor (monitoring continues in standalone mode)
     f2t_stamina_unregister_client()
 
@@ -323,6 +348,7 @@ function f2t_hauling_finish_stop()
     -- Reset active state (but preserve statistics for status display)
     F2T_HAULING_STATE.active = false
     F2T_HAULING_STATE.paused = false
+    F2T_HAULING_STATE.pause_requested = false
     F2T_HAULING_STATE.paused_room_id = nil
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.mode = nil
@@ -346,6 +372,7 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.commodity_total_profit = 0
     F2T_HAULING_STATE.sell_attempts = 0
     F2T_HAULING_STATE.dump_attempts = 0
+    F2T_HAULING_STATE.cargo_clear_attempts = 0
 
     -- Clear AC job state
     F2T_HAULING_STATE.ac_job = nil
@@ -414,7 +441,8 @@ function f2t_hauling_finish_stop()
 end
 
 -- Pause hauling
-function f2t_hauling_pause()
+--- @param immediate boolean|nil If true, pause immediately (used by system-initiated pauses e.g. Akaturi room finding). If false/nil, defer pause to next phase boundary.
+function f2t_hauling_pause(immediate)
     if not F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling not active\n")
         return
@@ -425,25 +453,51 @@ function f2t_hauling_pause()
         return
     end
 
-    F2T_HAULING_STATE.paused = true
+    if immediate then
+        -- Immediate pause (system-initiated): stop everything now
+        -- Supersedes any pending deferred pause
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
 
-    -- Store speedwalk destination before stopping (so we can recompute on resume)
-    if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_DESTINATION_ROOM_ID then
-        F2T_HAULING_STATE.paused_speedwalk_destination = F2T_SPEEDWALK_DESTINATION_ROOM_ID
-        f2t_debug_log("[hauling] Stored speedwalk destination: %d", F2T_SPEEDWALK_DESTINATION_ROOM_ID)
+        -- Store speedwalk destination before stopping (so we can recompute on resume)
+        if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_DESTINATION_ROOM_ID then
+            F2T_HAULING_STATE.paused_speedwalk_destination = F2T_SPEEDWALK_DESTINATION_ROOM_ID
+            f2t_debug_log("[hauling] Stored speedwalk destination: %d", F2T_SPEEDWALK_DESTINATION_ROOM_ID)
+        else
+            F2T_HAULING_STATE.paused_speedwalk_destination = nil
+        end
+
+        cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n",
+            F2T_HAULING_STATE.current_phase or "unknown"))
+
+        f2t_debug_log("[hauling] Paused immediately at phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
+
+        -- Kill cycle pause timer if pausing during cycle_pausing (resume will recreate)
+        if F2T_HAULING_STATE.cycle_pause_timer_id then
+            killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
+            F2T_HAULING_STATE.cycle_pause_timer_id = nil
+            f2t_debug_log("[hauling] Killed cycle pause timer (will recreate on resume)")
+        end
+
+        -- Stop any active speedwalk (will recompute on resume)
+        if F2T_SPEEDWALK_ACTIVE then
+            f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
+            f2t_map_speedwalk_stop()
+        end
     else
-        F2T_HAULING_STATE.paused_speedwalk_destination = nil
-    end
+        -- Deferred pause (user): let current operation complete, pause at next phase boundary
+        if F2T_HAULING_STATE.pause_requested then
+            cecho("\n<yellow>[hauling]<reset> Pause already pending...\n")
+            return
+        end
 
-    cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n",
-        F2T_HAULING_STATE.current_phase or "unknown"))
+        F2T_HAULING_STATE.pause_requested = true
 
-    f2t_debug_log("[hauling] Paused at phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
+        cecho(string.format("\n<green>[hauling]<reset> Will pause after current operation... (phase: <cyan>%s<reset>)\n",
+            F2T_HAULING_STATE.current_phase or "unknown"))
+        cecho("\n<dim_grey>Use 'haul terminate' for immediate stop<reset>\n")
 
-    -- Stop any active speedwalk (will recompute on resume)
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
-        f2t_map_speedwalk_stop()
+        f2t_debug_log("[hauling] Deferred pause requested at phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
     end
 end
 
@@ -454,17 +508,34 @@ function f2t_hauling_resume()
         return
     end
 
+    -- Handle cancelling a pending deferred pause
+    if F2T_HAULING_STATE.pause_requested and not F2T_HAULING_STATE.paused then
+        F2T_HAULING_STATE.pause_requested = false
+        cecho("\n<green>[hauling]<reset> Pause request cancelled\n")
+        f2t_debug_log("[hauling] Deferred pause request cancelled")
+        return
+    end
+
     if not F2T_HAULING_STATE.paused then
         cecho("\n<yellow>[hauling]<reset> Not paused\n")
         return
     end
 
     F2T_HAULING_STATE.paused = false
+    F2T_HAULING_STATE.pause_requested = false
 
     cecho(string.format("\n<green>[hauling]<reset> Resuming from phase: <cyan>%s<reset>\n",
         F2T_HAULING_STATE.current_phase or "unknown"))
 
     f2t_debug_log("[hauling] Resumed from phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
+
+    -- Re-establish navigation ownership (may have been cleared by stamina monitor)
+    if f2t_map_set_nav_owner then
+        f2t_map_set_nav_owner("hauling", function(reason)
+            f2t_debug_log("[hauling] Navigation interrupted by %s", reason)
+            return { auto_resume = true }
+        end)
+    end
 
     -- If we had a paused speedwalk, recompute path to the original destination
     local should_restart_phase = true
@@ -499,10 +570,18 @@ function f2t_hauling_show_status()
     -- Show status header
     if F2T_HAULING_STATE.active then
         cecho("\n<green>[hauling]<reset> Status:\n")
-        cecho(string.format("  State: <cyan>%s<reset>\n",
-            F2T_HAULING_STATE.paused and "PAUSED" or "RUNNING"))
+        local state_str = F2T_HAULING_STATE.paused and "PAUSED"
+            or F2T_HAULING_STATE.pause_requested and "PAUSING..."
+            or "RUNNING"
+        cecho(string.format("  State: <cyan>%s<reset>\n", state_str))
         cecho(string.format("  Phase: <cyan>%s<reset>\n",
             F2T_HAULING_STATE.current_phase or "none"))
+        if F2T_HAULING_STATE.current_phase == "cycle_pausing" and F2T_HAULING_STATE.cycle_pause_end_time then
+            local remaining = F2T_HAULING_STATE.cycle_pause_end_time - os.time()
+            if remaining > 0 then
+                cecho(string.format("  Resuming in: <cyan>%ds<reset>\n", remaining))
+            end
+        end
     else
         cecho("\n<green>[hauling]<reset> Status: <yellow>STOPPED<reset>\n")
 
@@ -519,12 +598,22 @@ function f2t_hauling_show_status()
     cecho("\n<white>Session Statistics:<reset>\n")
     cecho(string.format("  Total Cycles: <cyan>%d<reset>\n",
         F2T_HAULING_STATE.total_cycles))
-    cecho(string.format("  Session Profit: <green>%d ig<reset>\n",
-        F2T_HAULING_STATE.session_profit))
 
-    if F2T_HAULING_STATE.total_cycles > 0 then
-        local avg_profit = math.floor(F2T_HAULING_STATE.session_profit / F2T_HAULING_STATE.total_cycles)
-        cecho(string.format("  Avg Profit/Cycle: <cyan>%d ig<reset>\n", avg_profit))
+    if F2T_HAULING_STATE.mode == "po" or
+       (F2T_HAULING_STATE.po_deficit_cycles > 0 or F2T_HAULING_STATE.po_excess_cycles > 0) then
+        -- PO mode: show deficit/excess cycle breakdown
+        cecho(string.format("  Deficit Cycles: <orange>%d<reset>\n",
+            F2T_HAULING_STATE.po_deficit_cycles))
+        cecho(string.format("  Excess Cycles: <yellow>%d<reset>\n",
+            F2T_HAULING_STATE.po_excess_cycles))
+    else
+        -- Other modes: show profit stats
+        cecho(string.format("  Session Profit: <green>%d ig<reset>\n",
+            F2T_HAULING_STATE.session_profit))
+        if F2T_HAULING_STATE.total_cycles > 0 then
+            local avg_profit = math.floor(F2T_HAULING_STATE.session_profit / F2T_HAULING_STATE.total_cycles)
+            cecho(string.format("  Avg Profit/Cycle: <cyan>%d ig<reset>\n", avg_profit))
+        end
     end
 
     -- Active session details (only show when hauling is running)
@@ -546,69 +635,72 @@ function f2t_hauling_show_status()
             cecho(string.format("  Scan Iterations: <cyan>%d<reset>\n",
                 F2T_HAULING_STATE.po_scan_count))
 
-            -- Current job
-            local job = F2T_HAULING_STATE.po_current_job
-            if job then
-                local type_color = job.type == "deficit" and "orange" or "yellow"
-                cecho(string.format("\n<white>Current Job:<reset> <%s>%s<reset> <cyan>%s<reset>\n",
-                    type_color, job.type, job.commodity))
-                cecho(string.format("  Buy: <cyan>%s<reset> → Sell: <cyan>%s<reset>\n",
-                    job.buy_planet or "?", job.sell_planet or "?"))
-                if job.bundled_commodity then
-                    cecho(string.format("  Bundled: <cyan>%s<reset> (%s → %s)\n",
-                        job.bundled_commodity,
-                        job.bundled_buy_planet or "?", job.bundled_sell_planet or "?"))
+            -- Current job and queue (hide during cycle pause - queue is exhausted)
+            if F2T_HAULING_STATE.current_phase ~= "cycle_pausing" then
+                local job = F2T_HAULING_STATE.po_current_job
+                if job then
+                    local type_color = job.type == "deficit" and "orange" or "yellow"
+                    cecho(string.format("\n<white>Current Job:<reset> <%s>%s<reset> <cyan>%s<reset>\n",
+                        type_color, job.type, job.commodity))
+                    cecho(string.format("  Buy: <cyan>%s<reset> → Sell: <cyan>%s<reset>\n",
+                        job.buy_planet or "?", job.sell_planet or "?"))
+                    if job.bundled_commodity then
+                        cecho(string.format("  Bundled: <cyan>%s<reset> (%s → %s)\n",
+                            job.bundled_commodity,
+                            job.bundled_buy_planet or "?", job.bundled_sell_planet or "?"))
+                    end
                 end
-            end
 
-            -- Job queue progress
-            local queue = F2T_HAULING_STATE.po_job_queue
-            if queue and #queue > 0 then
-                cecho(string.format("\n<white>Job Queue:<reset> <cyan>%d/%d<reset>\n",
-                    F2T_HAULING_STATE.po_job_index, #queue))
-                for i, qjob in ipairs(queue) do
-                    local marker = i == F2T_HAULING_STATE.po_job_index and " <yellow>*<reset>" or ""
-                    local tc = qjob.type == "deficit" and "red" or "yellow"
-                    local bundle_info = qjob.bundled_commodity
-                        and string.format(" + %s", qjob.bundled_commodity) or ""
-                    cecho(string.format("  %d. <%s>%s<reset> <cyan>%s<reset>%s (%s → %s)%s\n",
-                        i, tc, qjob.type, qjob.commodity, bundle_info,
-                        qjob.buy_planet or "?", qjob.sell_planet or "?", marker))
+                -- Job queue progress
+                local queue = F2T_HAULING_STATE.po_job_queue
+                if queue and #queue > 0 then
+                    cecho(string.format("\n<white>Job Queue:<reset> <cyan>%d/%d<reset>\n",
+                        F2T_HAULING_STATE.po_job_index, #queue))
+                    for i, qjob in ipairs(queue) do
+                        local marker = i == F2T_HAULING_STATE.po_job_index and " <yellow>*<reset>" or ""
+                        local tc = qjob.type == "deficit" and "red" or "yellow"
+                        local bundle_info = qjob.bundled_commodity
+                            and string.format(" + %s", qjob.bundled_commodity) or ""
+                        cecho(string.format("  %d. <%s>%s<reset> <cyan>%s<reset>%s (%s → %s)%s\n",
+                            i, tc, qjob.type, qjob.commodity, bundle_info,
+                            qjob.buy_planet or "?", qjob.sell_planet or "?", marker))
+                    end
                 end
             end
         end
 
-        -- Commodity queue (exchange mode)
-        if F2T_HAULING_STATE.commodity_queue and #F2T_HAULING_STATE.commodity_queue > 0 then
-            cecho(string.format("\n<white>Commodity Queue:<reset> <cyan>%d/%d<reset>\n",
-                F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue))
-            for i, comm in ipairs(F2T_HAULING_STATE.commodity_queue) do
-                local marker = i == F2T_HAULING_STATE.queue_index and " <yellow>*<reset>" or ""
-                cecho(string.format("  %d. <cyan>%s<reset> (profit: %d ig/ton)%s\n",
-                    i, comm.commodity, comm.expected_profit, marker))
-            end
-        end
-
-        -- Current commodity
-        if F2T_HAULING_STATE.current_commodity then
-            cecho(string.format("\n<white>Current Commodity:<reset> <cyan>%s<reset>\n",
-                F2T_HAULING_STATE.current_commodity))
-            cecho(string.format("  Expected Profit: <green>%d ig/ton<reset>\n",
-                F2T_HAULING_STATE.expected_profit))
-            cecho(string.format("  Commodity Cycles: <cyan>%d<reset>\n",
-                F2T_HAULING_STATE.commodity_cycles))
-
-            -- Current cycle stats
-            local stats = F2T_HAULING_STATE.current_commodity_stats
-            if stats.lots_bought > 0 or stats.lots_sold > 0 then
-                cecho("  <white>Current Cycle:<reset>\n")
-                if stats.lots_bought > 0 then
-                    cecho(string.format("    Bought: %d lots (cost: %d ig)\n",
-                        stats.lots_bought, stats.total_cost))
+        -- Commodity queue and current commodity (hide during cycle pause - queue is exhausted)
+        if F2T_HAULING_STATE.current_phase ~= "cycle_pausing" then
+            if F2T_HAULING_STATE.commodity_queue and #F2T_HAULING_STATE.commodity_queue > 0 then
+                cecho(string.format("\n<white>Commodity Queue:<reset> <cyan>%d/%d<reset>\n",
+                    F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue))
+                for i, comm in ipairs(F2T_HAULING_STATE.commodity_queue) do
+                    local marker = i == F2T_HAULING_STATE.queue_index and " <yellow>*<reset>" or ""
+                    cecho(string.format("  %d. <cyan>%s<reset> (profit: %d ig/ton)%s\n",
+                        i, comm.commodity, comm.expected_profit, marker))
                 end
-                if stats.lots_sold > 0 then
-                    cecho(string.format("    Sold: %d lots (revenue: %d ig)\n",
-                        stats.lots_sold, stats.total_revenue))
+            end
+
+            if F2T_HAULING_STATE.current_commodity then
+                cecho(string.format("\n<white>Current Commodity:<reset> <cyan>%s<reset>\n",
+                    F2T_HAULING_STATE.current_commodity))
+                cecho(string.format("  Expected Profit: <green>%d ig/ton<reset>\n",
+                    F2T_HAULING_STATE.expected_profit))
+                cecho(string.format("  Commodity Cycles: <cyan>%d<reset>\n",
+                    F2T_HAULING_STATE.commodity_cycles))
+
+                -- Current cycle stats
+                local stats = F2T_HAULING_STATE.current_commodity_stats
+                if stats.lots_bought > 0 or stats.lots_sold > 0 then
+                    cecho("  <white>Current Cycle:<reset>\n")
+                    if stats.lots_bought > 0 then
+                        cecho(string.format("    Bought: %d lots (cost: %d ig)\n",
+                            stats.lots_bought, stats.total_cost))
+                    end
+                    if stats.lots_sold > 0 then
+                        cecho(string.format("    Sold: %d lots (revenue: %d ig)\n",
+                            stats.lots_sold, stats.total_revenue))
+                    end
                 end
             end
         end
@@ -642,6 +734,16 @@ end
 -- Transition to a new phase
 function f2t_hauling_transition(new_phase)
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+        return
+    end
+
+    -- Deferred pause: convert pause_requested to actual pause at phase boundary
+    if F2T_HAULING_STATE.pause_requested then
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
+        F2T_HAULING_STATE.current_phase = new_phase  -- Store NEXT phase for clean resume
+        cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n", new_phase))
+        f2t_debug_log("[hauling] Deferred pause activated at phase: %s", new_phase)
         return
     end
 
@@ -732,6 +834,49 @@ function f2t_hauling_transition(new_phase)
         f2t_hauling_phase_po_sell()
     elseif new_phase == "po_checking_deficits" then
         f2t_hauling_phase_po_check_deficits()
+    -- Planet Owner: next job pseudo-phase (used by deferred pause resume)
+    elseif new_phase == "po_next_job" then
+        f2t_hauling_phase_po_next_job()
+    -- Exchange mode: next commodity pseudo-phase (used by deferred pause resume)
+    elseif new_phase == "next_commodity" then
+        f2t_hauling_next_commodity()
+    -- Cycle pause: resume respects remaining pause time
+    elseif new_phase == "cycle_pausing" then
+        local remaining = 0
+        if F2T_HAULING_STATE.cycle_pause_end_time then
+            remaining = F2T_HAULING_STATE.cycle_pause_end_time - os.time()
+        end
+
+        if remaining > 0 then
+            -- Re-create timer for remaining duration
+            f2t_debug_log("[hauling] Resuming cycle_pausing with %d seconds remaining", remaining)
+            cecho(string.format("\n<green>[hauling]<reset> Resuming pause, <yellow>%d seconds<reset> remaining...\n", remaining))
+
+            if F2T_HAULING_STATE.cycle_pause_timer_id then
+                killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
+            end
+            F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(remaining, function()
+                F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                F2T_HAULING_STATE.cycle_pause_end_time = nil
+                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                    and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                    if F2T_HAULING_STATE.mode == "po" then
+                        f2t_hauling_transition("po_scanning_system")
+                    else
+                        f2t_hauling_transition("analyzing")
+                    end
+                end
+            end)
+        else
+            -- Pause time already elapsed, proceed immediately
+            f2t_debug_log("[hauling] Cycle pause time elapsed, proceeding immediately")
+            F2T_HAULING_STATE.cycle_pause_end_time = nil
+            if F2T_HAULING_STATE.mode == "po" then
+                f2t_hauling_phase_po_scan_system()
+            else
+                f2t_hauling_phase_analyze()
+            end
+        end
     else
         cecho(string.format("\n<red>[hauling]<reset> Unknown phase: %s\n", new_phase))
         f2t_hauling_stop()

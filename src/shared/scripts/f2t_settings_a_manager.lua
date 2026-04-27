@@ -6,23 +6,44 @@
 -- ========================================
 
 -- Component settings definitions
--- Format: [component_name] = {[setting_name] = {description, default, validator_fn}}
+-- Format: [component_name] = {[setting_name] = {description, default, validator_fn, choices, min, max}}
 F2T_SETTINGS_REGISTRY = F2T_SETTINGS_REGISTRY or {}
+
+-- Insertion-order index: F2T_SETTINGS_ORDER[component] = {"setting1", "setting2", ...}
+-- Used by the settings UI to display rows in registration order.
+F2T_SETTINGS_ORDER = F2T_SETTINGS_ORDER or {}
 
 -- Register a setting for a component
 -- component: component name (e.g., "map", "refuel")
 -- setting_name: setting key (e.g., "planet_nav_default")
--- config: {description, default, validator}
+-- config: {description, default, validator, choices, min, max}
 --   - description: user-facing description
 --   - default: default value
 --   - validator: optional function(value) -> boolean, error_msg
+--   - choices: optional array of allowed string values (drives cycle widget in settings UI)
+--   - min, max: optional numeric bounds (drives stepper widget in settings UI when range <= 100)
 function f2t_settings_register(component, setting_name, config)
     F2T_SETTINGS_REGISTRY[component] = F2T_SETTINGS_REGISTRY[component] or {}
+    F2T_SETTINGS_ORDER[component]    = F2T_SETTINGS_ORDER[component]    or {}
+
     F2T_SETTINGS_REGISTRY[component][setting_name] = {
         description = config.description or "",
-        default = config.default,
-        validator = config.validator
+        default     = config.default,
+        validator   = config.validator,
+        choices     = config.choices,
+        min         = config.min,
+        max         = config.max,
     }
+
+    -- Track insertion order; guard against duplicate registration on package reload.
+    local already = false
+    for _, n in ipairs(F2T_SETTINGS_ORDER[component]) do
+        if n == setting_name then already = true; break end
+    end
+    if not already then
+        table.insert(F2T_SETTINGS_ORDER[component], setting_name)
+    end
+
     f2t_debug_log("[settings] Registered: %s.%s (default: %s)", component, setting_name, tostring(config.default))
 end
 

@@ -106,3 +106,51 @@ jobs:
           prerelease: false
           files: build/*.mpackage
           fail_on_unmatched_files: true
+
+      - name: Submit to Mudlet package repository
+        if: steps.version.outputs.is_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MUDLET_REPO_PAT }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          OWNER="${{ github.repository_owner }}"
+          BRANCH="fed2-tools-v${VERSION}"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone the pre-forked repo (fork must exist at $OWNER/mudlet-package-repository)
+          git clone --depth=1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/mudlet-package-repository.git" \
+            mudlet-repo
+
+          cd mudlet-repo
+
+          # Create a versioned branch so each release gets its own PR
+          git checkout -b "$BRANCH"
+
+          # Copy package using the canonical name (no version suffix in filename)
+          cp "$GITHUB_WORKSPACE/build/fed2-tools.mpackage" "packages/fed2-tools.mpackage"
+
+          git add "packages/fed2-tools.mpackage"
+          git commit -m "Update fed2-tools to v${VERSION}"
+          git push origin "$BRANCH"
+
+          # Open a PR against the upstream Mudlet repo (skip if one already exists)
+          EXISTING=$(gh pr list \
+            --repo Mudlet/mudlet-package-repository \
+            --head "${OWNER}:${BRANCH}" \
+            --json number --jq 'length')
+
+          if [ "$EXISTING" -eq 0 ]; then
+            gh pr create \
+              --repo Mudlet/mudlet-package-repository \
+              --head "${OWNER}:${BRANCH}" \
+              --base main \
+              --title "Update fed2-tools to v${VERSION}" \
+              --body "## fed2-tools v${VERSION}
+
+          Automated submission from [${GITHUB_REPOSITORY}](https://github.com/${GITHUB_REPOSITORY}) release [v${VERSION}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}).
+
+          **Description:** Federation 2 Community Edition tools collection for Mudlet."
+          fi

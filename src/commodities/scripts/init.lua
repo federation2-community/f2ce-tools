@@ -9,6 +9,7 @@ f2t_settings.commodities = f2t_settings.commodities or {}
 f2t_settings_register("commodities", "results_count", {
     description = "Number of top exchanges to show in price tables",
     default = 5,
+    min = 1, max = 20,
     validator = function(value)
         local num = tonumber(value)
         if not num then

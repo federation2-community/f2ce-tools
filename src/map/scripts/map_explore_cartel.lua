@@ -90,6 +90,15 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
             return { auto_resume = true }
         end)
 
+        -- Register with stamina monitor for this session
+        f2t_stamina_register_client({
+            pause_callback = f2t_map_explore_pause,
+            resume_callback = f2t_map_explore_resume,
+            check_active = function()
+                return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
+            end
+        })
+
         F2T_MAP_EXPLORE_STATE.active = true
         F2T_MAP_EXPLORE_STATE.mode = "cartel"
         F2T_MAP_EXPLORE_STATE.cartel_name = cartel_name
@@ -228,6 +237,11 @@ function f2t_map_explore_cartel_next_system()
 
     -- Accept both "cartel" (standalone) and "galaxy" (nested) modes
     if F2T_MAP_EXPLORE_STATE.mode ~= "cartel" and F2T_MAP_EXPLORE_STATE.mode ~= "galaxy" then
+        return
+    end
+
+    -- Deferred pause: pause between systems
+    if f2t_map_explore_check_deferred_pause() then
         return
     end
 
@@ -398,6 +412,8 @@ function f2t_map_explore_cartel_abort()
     end
 
     -- Standalone mode - full reset
+    f2t_map_clear_nav_owner()
+    f2t_stamina_unregister_client()
     F2T_MAP_EXPLORE_STATE.active = false
     F2T_MAP_EXPLORE_STATE.mode = nil
     F2T_MAP_EXPLORE_STATE.cartel_name = nil

@@ -88,6 +88,16 @@ function f2t_hauling_next_commodity()
         return
     end
 
+    -- Deferred pause: pause between commodities
+    if F2T_HAULING_STATE.pause_requested then
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
+        F2T_HAULING_STATE.current_phase = "next_commodity"
+        cecho("\n<green>[hauling]<reset> Paused between commodities\n")
+        f2t_debug_log("[hauling] Deferred pause activated between commodities")
+        return
+    end
+
     -- Check if graceful stop was requested
     if F2T_HAULING_STATE.stopping then
         f2t_debug_log("[hauling] Graceful stop complete, cargo sold")
@@ -104,42 +114,66 @@ function f2t_hauling_next_commodity()
         f2t_debug_log("[hauling] Commodity queue exhausted, re-analyzing")
 
         -- Check if we should pause before re-analyzing
-        local cycle_pause = f2t_settings_get("hauling", "cycle_pause") or 0
+        local cycle_pause = tonumber(f2t_settings_get("hauling", "cycle_pause")) or 0
         local use_safe_room = f2t_settings_get("hauling", "use_safe_room")
         local safe_room = f2t_settings_get("shared", "safe_room")
 
+        -- Kill any stale cycle pause timer from a previous cycle or session
+        if F2T_HAULING_STATE.cycle_pause_timer_id then
+            killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
+            F2T_HAULING_STATE.cycle_pause_timer_id = nil
+        end
+
         if cycle_pause > 0 then
+            F2T_HAULING_STATE.current_phase = "cycle_pausing"
+
             if use_safe_room and safe_room and safe_room ~= "" then
                 -- Navigate to safe room, pause, then return and continue
                 local current_location = gmcp.room and gmcp.room.info and gmcp.room.info.num
                 if current_location then
                     F2T_HAULING_STATE.cycle_pause_return_location = current_location
                     cecho(string.format("\n<green>[hauling]<reset> All commodities traded, going to safe room for <yellow>%d seconds<reset>...\n", cycle_pause))
-                    f2t_debug_log("[hauling] Navigating to safe room for cycle pause, will return to room: %s", current_location)
+                    f2t_debug_log("[hauling] Navigating to safe room for cycle pause (%d seconds), will return to room: %s", cycle_pause, current_location)
 
                     f2t_map_navigate(safe_room)
 
                     -- After navigation completes, wait, then return
                     tempTimer(3, function()
-                        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+                        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                            and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                            if F2T_HAULING_STATE.pause_requested then
+                                f2t_hauling_transition("analyzing")
+                                return
+                            end
                             cecho(string.format("\n<green>[hauling]<reset> Pausing at safe room for <yellow>%d seconds<reset>...\n", cycle_pause))
-                            tempTimer(cycle_pause, function()
-                                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+                            F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
+                            F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                                F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                                F2T_HAULING_STATE.cycle_pause_end_time = nil
+                                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                                    and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
                                     local return_to = F2T_HAULING_STATE.cycle_pause_return_location
                                     if return_to then
-                                        cecho(string.format("\n<green>[hauling]<reset> Returning to previous location: <cyan>%s<reset>\n", return_to))
+                                        if not F2T_HAULING_STATE.pause_requested then
+                                            cecho(string.format("\n<green>[hauling]<reset> Returning to previous location: <cyan>%s<reset>\n", return_to))
+                                        end
                                         f2t_debug_log("[hauling] Returning to room: %s", return_to)
                                         f2t_map_navigate(return_to)
 
                                         -- Wait for return navigation, then re-analyze
                                         tempTimer(3, function()
-                                            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
-                                                cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                                                and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                                                if not F2T_HAULING_STATE.pause_requested then
+                                                    cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                                end
                                                 f2t_hauling_transition("analyzing")
                                             end
                                         end)
                                     else
-                                        cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                        if not F2T_HAULING_STATE.pause_requested then
+                                            cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                        end
                                         f2t_hauling_transition("analyzing")
                                     end
                                     F2T_HAULING_STATE.cycle_pause_return_location = nil
@@ -150,9 +184,15 @@ function f2t_hauling_next_commodity()
                 else
                     -- Can't determine current location, pause in place
                     cecho(string.format("\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> before refreshing...\n", cycle_pause))
-                    tempTimer(cycle_pause, function()
-                        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
-                            cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                    F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
+                    F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                        F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                        F2T_HAULING_STATE.cycle_pause_end_time = nil
+                        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                            and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                            if not F2T_HAULING_STATE.pause_requested then
+                                cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                            end
                             f2t_hauling_transition("analyzing")
                         end
                     end)
@@ -160,9 +200,15 @@ function f2t_hauling_next_commodity()
             else
                 -- No safe room, pause in place
                 cecho(string.format("\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> before refreshing...\n", cycle_pause))
-                tempTimer(cycle_pause, function()
-                    if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
-                        cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
+                F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                    F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                    F2T_HAULING_STATE.cycle_pause_end_time = nil
+                    if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                        and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
+                        if not F2T_HAULING_STATE.pause_requested then
+                            cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                        end
                         f2t_hauling_transition("analyzing")
                     end
                 end)
@@ -538,6 +584,44 @@ function f2t_hauling_phase_buy()
     if not F2T_HAULING_STATE.current_commodity then
         cecho("\n<red>[hauling]<reset> No commodity selected\n")
         f2t_hauling_stop()
+        return
+    end
+
+    -- Check if cargo hold has leftover cargo from a previous failed sell
+    local existing_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
+    if existing_cargo and #existing_cargo > 0 then
+        F2T_HAULING_STATE.cargo_clear_attempts = (F2T_HAULING_STATE.cargo_clear_attempts or 0) + 1
+        if F2T_HAULING_STATE.cargo_clear_attempts > 2 then
+            cecho(string.format("\n<red>[hauling]<reset> Failed to clear cargo after %d attempts, stopping\n",
+                F2T_HAULING_STATE.cargo_clear_attempts - 1))
+            f2t_debug_log("[hauling] Cargo clear attempts exhausted (%d), stopping", F2T_HAULING_STATE.cargo_clear_attempts - 1)
+            f2t_hauling_do_stop()
+            return
+        end
+        cecho(string.format("\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
+            #existing_cargo))
+        f2t_debug_log("[hauling] Cargo hold has %d lots, selling before buying (attempt %d)", #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
+        f2t_bulk_sell_start(nil, nil, function(commodity_sold, lots_sold, status, error_msg)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            local still_has_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
+            if still_has_cargo and #still_has_cargo > 0 then
+                cecho(string.format("\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
+                f2t_debug_log("[hauling] Jettisoning %d unsellable lots", #still_has_cargo)
+                f2t_hauling_jettison_cargo(function()
+                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                        return
+                    end
+                    -- Retry buy (counter already incremented)
+                    f2t_hauling_transition("buying")
+                end)
+                return
+            end
+            -- Cargo clear, reset counter and proceed
+            F2T_HAULING_STATE.cargo_clear_attempts = 0
+            f2t_hauling_transition("buying")
+        end)
         return
     end
 

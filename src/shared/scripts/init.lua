@@ -1,6 +1,13 @@
 -- Initialize fed2-tools shared utilities
 -- This script loads first and sets up core functionality
 
+-- generic_mapper conflicts with fed2-tools map system.
+-- Uninstall it automatically if present.
+if table.contains(getPackages(), "generic_mapper") then
+    cecho("\n<yellow>[fed2-tools]<reset> Removing incompatible package: generic_mapper\n")
+    uninstallPackage("generic_mapper")
+end
+
 -- ========================================
 -- Persistent Settings File Path
 -- ========================================

@@ -8,6 +8,16 @@ function f2t_hauling_phase_ac_fetch_jobs()
         return false
     end
 
+    -- Deferred pause: pause between AC jobs
+    if F2T_HAULING_STATE.pause_requested then
+        F2T_HAULING_STATE.pause_requested = false
+        F2T_HAULING_STATE.paused = true
+        F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
+        cecho("\n<green>[hauling]<reset> Paused between AC jobs\n")
+        f2t_debug_log("[hauling/ac] Deferred pause activated between jobs")
+        return false
+    end
+
     f2t_debug_log("[hauling/ac] Starting fetch jobs phase")
 
     -- Check if we've reached 500 credits (stop condition)
@@ -61,7 +71,8 @@ function f2t_hauling_phase_ac_select_job()
     if not jobs or #jobs == 0 then
         cecho("\n<red>[hauling]<reset> No AC jobs available, retrying in 10 seconds...\n")
         tempTimer(10, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == "ac_selecting_job" then
                 f2t_hauling_phase_ac_fetch_jobs()
             end
         end)
@@ -89,7 +100,8 @@ function f2t_hauling_phase_ac_select_job()
     if not job then
         cecho("\n<red>[hauling]<reset> No suitable jobs for ship capacity, retrying in 10 seconds...\n")
         tempTimer(10, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == "ac_selecting_job" then
                 f2t_hauling_phase_ac_fetch_jobs()
             end
         end)
@@ -442,7 +454,8 @@ function f2t_hauling_phase_ac_deliver()
 
             -- Wait briefly for confirmation, then continue
             tempTimer(1.0, function()
-                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                    and F2T_HAULING_STATE.current_phase == "ac_delivering" then
                     cecho("\n<green>[hauling]<reset> Loan repaid! You'll now earn more from hauling.\n")
                     -- Continue to fetch new jobs
                     F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"

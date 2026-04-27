@@ -292,12 +292,6 @@ function f2t_map_explore_system_start_with_planets(system_name, system_mode, exp
     local room_name = getRoomName(F2T_MAP_CURRENT_ROOM_ID) or "Unknown"
     cecho(string.format("  Starting room: <white>%s<reset> (ID: %d)\n", room_name, F2T_MAP_CURRENT_ROOM_ID))
 
-    -- Start stamina monitoring if enabled (only in standalone mode)
-    local stamina_threshold = f2t_settings_get("shared", "stamina_threshold") or 0
-    if not on_complete_callback and stamina_threshold > 0 then
-        f2t_stamina_start_monitoring()
-    end
-
     -- Check if brief mode already found all planets (skip Phase 1)
     if system_mode == "brief" and
        F2T_MAP_EXPLORE_STATE.expected_planets_remaining and
@@ -556,6 +550,11 @@ function f2t_map_explore_system_next_planet()
     end
 
     if F2T_MAP_EXPLORE_STATE.mode ~= "system" and F2T_MAP_EXPLORE_STATE.mode ~= "cartel" then
+        return
+    end
+
+    -- Deferred pause: pause between planets
+    if f2t_map_explore_check_deferred_pause() then
         return
     end
 
