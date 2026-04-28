@@ -52,7 +52,7 @@ After installing, follow these steps to get the most out of fed2-tools.
 
 ### 1. Import a Base Map
 
-The package comes with bundled with two starter maps to help you get started. Additionally, a third map including shuttlepads and exchanges for all planets in the galaxy is available in this repository.
+The package comes with bundled with two starter maps to help you get started. Additionally, a third map including shuttlepads and exchanges for all planets in the galaxy is available in this repository. These maps are located in the \fed2-tools\shared directory in your Mudlet profile.
 
 |Map|Description|
 |--|--|
@@ -66,7 +66,7 @@ To import:
 map import
 ```
 
-Select the map JSON file you wish to import, then confirm with:
+Select the map JSON file you wish to import (in \fed2-tools\shared), then confirm with:
 
 ```
 map confirm
