@@ -87,6 +87,15 @@ function ui_update_for_rank()
     else
         UI.tab_bottom_right:removeTab("Trading")
     end
+
+    -- Company: Industrialist and above
+    if f2t_is_rank_or_above("Industrialist") then
+        if not f2t_has_value(UI.tab_bottom_right.tabs, "Company") then
+            UI.tab_bottom_right:addTab("Company", 3)
+        end
+    else
+        UI.tab_bottom_right:removeTab("Company")
+    end
 end
 
 function ui_remote_access_status()
@@ -171,6 +180,7 @@ function ui_build()
     ui_build_movement()
     ui_hauling()
     ui_trading()
+    ui_company()
     ui_update_for_rank()
     ui_update_header()
     ui_who_init()
@@ -180,10 +190,6 @@ function ui_build()
     ui_built = true
     f2t_debug_log("[ui] ui_build finished")
 
-    -- Run adaptive fit after a short delay to let Geyser settle final pixel sizes.
-    tempTimer(0.2, function()
-        if ui_adaptive_fit then ui_adaptive_fit() end
-    end)
 end
 
 function ui_register_trigger()
@@ -224,6 +230,7 @@ function ui_register_event()
     f2t_ui_register_event("sysConnectionEvent"                 , "ui_chat_on_connect")
     f2t_ui_register_event("sysDisconnectionEvent"              , "ui_chat_on_disconnect")
     f2t_ui_register_event("gmcp.char.vitals"                   , "ui_who_on_login_vitals")
+    f2t_ui_register_event("gmcp.char.company"                  , "ui_on_company_gmcp")
 
     ui_evented = true
     f2t_debug_log("[ui] registered events")

@@ -80,7 +80,8 @@ function ui_build_tabs()
         UI.vbox_right
     )
 
-    -- Place Hauling/Trading tabs on the bottom of the Right Navigation Frame (default location)
+    -- Place Hauling/Trading/Company tabs on the bottom of the Right Navigation Frame (default location)
+    -- Visibility of each tab is managed by ui_update_for_rank() in ui_zLast.lua.
     UI.tab_bottom_right = Adjustable.TabWindow:new(
         {
             name             = "UI.tab_bottom_right",
@@ -89,7 +90,7 @@ function ui_build_tabs()
             width            = "100%",
             height           = "100%",
             tabBarHeight     = "8%",
-            tabs             = {"Hauling","Trading"},
+            tabs             = {"Hauling","Trading","Company"},
             activeTabStyle   = UI.style.active_tab_css,
             inactiveTabStyle = UI.style.inactive_tab_css,
             notifyTabStyle   = UI.style.notify_inactive_tab_css,

@@ -358,7 +358,6 @@ function ui_on_container_reposition(event, container_name)
     -- Keep the gear icon at the correct corner
     if ui_reposition_gear_icon then ui_reposition_gear_icon() end
 
-    if ui_adaptive_font_only then ui_adaptive_font_only() end
 end
 
 -- Handle window resize
@@ -400,7 +399,6 @@ function ui_on_window_resize()
     -- Update state after resize
     ui_capture_state()
 
-    if ui_adaptive_fit then ui_adaptive_fit() end
 end
 
 -- Called from ui_cargo.lua show/hide and after any window reshape.
