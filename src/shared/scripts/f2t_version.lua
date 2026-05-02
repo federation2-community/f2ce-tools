@@ -27,29 +27,31 @@ f2t_settings_register("shared", "update_check_remind_skip", {
 })
 
 function f2t_check_latest_version(silent)
-    -- Ensure latest mpkg repository, silently
-    mpkg.updatePackageList(true)
-
-    local current = mpkg.getInstalledVersion("fed2-tools") or "0.0.0"
-
-    if not silent then cecho(string.format("\n<green>[fed2-tools]<reset> Checking for updates...\n", source)) end
+    if not silent then cecho("\n<green>[fed2-tools]<reset> Checking for updates...\n") end
 
     if not mpkg or not mpkg.ready(true) then
         if not silent then cecho("<red> Error: mpkg repository data not loaded.\n") end
         return
     end
     
-    local pkg = getPackageInfo("fed2-tools")
-    if not pkg then
-        if not silent then cecho("<red> Error: fed2-tools not found in mpkg repository.\n") end
-        return
-    end
+    -- Ensure latest mpkg repository, silently, wait five seconds to have it take effect
+    mpkg.updatePackageList(true)
 
-    if f2t_version_is_newer(mpkg.getRepositoryVersion("fed2-tools"), current) then
-        f2t_trigger_update_dialog(current, mpkg.getRepositoryVersion("fed2-tools"))
-    elseif not silent then
-        cecho("<green> You are up to date.\n")
-    end
+    tempTimer(5, function ()
+        local current = mpkg.getInstalledVersion("fed2-tools") or "0.0.0"
+        local pkg     = getPackageInfo("fed2-tools")
+
+        if not pkg then
+            if not silent then cecho("<red> Error: fed2-tools not found in mpkg repository.\n") end
+            return
+        end
+
+        if f2t_version_is_newer(mpkg.getRepositoryVersion("fed2-tools"), current) then
+            f2t_trigger_update_dialog(current, mpkg.getRepositoryVersion("fed2-tools"))
+        elseif not silent then
+            cecho("<green> You are up to date.\n")
+        end
+    end)
 end
 
 -- Trigger Update Dialog, and get Changelog for versions that are new
@@ -138,4 +140,12 @@ function f2t_startup_check()
 end
 
 -- Register the startup event
-registerAnonymousEventHandler("sysConnectionEvent", "f2t_startup_check")
+F2T_CONNECTION_HANDLER = registerAnonymousEventHandler("sysConnectionEvent", "f2t_startup_check")
+
+-- add a cleanup handler
+registerAnonymousEventHandler("sysUninstall", function(_, pkg)
+    if pkg == "fed2-tools" and F2T_CONNECTION_HANDLER then
+        killAnonymousEventHandler(F2T_CONNECTION_HANDLER)
+        F2T_CONNECTION_HANDLER = nil
+    end
+end)
