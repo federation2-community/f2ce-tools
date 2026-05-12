@@ -111,7 +111,7 @@ function ui_update_local_players_display(players)
         }, entry)
         name_con:cechoLink(
             "<" .. cc .. "><b>" .. name .. "</b><reset>",
-            function() printCmdLine("tb " .. name .. " ") end,
+            function() ui_player_card_show_or_raise_by_name(name) end,
             rank ~= "" and (rank .. " " .. name) or name,
             true
         )

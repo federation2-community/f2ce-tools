@@ -2,6 +2,8 @@
 
 A Mudlet package for [Federation 2 Community Edition](https://federation2.com) that provides mapping, navigation, automated trading, factory management, and quality-of-life improvements.
 
+![fed2-tools screenshot](screenshot.png)
+
 ## Features
 
 | Component | Commands | Description |

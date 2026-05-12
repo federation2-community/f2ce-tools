@@ -34,6 +34,6 @@ elseif line:match("Offer price is") then
 end
 
 ui_tab_notify("Exchange")
+tempLineTrigger(1, 1, [[if getCurrentLine() == "" then deleteLine() end]])
 
 deleteLine()
-tempLineTrigger(1, 1, [[if getCurrentLine() == "" then deleteLine() end]])

@@ -316,7 +316,7 @@ function ui_build_galaxy_dropdown()
     }, UI.galaxy_topbar)
     UI.galaxy_title:setStyleSheet(
         "background-color:transparent; color:#c8c8d0; font-size:11px; font-weight:bold;")
-    UI.galaxy_title:echo("Galaxy Navigator")
+    UI.galaxy_title:echo("🔭 Galaxy Navigator")
 
     -- Refresh (⟳)
     UI.galaxy_refresh_icon = Geyser.Label:new({

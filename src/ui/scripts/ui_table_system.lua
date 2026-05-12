@@ -208,10 +208,20 @@ function ui_table_render_header(table_id)
         end
 
         if col.sortable then
+            local tip = col.header_tooltip
+                and (col.header_tooltip .. " | Click to sort.")
+                or  ("Sort by " .. col.label)
             window:cechoLink(
                 color .. display_text .. "<reset>",
                 function() ui_table_toggle_sort(table_id, col.key) end,
-                "Sort by " .. col.label,
+                tip,
+                true
+            )
+        elseif col.header_tooltip then
+            window:cechoLink(
+                color .. display_text .. "<reset>",
+                function() end,
+                col.header_tooltip,
                 true
             )
         else

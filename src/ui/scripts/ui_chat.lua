@@ -115,14 +115,19 @@ local function _rank_cecho(name)
         if UI.who.name_colors[name] then
             return "<" .. UI.who.name_colors[name] .. ">"
         end
-        -- Case-insensitive fallback (e.g. user typed "thomas", list has "Thomas")
+        -- Case-insensitive fallback
         local lower = name:lower()
         for k, v in pairs(UI.who.name_colors) do
             if k:lower() == lower then return "<" .. v .. ">" end
         end
     end
-    -- Unknown player — request a background who refresh, render as dim_gray for now
-    if ui_who_request_refresh then ui_who_request_refresh() end
+    -- Check persistent DB for offline players
+    if ui_player_db_get then
+        local entry = ui_player_db_get(name)
+        if entry and entry.cecho_color and entry.cecho_color ~= "" then
+            return "<" .. entry.cecho_color .. ">"
+        end
+    end
     return "<dim_gray>"
 end
 
@@ -181,7 +186,7 @@ local function _render_record(r, is_cont, show_ts)
         UI.chat_window:hecho(st.gutter_hex .. "❯❯ ")
         UI.chat_window:cechoLink(
             nc .. "<b>" .. r.from .. "</b><reset>",
-            function() printCmdLine("tb " .. r.from .. " ") end,
+            function() ui_player_card_show_or_raise_by_name(r.from) end,
             hint, true)
         UI.chat_window:cecho(" <dim_gray>»<reset> ")
 
@@ -190,7 +195,7 @@ local function _render_record(r, is_cont, show_ts)
         UI.chat_window:hecho(st.gutter_hex .. "❮❮ ")
         UI.chat_window:cechoLink(
             nc .. "<b>" .. r.from .. "</b><reset>",
-            function() printCmdLine("tb " .. r.from .. " ") end,
+            function() ui_player_card_show_or_raise_by_name(r.from) end,
             hint, true)
         UI.chat_window:cecho(" <dim_gray>»<reset> ")
 
@@ -198,7 +203,7 @@ local function _render_record(r, is_cont, show_ts)
         -- com / say / self_com: "Name » message"
         UI.chat_window:cechoLink(
             nc .. "<b>" .. r.from .. "</b><reset>",
-            function() printCmdLine("tb " .. r.from .. " ") end,
+            function() ui_player_card_show_or_raise_by_name(r.from) end,
             hint, true)
         UI.chat_window:cecho(" <dim_gray>»<reset> ")
     end
@@ -330,6 +335,9 @@ function ui_chat_on_disconnect()
     UI.chat.last_key = nil
     if UI.chat_window then UI.chat_window:hecho(r.line) end
     ui_chat_save()
+    -- Mark all players offline in the DB and force-save (they're all gone)
+    if ui_player_db_mark_all_offline then ui_player_db_mark_all_offline() end
+    if ui_player_db_save_forced      then ui_player_db_save_forced()      end
 end
 
 -- ── Init ──────────────────────────────────────────────────────────────────

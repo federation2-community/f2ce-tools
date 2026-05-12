@@ -51,7 +51,7 @@ function ui_build_quick_buttons()
     )
 
     UI.button_galaxy:setStyleSheet(UI.style.button_css)
-    UI.button_galaxy:echo("<center>Galaxy</center>")
+    UI.button_galaxy:echo("<center>🔭 Galaxy</center>")
     UI.button_galaxy:setClickCallback("ui_toggle_galaxy")
 end
 

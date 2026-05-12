@@ -697,14 +697,22 @@ function Invoke-Build {
     $configLua = Join-Path $BuildDir "config.lua"
     $configVersion = if ($Version) { $Version } else { "dev" }
     $configCreated = (Get-Date -Format "yyyy-MM-dd")
-    @"
+    $configContent = @"
 mpackage = "$($config.name)"
 title = "$($config.title)"
 version = "$configVersion"
 created = "$configCreated"
 author = "$($config.author)"
 description = "$($config.description)"
-"@ | Set-Content -Path $configLua -Encoding UTF8
+"@
+    # Include icon filename if project declares a screenshot and the file exists.
+    # reindex.lua extracts it from .mudlet/Icon/<name> inside the mpackage.
+    $iconFile = if ($config.icon -and (Test-Path $config.icon)) { $config.icon } else { $null }
+    if ($iconFile) {
+        $iconLeaf = Split-Path $iconFile -Leaf
+        $configContent += "`nicon = `"$iconLeaf`""
+    }
+    $configContent | Set-Content -Path $configLua -Encoding UTF8
     Write-Host "Generated config: $configLua" -ForegroundColor Green
 
     # Copy resource files to build directory
@@ -781,6 +789,17 @@ description = "$($config.description)"
     } else {
         # No resources, simple zip
         Compress-Archive -Path $filesToZip.FullName -DestinationPath $packageFile -Force
+    }
+
+    # Bundle icon inside mpackage at .mudlet/Icon/<filename> so reindex.lua can extract it
+    if ($iconFile) {
+        $iconLeaf = Split-Path $iconFile -Leaf
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::Open($packageFile, 'Update')
+        $entryPath = ".mudlet/Icon/$iconLeaf"
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $iconFile, $entryPath) | Out-Null
+        $zip.Dispose()
+        Write-Host "  - Bundled icon: $entryPath" -ForegroundColor Gray
     }
 
     # Clean up copied map files from src/shared/resources

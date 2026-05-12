@@ -90,7 +90,7 @@ function ui_build_tabs()
             width            = "100%",
             height           = "100%",
             tabBarHeight     = "8%",
-            tabs             = {"Hauling","Trading","Company"},
+            tabs             = {"Hauling","Trading","Company","Futures"},
             activeTabStyle   = UI.style.active_tab_css,
             inactiveTabStyle = UI.style.inactive_tab_css,
             notifyTabStyle   = UI.style.notify_inactive_tab_css,
@@ -228,25 +228,30 @@ function ui_build_tab_content()
     UI.chat_ts_btn:setClickCallback(function() ui_chat_toggle_timestamps() end)
 
     -- ── Who tab ───────────────────────────────────────────────────────────
-    -- Header label (leaves 24px on the right for the refresh button).
+    -- Header leaves 44px on the right for the Online/All toggle button.
     UI.who_header = Geyser.Label:new({
         name = "UI.who_header",
         x = "0%", y = "0",
-        width = "-24", height = "20",
+        width = "-46", height = "20",
     }, UI.tab_top_left.Whocenter)
     UI.who_header:setStyleSheet(UI.style.header_label_css)
     UI.who_header:echo("  👥  Who's Online")
 
-    -- Refresh button.
-    UI.who_refresh_btn = Geyser.Label:new({
-        name = "UI.who_refresh_btn",
-        x = "-22", y = "2",
-        width = "20", height = "16",
+    -- Online / All toggle button
+    UI.who_toggle_btn = Geyser.Label:new({
+        name = "UI.who_toggle_btn",
+        x = "-44", y = "2",
+        width = "42", height = "16",
     }, UI.tab_top_left.Whocenter)
-    UI.who_refresh_btn:echo("<center>⟳</center>")
-    UI.who_refresh_btn:setStyleSheet(UI.style.button_css)
-    UI.who_refresh_btn:setToolTip("Refresh who list")
-    UI.who_refresh_btn:setClickCallback(function() ui_who_refresh() end)
+    UI.who_toggle_btn:setStyleSheet([[
+        QLabel{ background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
+                border-radius:3px; border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255); font-size:9px; font-weight:bold; }
+        QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
+    ]])
+    UI.who_toggle_btn:echo("<center>Online</center>")
+    UI.who_toggle_btn:setToolTip("Toggle Online / All known players")
+    UI.who_toggle_btn:setClickCallback(function() ui_who_toggle_view() end)
 
     -- MiniConsole for the table renderer — sits below the 21px header.
     UI.who_window = Geyser.MiniConsole:new({
@@ -347,5 +352,44 @@ function ui_build_tab_content()
             color     = "black",
         },
         UI.trading_container
+    )
+
+    -- put futures container in futures tab
+    UI.futures_container = Geyser.Container:new(
+        {
+            name   = "UI.futures_container",
+            x      = "0%",
+            y      = "0%",
+            width  = "100%",
+            height = "100%",
+        },
+        UI.tab_bottom_right.Futurescenter
+    )
+
+    -- Button bar at top
+    UI.futures_button_bar = Geyser.HBox:new(
+        {
+            name   = "UI.futures_button_bar",
+            x      = "0%",
+            y      = "0%",
+            width  = "100%",
+            height = "25px",
+        },
+        UI.futures_container
+    )
+
+    UI.futures_window = Geyser.MiniConsole:new(
+        {
+            name      = "UI.futures_window",
+            x         = "0%",
+            y         = "25px",
+            width     = "100%",
+            height    = "100%-25px",
+            autoWrap  = true,
+            scrollBar = true,
+            fontSize  = 12,
+            color     = "black",
+        },
+        UI.futures_container
     )
 end

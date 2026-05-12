@@ -158,19 +158,22 @@ function ui_update_show_dialog(current_version, new_version)
     --   136    : MiniConsole starts        (height = console_h)
     --   +10    : gap
     --   +1     : footer divider
-    --   +13    : gap
+    --   +14    : gap
+    --   +34    : update note label (2 lines)
+    --   +8     : gap
     --   +32    : buttons
     --   +12    : bottom padding
-    -- Total inner = 136 + console_h + 68 = 204 + console_h
-    -- Total outer = inner + 4           = 208 + console_h
+    -- Total inner = 136 + console_h + 111 = 247 + console_h
+    -- Total outer = inner + 4             = 251 + console_h
 
     local needed_con_h = _estimate_console_h()
-    local max_con_h    = math.floor(sh * 0.8) - 208
+    local max_con_h    = math.floor(sh * 0.8) - 251
     local console_h    = math.min(needed_con_h, math.max(60, max_con_h))
 
-    local dh    = 208 + console_h
+    local dh    = 251 + console_h
     local div_y = 136 + console_h + 10
-    local btn_y = div_y + 14
+    local note_y = div_y + 14
+    local btn_y = note_y + 42   -- 34px note + 8px gap
 
     local cx = math.floor((sw - dw) / 2)
     local cy = math.floor((sh - dh) / 2)
@@ -244,6 +247,8 @@ function ui_update_show_dialog(current_version, new_version)
         color     = "black",
     }, _in)
 
+    clearWindow(UI.update_console.name)
+
     if F2T_CHANGELOG and #F2T_CHANGELOG > 0 then
         for _, entry in ipairs(F2T_CHANGELOG) do
             UI.update_console:hecho("#73de94[ v" .. entry.version .. " ]\n")
@@ -263,6 +268,13 @@ function ui_update_show_dialog(current_version, new_version)
     }, _in)
     div2:setStyleSheet("background-color: rgba(255,255,255,0.1); border:none;")
 
+    -- ── "Update Note:" label ───────────────────────────────────────────────────
+    local unlbl = Geyser.Label:new({
+        name="f2t_upd_unlbl_"..n, x="3%", y=note_y, width="94%", height=34,
+    }, _in)
+    unlbl:setStyleSheet(_CSS_SUB)
+    unlbl:echo("<b>Note:</b> When updating, it is recommended to close the session and<br>reopen it. Not all elements redraw as expected.")
+    
     -- ── Buttons ───────────────────────────────────────────────────────────────
     local btn_never = Geyser.Label:new({
         name="f2t_upd_btn_nv_"..n, x="2%", y=btn_y, width="28%", height=32,

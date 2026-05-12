@@ -37,6 +37,8 @@ Mudlet tools collection for Federation 2 Community Edition (https://federation2.
 
 **Key Concept**: Components are independent tools that get their own folder in Mudlet.
 
+**Federation 2 Game Reference**: The full game guide is stored locally at `src/shared/resources/fed2_guide.txt` (scraped from https://federation2.com/guide/, the authoritative source). The web version is not directly indexable, so always use Grep + Read on the local file when answering questions about game mechanics, commands, ranks, trading, futures, factories, planets, or any other in-game systems.
+
 ## Project Structure
 
 ```

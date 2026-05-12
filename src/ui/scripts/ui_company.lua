@@ -925,8 +925,13 @@ function ui_company()
     }, UI.co_sec_financials)
     _init_shareholder_table()
 
-    -- Activate overview; always fetch fresh data on init
     _show_section("overview")
+end
 
-    tempTimer(4, function() ui_company_refresh() end)
+function ui_company_on_connect()
+    tempTimer(5, function()
+        if UI.co_ov_win and f2t_is_rank_or_above("Industrialist") then
+            ui_company_refresh()
+        end
+    end)
 end
