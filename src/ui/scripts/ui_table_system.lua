@@ -81,7 +81,11 @@ function ui_table_set_data(table_id, data)
     end
 
     UI.tables[table_id].data = data
-    ui_table_render(table_id)
+    if UI.tables[table_id].scrollbox then
+        ui_table_render_scrollbox(table_id)
+    else
+        ui_table_render(table_id)
+    end
 end
 
 function ui_table_clear(table_id)
@@ -183,7 +187,11 @@ function ui_table_toggle_sort(table_id, column_key)
         end
     end
 
-    ui_table_render(table_id)
+    if tbl.scrollbox then
+        ui_table_render_scrollbox(table_id)
+    else
+        ui_table_render(table_id)
+    end
 end
 
 -- =============================================================================
@@ -369,7 +377,9 @@ function ui_table_render(table_id)
         return
     end
 
-    clearWindow(tbl.window.name)
+    local win_name = tbl.window.name
+
+    clearWindow(win_name)
 
     if #tbl.data == 0 then
         tbl.window:cecho("No data available.\n")
@@ -384,7 +394,6 @@ function ui_table_render(table_id)
 
         -- Add row separator (except after last row)
         if i < #tbl.data and tbl.separators.row then
-            -- Calculate total width
             local total_width = 0
             for j, col in ipairs(tbl.columns) do
                 total_width = total_width + (col.width or 0)
@@ -394,12 +403,179 @@ function ui_table_render(table_id)
                 end
             end
 
-            -- Render row separator
             if type(tbl.separators.row) == "string" then
                 local sep_char = tbl.separators.row
                 local repeated = string.rep(sep_char, math.ceil(total_width / #sep_char))
                 tbl.window:cecho(repeated:sub(1, total_width) .. "\n")
             end
         end
+    end
+end
+
+-- =============================================================================
+-- SCROLLBOX RENDERING  —  Label-based, preserves scroll position
+-- =============================================================================
+--
+-- Usage:
+--   1. ui_table_create("my_table", nil, cols, nil)   ← nil window for scrollbox mode
+--   2. ui_table_set_scrollbox("my_table", content_label, content_w_px, row_h_px)
+--   3. (optional) store header Labels: UI.tables["my_table"].scrollbox.col_hdrs = hdrs
+--   4. ui_table_set_data("my_table", data)           ← auto-dispatches to scrollbox render
+--
+-- Column definition extras for scrollbox mode:
+--   scrollbox_pct  = 30     -- column width as % of content label (must sum to 100)
+--   render_label   = function(value, row, cell_label, col) end
+--                   -- cell_label is a pre-sized Geyser.Label; call echo/setStyleSheet/
+--                   -- setClickCallback on it (or add children).  Omit for plain text.
+
+local _SB_HDR_CSS = [[
+    QLabel {
+        background-color: transparent; border: none;
+        color: rgba(160,160,185,220);
+        font-size: 10pt; font-weight: bold;
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 4px;
+    }
+    QLabel::hover { color: white; }
+]]
+local _SB_HDR_ACTIVE_CSS = [[
+    QLabel {
+        background-color: transparent; border: none;
+        color: rgba(120,230,120,240);
+        font-size: 10pt; font-weight: bold;
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 4px;
+    }
+    QLabel::hover { color: rgba(180,255,180,255); }
+]]
+local _SB_CELL_CSS = [[
+    QLabel {
+        background-color: transparent; border: none;
+        padding: 0 3px; color: #c8c8c8;
+    }
+]]
+
+-- Configure scrollbox mode for a table already created with ui_table_create.
+-- content_label : permanent Geyser.Label inside the ScrollBox (never destroyed, only resized)
+-- content_w     : pixel width (ScrollBox width minus scrollbar, ~17px)
+-- row_h         : pixel height per row
+function ui_table_set_scrollbox(table_id, content_label, content_w, row_h)
+    if not UI.tables[table_id] then return end
+    UI.tables[table_id].scrollbox = {
+        content_label = content_label,
+        content_w     = content_w,
+        row_h         = row_h,
+        rows          = {},
+        epoch         = 0,
+        col_hdrs      = nil,   -- optional; set to {key → Label} to auto-refresh sort indicators
+    }
+end
+
+-- Update column header Label styles to reflect current sort state.
+-- col_hdrs : {column_key → Geyser.Label}
+function ui_table_update_scrollbox_header(table_id, col_hdrs)
+    local tbl = UI.tables[table_id]
+    if not tbl or not col_hdrs then return end
+    local active = tbl.sort.column
+    local asc    = tbl.sort.ascending
+    for _, col in ipairs(tbl.columns) do
+        local lbl = col_hdrs[col.key]
+        if lbl then
+            if col.key == active then
+                lbl:setStyleSheet(_SB_HDR_ACTIVE_CSS)
+                lbl:echo(col.label .. (asc and " ▲" or " ▼"))
+            else
+                lbl:setStyleSheet(_SB_HDR_CSS)
+                lbl:echo(col.label)
+            end
+        end
+    end
+end
+
+function ui_table_render_scrollbox(table_id)
+    local tbl = UI.tables[table_id]
+    if not tbl or not tbl.scrollbox then return end
+    local sb = tbl.scrollbox
+    if not sb.content_label then return end
+
+    local cw    = sb.content_w
+    local row_h = sb.row_h
+
+    if not tbl.data or #tbl.data == 0 then
+        for i = 1, #sb.rows do sb.rows[i]:hide() end
+        sb.content_label:resize(cw, math.max(200, 4))
+        if sb.col_hdrs then ui_table_update_scrollbox_header(table_id, sb.col_hdrs) end
+        return
+    end
+
+    ui_table_sort(table_id)
+
+    -- Compute column pixel widths from scrollbox_pct; last column fills remainder
+    local col_ws = {}
+    local used   = 0
+    for i, col in ipairs(tbl.columns) do
+        if i < #tbl.columns then
+            local w = math.floor(cw * (col.scrollbox_pct or 0) / 100)
+            col_ws[i] = w
+            used = used + w
+        else
+            col_ws[i] = math.max(1, cw - used)
+        end
+    end
+
+    local data_len = #tbl.data
+
+    for i, row in ipairs(tbl.data) do
+        local y = (i - 1) * row_h
+        local row_lbl = sb.rows[i]
+
+        if not row_lbl then
+            -- Create row label and its cells for the first time
+            row_lbl = Geyser.Label:new({
+                name   = string.format("sb_%s_row_%d", table_id, i),
+                x = 0, y = y, width = cw, height = row_h,
+            }, sb.content_label)
+            row_lbl:setStyleSheet(
+                "background-color:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.06);")
+            row_lbl.cells = {}
+            local x = 0
+            for j, col in ipairs(tbl.columns) do
+                local cell = Geyser.Label:new({
+                    name   = string.format("sb_%s_row_%d_c%d", table_id, i, j),
+                    x = x, y = 0, width = col_ws[j], height = row_h,
+                }, row_lbl)
+                cell:setStyleSheet(_SB_CELL_CSS)
+                row_lbl.cells[j] = cell
+                x = x + col_ws[j]
+            end
+            sb.rows[i] = row_lbl
+        else
+            -- Reuse existing label: ensure it is visible at correct position
+            row_lbl:move(0, y)
+            row_lbl:show()
+        end
+
+        -- Update cell content (applies to both new and reused rows)
+        for j, col in ipairs(tbl.columns) do
+            local cell = row_lbl.cells[j]
+            if cell then
+                if col.render_label then
+                    col.render_label(row[col.key], row, cell, col)
+                else
+                    cell:echo(tostring(row[col.key] or ""))
+                end
+            end
+        end
+    end
+
+    -- Hide pool rows that exceed current data length
+    for i = data_len + 1, #sb.rows do
+        sb.rows[i]:hide()
+    end
+
+    sb.content_label:resize(cw, math.max(data_len * row_h + 4, 200))
+
+    if sb.col_hdrs then
+        ui_table_update_scrollbox_header(table_id, sb.col_hdrs)
     end
 end

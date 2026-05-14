@@ -10,6 +10,7 @@ UI.who = UI.who or {
     staff_count   = 0,
     name_colors   = {},   -- name → cecho color string  (shared with ui_chat)
     name_rawlines = {},   -- name → summary line         (shared with ui_chat)
+    connected     = false,
 }
 
 -- Each open contact card lives here; keyed by card generation number.
@@ -87,13 +88,59 @@ local function _color_for(row)
     return RANK_COLOR[row.rank] or RANK_COLOR_DEFAULT
 end
 
+-- ── Label-row color helpers (cecho name → CSS hex) ────────────────────────────
+local _CC_HTML = {
+    mint_cream  = "#f5fffa", ansiCyan    = "#00cccc",
+    ansiGreen   = "#00cc44", ansiRed     = "#ff5555",
+    dark_violet = "#9932cc", ansi_white  = "#c8c8c8",
+    dim_gray    = "#888888", ansiYellow  = "#ffff55",
+    olive_drab  = "#6b8e23",
+}
+local function _html_cc(name) return _CC_HTML[name] or "#c8c8c8" end
+
+-- ── Who-list scrollbox constants ──────────────────────────────────────────────
+local WHO_ROW_H    = 22
+local _COL_KEYS    = {"rank", "name", "location"}
+local _COL_LABELS  = {rank = "Rank", name = "Name", location = "Location"}
+local _COL_PCTS    = {rank = 30,     name = 38,     location = 32}
+
+local _COL_HDR_CSS = [[
+    QLabel {
+        background-color: transparent; border: none;
+        color: rgba(160,160,185,220);
+        font-size: 10pt; font-weight: bold;
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 4px;
+    }
+    QLabel::hover { color: white; }
+]]
+local _COL_HDR_ACTIVE_CSS = [[
+    QLabel {
+        background-color: transparent; border: none;
+        color: rgba(120,230,120,240);
+        font-size: 10pt; font-weight: bold;
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 4px;
+    }
+    QLabel::hover { color: rgba(180,255,180,255); }
+]]
+-- Embedded in HTML so Qt's HTML renderer (which ignores widget CSS font) picks it up.
+local _CELL_FONT = "font-size:12pt;font-family:Consolas,Monaco,monospace;"
+
 -- ── GMCP data handler ─────────────────────────────────────────────────────────
 
 function ui_who_from_gmcp()
-    if not (gmcp and gmcp.players and gmcp.players.online) then return end
+    if not UI.who.connected then return end
+    if not (gmcp and gmcp.players and type(gmcp.players.online) == "table") then return end
 
     local online = gmcp.players.online
     local counts = gmcp.players.count or {}
+
+    -- Snapshot previous ranks so we can detect changes for established players only
+    local prev_ranks = {}
+    for _, p in ipairs(UI.who.players or {}) do
+        prev_ranks[p.name] = p.rank
+    end
 
     -- Mark all DB players offline before processing fresh list
     if ui_player_db_mark_all_offline then ui_player_db_mark_all_offline() end
@@ -135,16 +182,31 @@ function ui_who_from_gmcp()
         UI.who.name_rawlines[p.name] = p.raw_line
     end
 
+    local offline_count = ui_player_db_get_offline and #ui_player_db_get_offline() or 0
     if UI.who_header then
         UI.who_header:echo(string.format(
-            "  👥  Online: %d players, %d staff",
-            UI.who.count, UI.who.staff_count))
+            "  👥  Online: %d  ·  Staff: %d  ·  Offline: %d",
+            UI.who.count, UI.who.staff_count, offline_count))
     end
+
+    -- Dismiss connecting overlay and ensure the list is visible (idempotent on repeat calls)
+    if UI.who_connecting_notice then UI.who_connecting_notice:hide() end
+    if UI.who_col_bar           then UI.who_col_bar:show() end
+    if UI.who_scroll            then UI.who_scroll:show() end
 
     ui_who_set_table_data()
 
-    if ui_chat_replay    then ui_chat_replay()    end
-    if ui_general_replay then ui_general_replay() end
+    -- Replay chat/general only when an established player's rank changed.
+    -- New players are never in chat history so no replay needed for them.
+    local rank_changed = false
+    for _, p in ipairs(UI.who.players) do
+        local old = prev_ranks[p.name]
+        if old and old ~= p.rank then rank_changed = true; break end
+    end
+    if rank_changed then
+        if ui_chat_replay    then ui_chat_replay()    end
+        if ui_general_replay then ui_general_replay() end
+    end
 
     if ui_player_db_save then ui_player_db_save() end
 
@@ -153,9 +215,38 @@ function ui_who_from_gmcp()
     f2t_debug_log("[who] gmcp update: %d players", #UI.who.players)
 end
 
-function ui_who_refresh()
-    if UI.who_header then UI.who_header:echo("  👥  Refreshing…") end
-    ui_who_from_gmcp()
+function ui_who_on_connect()
+    UI.who.connected = true
+    -- Clear stale row labels before the scroll is revealed
+    ui_table_set_data("who_list", {})
+    if UI.who_offline_notice    then UI.who_offline_notice:hide() end
+    if UI.who_connecting_notice then UI.who_connecting_notice:show() end
+    -- Col bar and scroll stay hidden until gmcp.players fires and we have real data
+    if UI.who_header            then UI.who_header:echo("  👥  Connecting…") end
+end
+
+function ui_who_on_disconnect()
+    UI.who.connected = false
+
+    if UI.who_header then UI.who_header:echo("  👥  Disconnected") end
+
+    -- Show disconnected overlay, hide column header and scroll area
+    if UI.who_offline_notice then UI.who_offline_notice:show() end
+    if UI.who_col_bar        then UI.who_col_bar:hide() end
+    if UI.who_scroll         then UI.who_scroll:hide() end
+
+    -- Close all open player cards — data is stale
+    local to_close = {}
+    for card_id in pairs(UI.player_cards) do
+        to_close[#to_close + 1] = card_id
+    end
+    for _, card_id in ipairs(to_close) do
+        ui_player_card_close(card_id)
+    end
+
+    UI.who.players       = {}
+    UI.who.name_colors   = {}
+    UI.who.name_rawlines = {}
 end
 
 -- Called by ui_chat for unknown names; no-op since GMCP is authoritative.
@@ -166,20 +257,16 @@ function ui_who_on_login_vitals() end
 
 -- Push the right dataset into the who_list table depending on toggle state.
 function ui_who_set_table_data()
+    local players = (UI.who and UI.who.players) or {}
     if UI.who._show_all and ui_player_db_get then
-        -- Merge online players with offline DB entries
         local all = {}
-        for _, p in ipairs(UI.who.players) do
-            all[#all + 1] = p
-        end
+        for _, p in ipairs(players) do all[#all + 1] = p end
         if ui_player_db_get_offline then
-            for _, e in ipairs(ui_player_db_get_offline()) do
-                all[#all + 1] = e
-            end
+            for _, e in ipairs(ui_player_db_get_offline()) do all[#all + 1] = e end
         end
         ui_table_set_data("who_list", all)
     else
-        ui_table_set_data("who_list", UI.who.players)
+        ui_table_set_data("who_list", players)
     end
 end
 
@@ -404,8 +491,9 @@ function ui_player_card_show(player, pos)
     if has_cartel               then base_h = base_h + ROW_H end
     if has_ship                 then base_h = base_h + ROW_H end
 
-    -- Quick-send area: omitted for offline cards
-    local quick_h = is_offline and 0 or (10 + CMD_H + 22)
+    -- Quick-send area: omitted for offline cards.
+    -- Offline cards get a small bottom pad so the last row doesn't clip the border.
+    local quick_h = is_offline and 14 or (10 + CMD_H + 22)
 
     -- Titles section overhead (divider + header row)
     local TITLE_OVERHEAD = 10 + ROW_H  -- = 36
@@ -463,7 +551,7 @@ function ui_player_card_show(player, pos)
     local action_key = string.format("_ui_qsend_%d", n)
     _G[action_key] = not is_offline and function(text)
         if text and text ~= "" then
-            send(string.format("tb %s %s", name, text), false)
+            send(string.format("tb %s %s", name, text), true)
             clearCmdLine(quick_cmd_name)
         end
     end or nil
@@ -848,7 +936,7 @@ function ui_player_card_show(player, pos)
         send_btn:setClickCallback(function()
             local text = getCmdLine(quick_cmd_name)
             if text and text ~= "" then
-                send(string.format("tb %s %s", name, text), false)
+                send(string.format("tb %s %s", name, text), true)
                 clearCmdLine(quick_cmd_name)
             end
         end)
@@ -906,6 +994,9 @@ function ui_player_cards_refresh_all()
     local online = {}
     for _, p in ipairs(UI.who.players) do online[p.name] = p end
 
+    -- First pass: identify what needs rebuilding without modifying the table.
+    -- Modifying UI.player_cards inside pairs() causes "invalid key to 'next'".
+    local to_rebuild = {}
     for card_id, card_meta in pairs(UI.player_cards) do
         local pname = card_meta.player_name
         if pname then
@@ -916,15 +1007,21 @@ function ui_player_cards_refresh_all()
             if fresh then
                 local new_fp = _player_fingerprint(fresh)
                 if new_fp ~= card_meta.fingerprint then
-                    -- Data changed — rebuild in place at current position
-                    local px = card_meta.container:get_x()
-                    local py = card_meta.container:get_y()
-                    ui_player_card_close(card_id)
-                    ui_player_card_show(fresh, { x = px, y = py })
+                    to_rebuild[#to_rebuild + 1] = {
+                        card_id = card_id,
+                        fresh   = fresh,
+                        px      = card_meta.container:get_x(),
+                        py      = card_meta.container:get_y(),
+                    }
                 end
-                -- fingerprint matches → nothing to do, no rebuild
             end
         end
+    end
+
+    -- Second pass: close and reopen — safe now that iteration is done.
+    for _, item in ipairs(to_rebuild) do
+        ui_player_card_close(item.card_id)
+        ui_player_card_show(item.fresh, { x = item.px, y = item.py })
     end
 end
 
@@ -989,120 +1086,120 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 function ui_who_init()
-    if not UI.who_window then
-        f2t_debug_log("[who] who_window not available — skipping init")
+    if not UI.who_scroll_content then
+        f2t_debug_log("[who] who_scroll_content not available — skipping init")
         return
     end
 
-    -- Load persistent player DB so offline data and chat colors are available
     if ui_player_db_load then ui_player_db_load() end
 
-    -- "Online" / "All" toggle state
+    -- Handle the package-reload-while-connected case
+    UI.who.connected = (gmcp and gmcp.players and type(gmcp.players.online) == "table") or false
     UI.who._show_all = false
 
+    -- Set initial visibility to match connection state
+    if not UI.who.connected then
+        if UI.who_offline_notice    then UI.who_offline_notice:show() end
+        if UI.who_connecting_notice then UI.who_connecting_notice:hide() end
+        if UI.who_col_bar           then UI.who_col_bar:hide() end
+        if UI.who_scroll            then UI.who_scroll:hide() end
+    end
+    -- If already connected (package reload mid-session): col bar and scroll stay
+    -- visible; gmcp.players will fire shortly and populate the list.
+
+    -- Column definitions — scrollbox_pct sets pixel width proportion,
+    -- render_label fills the pre-created cell Label (echo / setClickCallback / etc.)
     local cols = {
         {
-            key        = "rank",
-            label      = "Rank",
-            width      = 13,
-            align      = "left",
-            sortable   = true,
-            sort_value = function(row) return row.rank_order or 0 end,
-            format     = function(v, row)
-                -- Offline rows (from DB in "All" view) are rendered dimmer
-                if row.is_online == false then
-                    return "<dim_gray>" .. v .. "<reset>"
+            key          = "rank",
+            label        = "Rank",
+            sortable     = true,
+            sort_value   = function(row) return row.rank_order or 0 end,
+            scrollbox_pct = 30,
+            render_label = function(v, row, cell, col)
+                local offline = (row.is_online == false)
+                local rc = _html_cc(offline and "dim_gray" or _color_for(row))
+                cell:echo(string.format(
+                    "<span style='%scolor:%s;'>%s</span>",
+                    _CELL_FONT, rc, v or ""))
+                if offline and row.last_seen and ui_player_db_last_seen_str then
+                    cell:setToolTip("Last seen " .. ui_player_db_last_seen_str(row.last_seen))
                 end
-                local cc = row.cecho_color or RANK_COLOR_DEFAULT
-                return "<" .. cc .. ">" .. v .. "<reset>"
+                cell:setClickCallback(function() ui_player_card_show_or_raise(row) end)
             end,
         },
         {
             key          = "name",
             label        = "Name",
-            width        = 16,
-            align        = "left",
             sortable     = true,
             default_sort = "asc",
-            render       = function(value, row, window, col)
-                local offline = (row.is_online == false)
-                local cc = offline and "dim_gray" or (row.cecho_color or RANK_COLOR_DEFAULT)
-                local staff = (row.staff and row.staff ~= "")
-
-                local name_str = "<" .. cc .. "><b>" .. (value or "") .. "</b><reset>"
-                if staff then
-                    name_str = name_str .. " <ansiYellow>[" .. row.staff:sub(1, 3) .. "]<reset>"
-                end
-                if offline and row.last_seen then
-                    local ago = ui_player_db_last_seen_str and ui_player_db_last_seen_str(row.last_seen) or "?"
-                    name_str = name_str .. " <dim_gray>(" .. ago .. ")<reset>"
-                end
-
-                local visible_len = #(value or "") + (staff and 6 or 0)
-                local pad = (col.width or 16) - visible_len
-                if pad > 0 then name_str = name_str .. string.rep(" ", pad) end
-
-                window:cechoLink(
-                    name_str,
-                    function() ui_player_card_show_or_raise(row) end,
-                    (offline and "Offline — " or "") .. "Get Info for " .. (value or ""),
-                    true
-                )
+            scrollbox_pct = 38,
+            render_label = function(v, row, cell, col)
+                local offline    = (row.is_online == false)
+                local rc         = _html_cc(offline and "dim_gray" or _color_for(row))
+                local staff_sfx  = (row.staff and row.staff ~= "")
+                    and string.format("<span style='%scolor:#ffff55;'> [%s]</span>",
+                        _CELL_FONT, row.staff:sub(1, 3)) or ""
+                cell:echo(string.format(
+                    "<span style='%scolor:%s;'><b>%s</b></span>%s",
+                    _CELL_FONT, rc, v or "", staff_sfx))
+                cell:setToolTip("Get Info for " .. (v or ""))
+                cell:setClickCallback(function() ui_player_card_show_or_raise(row) end)
             end,
         },
         {
-            key      = "location",
-            label    = "Location",
-            width    = 12,
-            align    = "left",
-            sortable = true,
-            format   = function(v, row)
-                if not v or v == "" then return "" end
-                if row.is_online == false then
-                    return "<dim_gray>" .. v .. "<reset>"
+            key          = "location",
+            label        = "Location",
+            sortable     = true,
+            scrollbox_pct = 32,
+            render_label = function(v, row, cell, col)
+                if not v or v == "" then return end
+                local offline = (row.is_online == false)
+                local lcc     = offline and "#888888" or "#00cccc"
+                cell:echo(string.format(
+                    "<span style='%scolor:%s;'>%s</span>",
+                    _CELL_FONT, lcc, v))
+                local loc_sys = v:match("^(.+) Space$")
+                local nav_fn  = function()
+                    if loc_sys then expandAlias("nav " .. loc_sys .. " link")
+                    else expandAlias("nav " .. v) end
                 end
-                return "<ansiCyan>" .. v .. "<reset>"
-            end,
-            link = function(value)
-                if not value or value == "" then return end
-                local sys = value:match("^(.+) Space$")
-                if sys then
-                    expandAlias("nav " .. sys .. " link")
+                cell:setClickCallback(nav_fn)
+                if offline then
+                    local seen = (row.last_seen and ui_player_db_last_seen_str)
+                        and ui_player_db_last_seen_str(row.last_seen) or nil
+                    local dest = loc_sys or v
+                    cell:setToolTip(seen and (seen .. " — navigate to " .. dest) or ("navigate to " .. dest))
                 else
-                    expandAlias("nav " .. value)
+                    cell:setToolTip("Go to " .. v)
                 end
             end,
-            linkHint = "Go to %s",
         },
     }
 
-    ui_table_create("who_list", UI.who_window, cols, {
-        column = "  ",
-        row    = nil,
-        header = " ",
-    })
+    ui_table_create("who_list", nil, cols, nil)
+    ui_table_set_scrollbox("who_list", UI.who_scroll_content, UI.who_content_w, WHO_ROW_H)
 
-    -- Tab-click re-renders from current GMCP snapshot
-    local tw  = UI.tab_top_left
-    local tab = tw and tw.Who
-    if tab and tab.adjLabel then
-        tab.adjLabel:setClickCallback(function(event)
-            tw:onClick("Who", event)
-            ui_who_refresh()
-        end)
-        f2t_debug_log("[who] tab auto-refresh wired")
+    -- Build fixed column-header Labels in the bar above the scroll
+    if UI.who_col_bar then
+        local x_pct = 0
+        UI.who_col_hdrs = {}
+        for _, col in ipairs(cols) do
+            local lbl = Geyser.Label:new({
+                name  = "who_col_hdr_" .. col.key,
+                x     = x_pct .. "%", y = 0,
+                width = col.scrollbox_pct .. "%", height = "100%",
+            }, UI.who_col_bar)
+            lbl:setStyleSheet(_COL_HDR_CSS)
+            lbl:echo(col.label)
+            lbl:setClickCallback(function() ui_table_toggle_sort("who_list", col.key) end)
+            lbl:setToolTip("Sort by " .. col.label)
+            UI.who_col_hdrs[col.key] = lbl
+            x_pct = x_pct + col.scrollbox_pct
+        end
+        UI.tables["who_list"].scrollbox.col_hdrs = UI.who_col_hdrs
+        ui_table_update_scrollbox_header("who_list", UI.who_col_hdrs)
     end
 
-    -- Periodic re-render every 60s
-    local function schedule_who_periodic()
-        UI.who._periodic_timer = tempTimer(60, function()
-            if gmcp and gmcp.char and gmcp.char.vitals then
-                ui_who_from_gmcp()
-            end
-            schedule_who_periodic()
-        end)
-    end
-    schedule_who_periodic()
-
-    f2t_debug_log("[who] init complete")
+    f2t_debug_log("[who] init complete (scrollbox)")
 end

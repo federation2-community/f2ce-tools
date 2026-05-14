@@ -1,10 +1,14 @@
 UI.style = UI.style or {}
 
 setProfileStyleSheet([[
+QScrollArea {
+    background: rgba(18,20,34,220);
+}
+
 QScrollBar:vertical {
-    background: rgba(255,255,255,0.03);
+    background: rgba(18,20,34,220);
     width: 10px;
-    margin: 2px;
+    margin: 0px;
     border-radius: 3px;
 }
 
@@ -13,10 +17,6 @@ QScrollBar::handle:vertical {
     border: 1px solid rgba(255,255,255,0.45);
     border-radius: 3px;
     min-height: 24px;
-
-    box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.15),
-        0 0 6px rgba(255,255,255,0.05);
 }
 
 QScrollBar::handle:vertical:hover {

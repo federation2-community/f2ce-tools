@@ -148,6 +148,17 @@ end
 
 local _GEAR_SIZE = 26
 
+function ui_on_connect()
+    ui_chat_on_connect()
+    ui_company_on_connect()
+    ui_who_on_connect()
+end
+
+function ui_on_disconnect()
+    ui_who_on_disconnect()    -- freeze who list first so no stale GMCP fires after
+    ui_chat_on_disconnect()
+end
+
 function ui_build_gear_icon()
     UI.gear_icon = Geyser.Label:new({
         name   = "UI.gear_icon",
@@ -280,9 +291,8 @@ function ui_register_event()
     f2t_ui_register_event("gmcp.char"                          , "ui_update_header")
     f2t_ui_register_event("gmcp.room.info"                     , "ui_on_gmcp_room_info")
     f2t_ui_register_event("gmcp.char.vitals.tools"             , "ui_remote_access_status")
-    f2t_ui_register_event("sysConnectionEvent"                 , "ui_chat_on_connect")
-    f2t_ui_register_event("sysConnectionEvent"                 , "ui_company_on_connect")
-    f2t_ui_register_event("sysDisconnectionEvent"              , "ui_chat_on_disconnect")
+    f2t_ui_register_event("sysConnectionEvent"                 , "ui_on_connect")
+    f2t_ui_register_event("sysDisconnectionEvent"              , "ui_on_disconnect")
     f2t_ui_register_event("gmcp.players"                       , "ui_who_from_gmcp")
     f2t_ui_register_event("gmcp.char.company"                  , "ui_on_company_gmcp")
     f2t_ui_register_event("gmcp.exchange"                      , "ui_futures_on_gmcp_exchange")

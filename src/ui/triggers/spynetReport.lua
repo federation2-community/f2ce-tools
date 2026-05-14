@@ -19,7 +19,7 @@ ui_general_add("spynet", function(win)
     end
     local hint = (UI.who and UI.who.name_rawlines and UI.who.name_rawlines[name]) or ("tb " .. name)
     win:cecho("<white>SPYNET REPORT: ")
-    win:cechoLink(nc .. "<b>" .. rank .. " " .. name .. "</b><reset>", function() printCmdLine("tb " .. name .. " ") end, hint, true)
+    win:cechoLink(nc .. "<b>" .. rank .. " " .. name .. "</b><reset>", function() ui_player_card_show_or_raise_by_name(name) end, hint, true)
     win:cecho("<white>" .. role .. " has <b>" .. action .. "</b> Federation DataSpace.\n<reset>")
 end)
 

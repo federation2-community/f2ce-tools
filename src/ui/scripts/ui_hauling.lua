@@ -149,6 +149,7 @@ end
 
 function ui_on_hauling_header()
     ui_table_clear("hauling_jobs")
+    if UI.hauling_window then UI.hauling_window:clear() end
 end
 
 function ui_on_hauling_job(job_number, origin, dest, allowed_moves, pay_per_ton)
@@ -188,11 +189,15 @@ function ui_on_hauling_job(job_number, origin, dest, allowed_moves, pay_per_ton)
         pay            = base_pay
     }
     
-    -- Add to table data
+    -- Add to table data; debounce render so we draw once after the full job list arrives
     local tbl = UI.tables["hauling_jobs"]
     if tbl then
         table.insert(tbl.data, job_data)
-        ui_table_render("hauling_jobs")
+        if UI._hauling_render_timer then killTimer(UI._hauling_render_timer) end
+        UI._hauling_render_timer = tempTimer(0.15, function()
+            UI._hauling_render_timer = nil
+            ui_table_render("hauling_jobs")
+        end)
     end
 end
 

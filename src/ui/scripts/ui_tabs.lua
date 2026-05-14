@@ -99,7 +99,6 @@ function ui_build_tabs()
         },
         UI.vbox_right
     )
-
 end
 
 -- Restore tab layout from the previous session.
@@ -117,16 +116,19 @@ end
 -- The indicator is automatically cleared when the user switches to the tab.
 -- Uses Adjustable.TabWindow.allTabs (the live tracker) so this works correctly
 -- even after the user drags a tab to a different frame or floats it.
-
 function ui_tab_notify(tab_name)
     local tab_window = Adjustable.TabWindow.allTabs and Adjustable.TabWindow.allTabs[tab_name]
+
     if not tab_window then return end
+
     tab_window:notify(tab_name)
 end
 
 function ui_tab_clear_notify(tab_name)
     local tab_window = Adjustable.TabWindow.allTabs and Adjustable.TabWindow.allTabs[tab_name]
+
     if not tab_window then return end
+
     tab_window:clearNotification(tab_name)
 end
 
@@ -134,7 +136,7 @@ end
 function ui_build_tab_content()
     local text_size = 12
 
-        --put general console in general tab
+    --put general console in general tab
     UI.general_window = Geyser.MiniConsole:new(
         {
             name      = "UI.general_window",
@@ -151,17 +153,34 @@ function ui_build_tab_content()
     )
 
     -- ── General tab filter button ─────────────────────────────────────────
-    UI.general_filter_btn = Geyser.Label:new({
-        name   = "UI.general_filter_btn",
-        x      = "-22", y = "2",
-        width  = "20",  height = "16",
-    }, UI.tab_top_left.Generalcenter)
-    UI.general_filter_btn:setStyleSheet([[
-        QLabel{ background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
-                border-radius:3px; border-color:rgba(100,100,110,180);
-                color:rgba(160,160,170,255); font-size:10px; font-weight:bold; }
-        QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
-    ]])
+    UI.general_filter_btn = Geyser.Label:new(
+        {
+            name   = "UI.general_filter_btn",
+            x      = "-22",
+            y      = "2",
+            width  = "20",
+            height = "16",
+        },
+        UI.tab_top_left.Generalcenter
+    )
+    UI.general_filter_btn:setStyleSheet(
+        [[
+            QLabel{
+                background-color:rgba(28,28,32,200);
+                border-style:solid;
+                border-width:1px;
+                border-radius:3px;
+                border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255);
+                font-size:10px;
+                font-weight:bold;
+            }
+            QLabel::hover{
+                background-color:rgba(60,60,70,220);
+                color:white;
+            }
+        ]]
+    )
     UI.general_filter_btn:echo("<center>A</center>")
     UI.general_filter_btn:setToolTip("Show all")
     UI.general_filter_btn:setClickCallback(function() ui_general_cycle_filter() end)
@@ -201,27 +220,49 @@ function ui_build_tab_content()
 
     -- ── Comm tab buttons ──────────────────────────────────────────────────
     -- Filter button (cycles A/C/T/S); sits left of the timestamp button.
-    UI.chat_filter_btn = Geyser.Label:new({
-        name   = "UI.chat_filter_btn",
-        x      = "-44", y = "2",
-        width  = "20",  height = "16",
-    }, UI.tab_bottom_left.Commcenter)
-    UI.chat_filter_btn:setStyleSheet([[
-        QLabel{ background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
-                border-radius:3px; border-color:rgba(100,100,110,180);
-                color:rgba(160,160,170,255); font-size:10px; font-weight:bold; }
-        QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
-    ]])
+    UI.chat_filter_btn = Geyser.Label:new(
+        {
+            name   = "UI.chat_filter_btn",
+            x      = "-44",
+            y      = "2",
+            width  = "20",
+            height = "16",
+        },
+        UI.tab_bottom_left.Commcenter
+    )
+    UI.chat_filter_btn:setStyleSheet(
+        [[
+            QLabel{
+                background-color:rgba(28,28,32,200);
+                border-style:solid;
+                border-width:1px;
+                border-radius:3px;
+                border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255);
+                font-size:10px;
+                font-weight:bold;
+            }
+            QLabel::hover{
+                background-color:rgba(60,60,70,220);
+                color:white;
+            }
+        ]]
+    )
     UI.chat_filter_btn:echo("<center>A</center>")
     UI.chat_filter_btn:setToolTip("Show all messages")
     UI.chat_filter_btn:setClickCallback(function() ui_chat_cycle_filter() end)
 
     -- Timestamp toggle button.
-    UI.chat_ts_btn = Geyser.Label:new({
-        name   = "UI.chat_ts_btn",
-        x      = "-22", y = "2",
-        width  = "20",  height = "16",
-    }, UI.tab_bottom_left.Commcenter)
+    UI.chat_ts_btn = Geyser.Label:new(
+        {
+            name   = "UI.chat_ts_btn",
+            x      = "-22",
+            y      = "2",
+            width  = "20",
+            height = "16",
+        },
+        UI.tab_bottom_left.Commcenter
+    )
     UI.chat_ts_btn:echo("<center><font color='#3a3a3a'>⏱</font></center>")
     UI.chat_ts_btn:setStyleSheet(UI.style.button_css)
     UI.chat_ts_btn:setToolTip("Timestamps OFF — click to toggle")
@@ -229,40 +270,134 @@ function ui_build_tab_content()
 
     -- ── Who tab ───────────────────────────────────────────────────────────
     -- Header leaves 44px on the right for the Online/All toggle button.
-    UI.who_header = Geyser.Label:new({
-        name = "UI.who_header",
-        x = "0%", y = "0",
-        width = "-46", height = "20",
-    }, UI.tab_top_left.Whocenter)
+    UI.who_header = Geyser.Label:new(
+        {
+            name   = "UI.who_header",
+            x      = "0%",
+            y      = "0",
+            width  = "-46",
+            height = "20",
+        },
+        UI.tab_top_left.Whocenter
+    )
     UI.who_header:setStyleSheet(UI.style.header_label_css)
     UI.who_header:echo("  👥  Who's Online")
 
     -- Online / All toggle button
-    UI.who_toggle_btn = Geyser.Label:new({
-        name = "UI.who_toggle_btn",
-        x = "-44", y = "2",
-        width = "42", height = "16",
-    }, UI.tab_top_left.Whocenter)
-    UI.who_toggle_btn:setStyleSheet([[
-        QLabel{ background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
-                border-radius:3px; border-color:rgba(100,100,110,180);
-                color:rgba(160,160,170,255); font-size:9px; font-weight:bold; }
-        QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
-    ]])
+    UI.who_toggle_btn = Geyser.Label:new(
+        {
+            name   = "UI.who_toggle_btn",
+            x      = "-44",
+            y      = "2",
+            width  = "42",
+            height = "16",
+        },
+        UI.tab_top_left.Whocenter
+    )
+    UI.who_toggle_btn:setStyleSheet(
+        [[
+            QLabel{
+                background-color:rgba(28,28,32,200);
+                border-style:solid;
+                border-width:1px;
+                border-radius:3px;
+                border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255);
+                font-size:9px;
+                font-weight:bold;
+            }
+            QLabel::hover{
+                background-color:rgba(60,60,70,220);
+                color:white;
+            }
+        ]]
+    )
     UI.who_toggle_btn:echo("<center>Online</center>")
     UI.who_toggle_btn:setToolTip("Toggle Online / All known players")
     UI.who_toggle_btn:setClickCallback(function() ui_who_toggle_view() end)
 
-    -- MiniConsole for the table renderer — sits below the 21px header.
-    UI.who_window = Geyser.MiniConsole:new({
-        name      = "UI.who_window",
-        x         = "0%", y = "21px",
-        width     = "100%", height = "100%-21px",
-        autoWrap  = true,
-        scrollBar = true,
-        fontSize  = 12,
-        color     = "black",
-    }, UI.tab_top_left.Whocenter)
+    -- Fixed column-header bar (below 21px title strip, above scrollable rows)
+    UI.who_col_bar = Geyser.Label:new(
+        {
+            name   = "UI.who_col_bar",
+            x      = "0%",
+            y      = "21px",
+            width  = "100%",
+            height = "18px",
+        },
+        UI.tab_top_left.Whocenter
+    )
+    UI.who_col_bar:setStyleSheet("background-color:rgba(20,22,38,210); border:none; border-bottom:1px solid rgba(255,255,255,0.18);")
+
+    -- Scrollable player-row area (39px = 21px title + 18px col-header bar)
+    UI.who_scroll = Geyser.ScrollBox:new(
+        {
+            name   = "UI.who_scroll",
+            x      = "0%",
+            y      = "39px",
+            width  = "100%",
+            height = "100%-39px",
+        },
+        UI.tab_top_left.Whocenter
+    )
+
+    -- Permanent content label: never destroyed, only resized on each render.
+    -- Qt preserves the QScrollArea scroll offset as long as the same child widget
+    -- stays in place — this is how the who list avoids the scroll-reset problem.
+    local who_cw = math.max(50, UI.who_scroll:get_width() - 17)
+
+    UI.who_content_w      = who_cw
+    UI.who_scroll_content = Geyser.Label:new(
+        {
+            name   = "who_main_content",
+            x      = 0,
+            y      = 0,
+            width  = who_cw,
+            height = 2000,
+        },
+        UI.who_scroll
+    )
+    UI.who_scroll_content:setStyleSheet("background-color:rgb(10,10,16); border:none;")
+
+    -- Disconnected overlay — covers col-bar + scroll area; shown when not connected.
+    UI.who_offline_notice = Geyser.Label:new(
+        {
+            name   = "UI.who_offline_notice",
+            x      = "0%",
+            y      = "21px",
+            width  = "100%",
+            height = "100%-21px",
+        },
+        UI.tab_top_left.Whocenter
+    )
+    UI.who_offline_notice:setStyleSheet("background-color:rgb(10,10,16); border:none;")
+    UI.who_offline_notice:echo(
+        "<div style='text-align:center;padding-top:80px;'>"
+        .. "<span style='font-size:22pt;font-family:Consolas,Monaco,monospace;color:rgba(100,30,30,200);'>⊘</span>"
+        .. "<br><br><span style='font-size:11pt;font-family:Consolas,Monaco,monospace;color:rgba(130,50,50,220);'>DISCONNECTED</span>"
+        .. "<br><br><span style='font-size:8pt;font-family:Consolas,Monaco,monospace;color:rgba(55,55,70,200);'>connect to see who's online</span>"
+        .. "</div>")
+    UI.who_offline_notice:hide()
+
+    -- Connecting overlay — shown between sysConnectionEvent and first gmcp.players.
+    UI.who_connecting_notice = Geyser.Label:new(
+        {
+            name   = "UI.who_connecting_notice",
+            x      = "0%",
+            y      = "21px",
+            width  = "100%",
+            height = "100%-21px",
+        },
+        UI.tab_top_left.Whocenter
+    )
+    UI.who_connecting_notice:setStyleSheet("background-color:rgb(10,10,16); border:none;")
+    UI.who_connecting_notice:echo(
+        "<div style='text-align:center;padding-top:80px;'>"
+        .. "<span style='font-size:22pt;font-family:Consolas,Monaco,monospace;color:rgba(30,90,110,200);'>⟳</span>"
+        .. "<br><br><span style='font-size:11pt;font-family:Consolas,Monaco,monospace;color:rgba(50,120,140,220);'>CONNECTING…</span>"
+        .. "<br><br><span style='font-size:8pt;font-family:Consolas,Monaco,monospace;color:rgba(55,55,70,200);'>waiting for player data…</span>"
+        .. "</div>")
+    UI.who_connecting_notice:hide()
 
     --put map into map window
     UI.mapper = Geyser.Mapper:new(

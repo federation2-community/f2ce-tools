@@ -20,7 +20,7 @@ ui_general_add("movement", function(win)
         nc = "<dim_gray>"
     end
     local hint = (UI.who and UI.who.name_rawlines and UI.who.name_rawlines[name]) or ("tb " .. name)
-    win:cechoLink(nc .. "<b>" .. name .. "</b><reset>", function() printCmdLine("tb " .. name .. " ") end, hint, true)
+    win:cechoLink(nc .. "<b>" .. name .. "</b><reset>", function() ui_player_card_show_or_raise_by_name(name) end, hint, true)
     win:hecho("#2d6e2d" .. rest .. "\n")
 end)
 

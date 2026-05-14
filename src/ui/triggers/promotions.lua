@@ -30,7 +30,7 @@ ui_general_add("promotion", function(win)
             nc = "<dim_gray>"
         end
         local hint = (UI.who and UI.who.name_rawlines and UI.who.name_rawlines[pname]) or ("tb " .. pname)
-        win:cechoLink(nc .. "<b>" .. pname .. "</b><reset>", function() printCmdLine("tb " .. pname .. " ") end, hint, true)
+        win:cechoLink(nc .. "<b>" .. pname .. "</b><reset>", function() ui_player_card_show_or_raise_by_name(pname) end, hint, true)
         win:cecho(prest .. "\n")
     else
         win:cecho(captured_line .. "\n")

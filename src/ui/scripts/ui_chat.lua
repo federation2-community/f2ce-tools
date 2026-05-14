@@ -153,9 +153,9 @@ end
 local function _render_record(r, is_cont, show_ts)
     if not UI.chat_window then return end
 
-    -- Status lines always pass filter; echo verbatim via hecho (hex prefixed)
+    -- Status lines only render when timestamps are on
     if r.type == "status" then
-        UI.chat_window:hecho(r.line or "")
+        if show_ts then UI.chat_window:hecho(r.line or "") end
         return
     end
 
@@ -259,6 +259,9 @@ end
 
 function ui_chat_toggle_timestamps()
     UI.chat.show_ts = not UI.chat.show_ts
+    f2t_settings.ui = f2t_settings.ui or {}
+    f2t_settings.ui.chat_show_ts = UI.chat.show_ts
+    f2t_save_settings()
     if UI.chat_ts_btn then
         if UI.chat.show_ts then
             UI.chat_ts_btn:echo("<center><font color='#78c8c8'>⏱</font></center>")
@@ -320,9 +323,9 @@ function ui_chat_on_connect()
     }
     table.insert(UI.chat.history, r)
     UI.chat.last_key = nil
-    if UI.chat_window then UI.chat_window:hecho(r.line) end
+    -- Only show live when timestamps are on; always stored for replay
+    if UI.chat.show_ts and UI.chat_window then UI.chat_window:hecho(r.line) end
     ui_chat_save()
-    UI.who._needs_login_refresh = true
 end
 
 function ui_chat_on_disconnect()
@@ -333,7 +336,8 @@ function ui_chat_on_disconnect()
     }
     table.insert(UI.chat.history, r)
     UI.chat.last_key = nil
-    if UI.chat_window then UI.chat_window:hecho(r.line) end
+    -- Only show live when timestamps are on; always stored for replay
+    if UI.chat.show_ts and UI.chat_window then UI.chat_window:hecho(r.line) end
     ui_chat_save()
     -- Mark all players offline in the DB and force-save (they're all gone)
     if ui_player_db_mark_all_offline then ui_player_db_mark_all_offline() end
@@ -343,6 +347,20 @@ end
 -- ── Init ──────────────────────────────────────────────────────────────────
 
 function ui_chat_init()
+    -- Restore persisted timestamp preference before replaying history
+    f2t_settings.ui = f2t_settings.ui or {}
+    if f2t_settings.ui.chat_show_ts ~= nil then
+        UI.chat.show_ts = f2t_settings.ui.chat_show_ts
+    end
+    if UI.chat_ts_btn then
+        if UI.chat.show_ts then
+            UI.chat_ts_btn:echo("<center><font color='#78c8c8'>⏱</font></center>")
+            UI.chat_ts_btn:setToolTip("Timestamps ON — click to hide")
+        else
+            UI.chat_ts_btn:echo("<center><font color='#3a3a3a'>⏱</font></center>")
+            UI.chat_ts_btn:setToolTip("Timestamps OFF — click to show")
+        end
+    end
     if not UI.chat.loaded then ui_chat_load() end
     ui_chat_replay()
     f2t_debug_log("[chat] init complete, %d records", #UI.chat.history)

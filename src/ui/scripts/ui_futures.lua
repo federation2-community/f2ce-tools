@@ -612,11 +612,6 @@ function ui_futures_render_market()
     UI.futures_window:cecho(
         string.format("<ansiYellow>%s<reset>  <dim_grey>live<reset>\n", planet)
     )
-    UI.futures_window:cecho(
-        "<dim_grey>Gap=ticks of favorable movement remaining to base (~1ig/5-10min). " ..
-        "Mkt=exchange price gap toward base (neg=exchange already crossed base). " ..
-        "Maroon=suspended (price frozen until hour reset). Green≥100 Yellow≥20. Click name to buy.<reset>\n"
-    )
 
     if #market == 0 then
         UI.futures_window:cecho("\n<dim_grey>No contracts available here.<reset>\n")
@@ -640,7 +635,16 @@ function ui_futures_render_market()
         contract.owned = owned_set[(contract.commodity or ""):lower()] or false
     end
 
-    ui_table_set_data("futures_market", market)
+    -- Render directly: bypasses ui_table_render's clearWindow which would erase the headers above.
+    local tbl = UI.tables["futures_market"]
+    if tbl then
+        tbl.data = market
+        ui_table_sort("futures_market")
+        ui_table_render_header("futures_market")
+        for _, row in ipairs(tbl.data) do
+            ui_table_render_row("futures_market", row)
+        end
+    end
 end
 
 -- =============================================================================
@@ -666,13 +670,21 @@ function ui_futures_render_portfolio()
     for _, c in ipairs(portfolio) do total_pl = total_pl + (c.pl or 0) end
     local pl_color = total_pl > 0 and "green" or (total_pl < 0 and "red" or "dim_grey")
     UI.futures_window:cecho(
-        string.format("<dim_grey>%d contract%s  Total P&L: <%s>%s<reset><dim_grey>  " ..
-            "⚡=margin health (hover). Planet=nav. Liq=liquidate.<reset>\n",
+        string.format("<dim_grey>%d contract%s<reset>   Total P&L: <%s>%s<reset>\n\n",
             #portfolio, #portfolio ~= 1 and "s" or "",
             pl_color, fmt_ig_signed(total_pl))
     )
 
-    ui_table_set_data("futures_portfolio", portfolio)
+    -- Render directly: bypasses ui_table_render's clearWindow which would erase the summary above.
+    local tbl = UI.tables["futures_portfolio"]
+    if tbl then
+        tbl.data = portfolio
+        ui_table_sort("futures_portfolio")
+        ui_table_render_header("futures_portfolio")
+        for _, row in ipairs(tbl.data) do
+            ui_table_render_row("futures_portfolio", row)
+        end
+    end
 end
 
 -- =============================================================================
@@ -695,7 +707,15 @@ function ui_futures_show_portfolio()
                 "<yellow>⚠ Showing last-known contracts. " ..
                 "Step outside the exchange to refresh.<reset>\n"
             )
-            ui_table_set_data("futures_portfolio", UI.futures.portfolio)
+            local tbl = UI.tables["futures_portfolio"]
+            if tbl then
+                tbl.data = UI.futures.portfolio
+                ui_table_sort("futures_portfolio")
+                ui_table_render_header("futures_portfolio")
+                for _, row in ipairs(tbl.data) do
+                    ui_table_render_row("futures_portfolio", row)
+                end
+            end
         else
             UI.futures_window:cecho(
                 "\n<dim_grey>  Step outside the exchange to load your held contracts.<reset>\n"
@@ -762,6 +782,142 @@ function ui_futures_update_buttons()
 end
 
 -- =============================================================================
+-- INFO POPUP  (column reference guide)
+-- =============================================================================
+
+function ui_futures_info_close()
+    if UI.futures_info_card then UI.futures_info_card:hide() end
+end
+
+function ui_futures_info_open()
+    if UI.futures_info_card then
+        UI.futures_info_card:show()
+        UI.futures_info_card:raiseAll()
+        return
+    end
+
+    local sw, sh = getMainWindowSize()
+    local W, H   = 400, 420
+    local cx     = math.floor((sw - W) / 2)
+    local cy     = math.floor((sh - H) / 2)
+
+    UI.futures_info_card = Adjustable.Container:new({
+        name          = "UI.futures_info_card",
+        x             = cx, y = cy,
+        width         = W,  height = H,
+        adjLabelstyle = [[
+            background-color: rgba(10, 12, 22, 252);
+            border: 2px solid rgba(80, 120, 200, 180);
+            border-radius: 6px;
+        ]],
+        autoSave = false,
+        autoLoad = false,
+    })
+    UI.futures_info_card:lockContainer("border")
+    UI.futures_info_card.locked = false
+
+    local _in  = UI.futures_info_card.Inside
+    local HDR_H = 36
+
+    local hdr = Geyser.Label:new(
+        { name = "ui_fi_hdr", x = 0, y = 0, width = "100%", height = HDR_H },
+        _in
+    )
+    hdr:setStyleSheet([[
+        background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+            stop:0 rgba(30,34,54,255), stop:1 rgba(16,18,32,255));
+        border: none; border-radius: 4px 4px 0 0;
+    ]])
+
+    local title = Geyser.Label:new(
+        { name = "ui_fi_title", x = 12, y = 8, width = "-38", height = 22 },
+        hdr
+    )
+    title:setStyleSheet([[
+        background: transparent; border: none;
+        color: rgba(160,185,235,255);
+        font-size: 12px; font-weight: bold;
+        font-family: "Consolas","Monaco",monospace;
+    ]])
+    title:echo("ℹ  Futures Reference")
+
+    local close_btn = Geyser.Label:new(
+        { name = "ui_fi_close", x = "-30", y = 7, width = 24, height = 22 },
+        hdr
+    )
+    close_btn:setStyleSheet([[
+        QLabel {
+            background-color: rgba(180,50,50,220);
+            border: 1px solid rgba(200,80,80,180);
+            border-radius: 3px;
+            color: white;
+            font-size: 14px; font-weight: bold;
+            qproperty-alignment: AlignCenter;
+        }
+        QLabel::hover { background-color: rgba(215,60,60,245); border-color: rgba(255,110,110,220); }
+    ]])
+    close_btn:echo("<center>✕</center>")
+    close_btn:setClickCallback(function() ui_futures_info_close() end)
+
+    local content = Geyser.Label:new(
+        { name = "ui_fi_content", x = 0, y = HDR_H, width = "100%", height = "100%-36px" },
+        _in
+    )
+    content:setStyleSheet([[
+        background: transparent; border: none;
+        color: #b8c4d8;
+        font-size: 11px;
+        font-family: "Consolas","Monaco",monospace;
+        padding: 10px 14px;
+    ]])
+    content:echo(table.concat({
+        "<span style='color:#8aaad8;font-weight:bold;'>Market View</span>",
+        "  <span style='color:#505870;'>(at a trading exchange)</span><br>",
+        "<br>",
+        "<span style='color:#c8d0e0;'>T</span>&nbsp;&nbsp;&nbsp;",
+        "L=Long <span style='color:#606880;'>(profit when futures price rises toward base)</span><br>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;S=Short <span style='color:#606880;'>(profit when futures price falls toward base)</span><br>",
+        "<span style='color:#c8d0e0;'>Fut</span>&nbsp;&nbsp;",
+        "Futures price per ton — locked in at purchase.<br>",
+        "<span style='color:#c8d0e0;'>Base</span> Commodity base price. Futures converge ~1ig/ton<br>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;per tick (every 5–10 min).<br>",
+        "<span style='color:#c8d0e0;'>Gap</span>&nbsp;&nbsp;",
+        "Ticks of headroom (L=base−Fut, S=Fut−base).<br>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style='color:#44cc44;'>Green≥100</span>",
+        "  <span style='color:#cccc44;'>Yellow≥20</span>",
+        "  <span style='color:#cc4444;'>Red=wrong direction</span><br>",
+        "<span style='color:#c8d0e0;'>Exc</span>&nbsp;&nbsp;",
+        "Exchange spot midpoint from GMCP prices.<br>",
+        "<span style='color:#c8d0e0;'>Mkt</span>&nbsp;&nbsp;",
+        "Exchange gap toward base. Negative=already<br>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;crossed base (stale direction, higher risk).<br>",
+        "<span style='color:#505870;'>",
+        "Click name to buy. Maroon=suspended. Grey=already held here.</span><br>",
+        "<br>",
+        "<span style='color:#8aaad8;font-weight:bold;'>Portfolio View</span>",
+        "  <span style='color:#505870;'>(outside exchanges)</span><br>",
+        "<br>",
+        "<span style='color:#c8d0e0;'>Planet</span>  Navigate to exchange (click).<br>",
+        "<span style='color:#c8d0e0;'>P&amp;L</span>&nbsp;&nbsp;&nbsp;&nbsp;",
+        "margin minus 4,000ig starting margin.<br>",
+        "<span style='color:#c8d0e0;'>Margin</span>  Broker deposit. Margin call if &lt;2,000ig<br>",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(charges 4,000ig, −4 Trading Rating pts).<br>",
+        "<span style='color:#c8d0e0;'>M ⚡</span>&nbsp;&nbsp;",
+        "<span style='color:#44cc44;'>✓</span> healthy  ",
+        "<span style='color:#cccc44;'>!</span> approaching min  ",
+        "<span style='color:#cc4444;'>✗</span> margin call<br>",
+        "<span style='color:#c8d0e0;'>[-]</span>&nbsp;&nbsp;&nbsp;&nbsp;Liquidate — only when at matching exchange.<br>",
+        "<span style='color:#505870;'>",
+        "Broker fee: 5% of profit (min 250ig) on liquidation.<br>",
+        "Trading Rating: +1pt per 1,000ig profit, −1pt per 1,000ig loss.</span>",
+    }, ""))
+
+    UI.futures_info_card:hide()
+    UI.futures_info_card:show()
+    UI.futures_info_card:raiseAll()
+end
+
+-- =============================================================================
 -- TAB SETUP  (called from ui_build)
 -- =============================================================================
 
@@ -781,6 +937,39 @@ function ui_futures()
     UI.futures_market_btn:setStyleSheet(UI.style.disabled_button_css)
     UI.futures_market_btn:setClickCallback(function() end)
     UI.futures_market_btn:setToolTip("Enter a trading exchange to view available contracts")
+
+    -- Info button — overlaps button bar right edge (same pattern as General/Comm filter buttons)
+    UI.futures_info_btn = Geyser.Label:new(
+        {
+            name   = "UI.futures_info_btn",
+            x      = "-22",
+            y      = "2",
+            width  = "20",
+            height = "16",
+        },
+        UI.futures_container
+    )
+    UI.futures_info_btn:setStyleSheet(
+        [[
+            QLabel{
+                background-color:rgba(28,28,32,200);
+                border-style:solid;
+                border-width:1px;
+                border-radius:3px;
+                border-color:rgba(100,100,110,180);
+                color:rgba(160,160,170,255);
+                font-size:10px;
+                font-weight:bold;
+            }
+            QLabel::hover{
+                background-color:rgba(60,60,70,220);
+                color:white;
+            }
+        ]]
+    )
+    UI.futures_info_btn:echo("<center>ℹ</center>")
+    UI.futures_info_btn:setToolTip("Column reference guide")
+    UI.futures_info_btn:setClickCallback(function() ui_futures_info_open() end)
 
     UI.futures = {
         portfolio        = {},
