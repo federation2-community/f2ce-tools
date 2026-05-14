@@ -42,6 +42,17 @@ function f2t_map_handle_gmcp_room()
     local room_id = f2t_map_get_room_by_hash(hash)
     local is_new_room = (room_id == nil)
 
+    -- Ignore same-room GMCP events while waiting for movement confirmation.
+    -- Another player entering the room (or similar game events) can trigger
+    -- gmcp.room.info for the room we're already in. Treating that as a failed
+    -- move would cause false "Exit blocked" detection; genuine blocked exits
+    -- are handled by the movement timeout instead.
+    if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE and
+       room_id and room_id == F2T_MAP_CURRENT_ROOM_ID then
+        f2t_debug_log("[map] Ignoring same-room GMCP during movement wait (room %d)", room_id)
+        return
+    end
+
     if is_new_room then
         -- Create new room
         room_id = f2t_map_create_new_room(room_data)
