@@ -13,7 +13,7 @@ local ICON_FOR_FLAG = {
     shipyard   = "🔧",
     hospital   = "✚",
     bar        = "🍸",
-    courier    = "💼",
+    courier    = "ℭ",
 }
 
 local ICON_PRIORITY = {

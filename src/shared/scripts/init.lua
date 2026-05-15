@@ -131,3 +131,33 @@ tempTimer(2, function()
         end
     end
 end)
+
+-- ========================================
+-- Mudlet Mapper Config (install/upgrade only)
+-- ========================================
+
+-- Apply preferred mapper defaults on package install or upgrade.
+-- sysInstall fires only during installation, not on normal session start,
+-- so this runs once per install/upgrade and never overwrites user changes.
+registerAnonymousEventHandler("sysInstall", function(_, pkg)
+    if pkg ~= "fed2-tools" then return end
+    -- Delay to ensure the mapper widget is open before calling setConfig.
+    tempTimer(3, function()
+        local ok, err = setConfig(
+            {
+                mapExitSize        = 10,
+                mapRoomSize        = 5,
+                mapRoundRooms      = false,
+                mapShowGrid        = false,
+                mapShowRoomBorders = false
+            }
+        )
+
+        if ok then
+            updateMap()
+            f2t_debug_log("[shared] Mapper config applied on install/upgrade")
+        else
+            f2t_debug_log("[shared] Could not apply mapper config: %s", tostring(err))
+        end
+    end)
+end)

@@ -8,9 +8,9 @@ function ui_build_movement()
         {
             name          = "UI.map_commands_container",
             x             = "0%",
-            y             = "85%",
+            y             = "82%",
             width         = "30%",
-            height        = "14%",
+            height        = "21%",
             lockStyle     = "none",
             adjLabelstyle = UI.style.frame_css,
             attached      = "left",
