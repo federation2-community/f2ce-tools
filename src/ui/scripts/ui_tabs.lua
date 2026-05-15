@@ -399,73 +399,32 @@ function ui_build_tab_content()
         .. "</div>")
     UI.who_connecting_notice:hide()
 
-    -- Map room info bar — breadcrumb strip at the top of the map tab.
-    -- 40px gives a single comfortable monospace line with vertical padding.
-    local MAP_INFO_H = "40px"
-
-    UI.map_info_bar = Geyser.Label:new(
-        {
-            name   = "UI.map_info_bar",
-            x      = "0%",
-            y      = "0%",
-            width  = "100%",
-            height = MAP_INFO_H,
-        },
-        UI.tab_top_right.fedmapcenter
-    )
-    UI.map_info_bar:setStyleSheet(UI.style.map_info_bar_css)
-    UI.map_info_bar:echo(
-        "<div style='line-height:40px;padding:0 10px;color:rgba(70,80,90,0.55);"
-        .. "font-family:Consolas,Monaco,monospace;font-size:11px;'>No location data</div>"
-    )
-
-    -- Mapper occupies everything below the info bar.
-    -- The native Mudlet mapper info strip at the very bottom is hidden via
-    -- QStatusBar CSS in setProfileStyleSheet (ui_styles.lua) rather than
-    -- by overlaying a label, so the mapper's own collapsible toolbar remains
-    -- fully accessible.
     UI.mapper = Geyser.Mapper:new(
         {
             name   = "fedmap",
             x      = "0%",
-            y      = MAP_INFO_H,
+            y      = "0%",
             width  = "100%",
-            height = "100%-40px",
+            height = "100%",
         },
         UI.tab_top_right.fedmapcenter
     )
 
-    -- Legend toggle button — bottom-right corner, just above the native mapper toolbar.
-    -- Positioned 50px from bottom so it clears the collapsed native toolbar area.
+    -- Legend info button — bottom-right corner of the map.
     UI.map_legend_btn = Geyser.Label:new(
         {
             name   = "UI.map_legend_btn",
             x      = "-26",
-            y      = "-50",
+            y      = "-26",
             width  = "24",
             height = "24",
         },
         UI.tab_top_right.fedmapcenter
     )
     UI.map_legend_btn:setStyleSheet(UI.style.map_legend_btn_css)
-    UI.map_legend_btn:echo("<center>⊞</center>")
-    UI.map_legend_btn:setToolTip("Show/hide map legend")
+    UI.map_legend_btn:echo("<center>ℹ</center>")
+    UI.map_legend_btn:setToolTip("Map room type legend")
     UI.map_legend_btn:setClickCallback(function() ui_map_legend_toggle() end)
-
-    -- Legend window — hidden by default, toggled by the button above.
-    -- 280px tall × 264px wide; positioned so its bottom aligns with the button top.
-    UI.map_legend = Geyser.Label:new(
-        {
-            name   = "UI.map_legend",
-            x      = "-268",
-            y      = "-336",
-            width  = "264",
-            height = "280",
-        },
-        UI.tab_top_right.fedmapcenter
-    )
-    UI.map_legend:setStyleSheet(UI.style.map_legend_css)
-    UI.map_legend:hide()
 
     --put hauling container in hauling tab
     UI.hauling_container = Geyser.Container:new(

@@ -66,7 +66,6 @@ function ui_on_gmcp_room_info()
     ui_fuel_status()
     ui_update_local_players()
     ui_futures_update_buttons()
-    ui_map_update_room_info()
 end
 
 function ui_update_for_rank()

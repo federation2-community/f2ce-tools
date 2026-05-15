@@ -39,21 +39,23 @@ QScrollBar::sub-page:vertical {
     background: none;
 }
 
-/* Mudlet's native mapper renders its room-info as a QStatusBar at the
-   bottom of the mapper widget.  Setting the background to match our UI
-   and making the text transparent turns it into an invisible seam rather
-   than a jarring white/grey strip. The widget dimensions are preserved so
-   Mudlet's own mapper toolbar (collapse arrow) is not affected. */
-QStatusBar {
-    background: rgba(14, 18, 32, 255);
-    color:       rgba(0, 0, 0, 0);
-    border:      none;
-    border-top:  1px solid rgba(255, 255, 255, 0.06);
-    padding:     0px;
+/* Mapper display-options toolbar.
+   widget_panel = the collapsible controls panel in dlgMapper (zoom, 3D, etc).
+   toolButton_togglePanel = the expand/collapse arrow button.
+   Forcing max/min dimensions to 0 collapses both out of sight. */
+QWidget#widget_panel {
+    max-height: 0px;
+    min-height: 0px;
+    padding:    0px;
+    border:     none;
 }
-QStatusBar QLabel {
-    background: transparent;
-    color:      rgba(0, 0, 0, 0);
+QToolButton#toolButton_togglePanel {
+    max-height: 0px;
+    min-height: 0px;
+    max-width:  0px;
+    min-width:  0px;
+    padding:    0px;
+    border:     none;
 }
 ]])
 
