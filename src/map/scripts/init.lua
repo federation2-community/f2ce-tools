@@ -119,6 +119,17 @@ f2t_settings_register("map", "orbit_planet_initial", {
     end
 })
 
+f2t_settings_register("map", "movement_keys", {
+    description = "Enable arrow keys and numpad for directional movement",
+    default = true,
+    validator = function(value)
+        if value ~= true and value ~= false and value ~= "true" and value ~= "false" then
+            return false, "Must be true or false"
+        end
+        return true
+    end
+})
+
 -- NOTE: System and cartel modes ALWAYS do brief exploration (flag discovery only)
 -- There is no user setting for this - it's the only supported mode
 

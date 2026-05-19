@@ -104,11 +104,12 @@ f2t_register_help("map settings", {
         {cmd = "map settings clear <name>", desc = "Reset setting to default"}
     },
     examples = {
-        "map settings                              # List all settings",
-        "map settings get planet_nav_default       # Check planet navigation default",
-        "map settings set planet_nav_default orbit # Default to orbit",
-        "map settings set enabled false            # Disable auto-mapping",
-        "map settings clear planet_nav_default     # Reset to default"
+        "map settings                                  # List all settings",
+        "map settings get planet_nav_default           # Check planet navigation default",
+        "map settings set planet_nav_default orbit     # Default to orbit",
+        "map settings set enabled false                # Disable auto-mapping",
+        "map settings set movement_keys false          # Disable arrow/numpad movement keys",
+        "map settings clear planet_nav_default         # Reset to default"
     }
 })
 

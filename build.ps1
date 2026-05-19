@@ -405,19 +405,22 @@ function New-KeybindingXml {
     param(
         [string]$Name,
         [string]$Code,
+        [hashtable]$Metadata = @{},
         [int]$Indent = 4
     )
 
     $SafeCode = ConvertTo-XmlSafe -Text $Code
     $spaces = " " * $Indent
+    $keyCode = if ($Metadata -and $Metadata.ContainsKey('keyCode')) { [int]$Metadata.keyCode } else { -1 }
+    $keyModifier = if ($Metadata -and $Metadata.ContainsKey('keyModifier')) { [int]$Metadata.keyModifier } else { -1 }
     return @"
 $spaces<Key isActive="yes" isFolder="no">
 $spaces  <name>$Name</name>
 $spaces  <script>$SafeCode</script>
 $spaces  <command></command>
 $spaces  <packageName></packageName>
-$spaces  <keyCode>-1</keyCode>
-$spaces  <keyModifier>-1</keyModifier>
+$spaces  <keyCode>$keyCode</keyCode>
+$spaces  <keyModifier>$keyModifier</keyModifier>
 $spaces</Key>
 "@
 }
@@ -471,6 +474,7 @@ function Get-ComponentData {
         $data.Keybindings += @{
             Name = $file.BaseName
             Code = Get-Content $file.FullName -Raw
+            Metadata = Get-LuaMetadata -FilePath $file.FullName
         }
     }
 
@@ -678,7 +682,8 @@ function Invoke-Build {
             if ($comp.Keybindings.Count -gt 0) {
                 $keyItems = @()
                 foreach ($item in $comp.Keybindings) {
-                    $keyItems += New-KeybindingXml -Name $item.Name -Code $item.Code -Indent 6
+                    $itemMetadata = if ($item.Metadata) { $item.Metadata } else { @{} }
+                    $keyItems += New-KeybindingXml -Name $item.Name -Code $item.Code -Metadata $itemMetadata -Indent 6
                 }
                 $xmlParts += New-FolderXml -Type "Key" -Name $comp.Name -Content ($keyItems -join "`n")
             }
