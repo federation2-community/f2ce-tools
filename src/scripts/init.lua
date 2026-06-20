@@ -1,8 +1,15 @@
 -- fed2-tools — Bootstrap and initialization
 --
--- Owns the full Muxlet lifecycle: version-checks the installed Muxlet against
--- the build-declared requirement, installs or upgrades from GitHub if needed,
--- then starts the fed2-tools workspace.
+-- Owns the Muxlet lifecycle: version-checks the installed Muxlet against the
+-- build-declared requirement, installs or upgrades from GitHub if needed, then
+-- drives initialization via Muxlet's muxletReady event.
+--
+-- On first run, muxletReady shows the mode-selection dialog (ui/popups.lua).
+-- The user's choice persists as mux_autostart in Mux.settings and governs all
+-- future sessions — no further dialog appears.
+--
+--   mux_autostart = true  → Mux.fullStart() called automatically each session
+--   mux_autostart = false → Muxlet is installed but never auto-started (Minimal)
 --
 -- Two values are injected by the build script (never edit manually):
 --   F2T_REQUIRED_MUXLET — minimum Muxlet version this build needs
@@ -10,7 +17,6 @@
 --
 -- Dev builds point MUXLET_URL at the prerelease tag (no "v" prefix).
 -- Production builds point at the production tag ("v" prefix).
--- The runtime logic is identical in both cases.
 
 local MUXLET_PKG = "Muxlet"
 
@@ -24,7 +30,7 @@ local MUXLET_URL = nil
 local function versionIsNewer(v1, v2)
     if not v1 or not v2 then return false end
     local function parts(v)
-        local a, b, c = v:match("^(%d+)%.?(%d*)%.?(%d*)")
+        local a, b, c = v:gsub("^v", ""):match("^(%d+)%.?(%d*)%.?(%d*)")
         return tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0
     end
     local a1, b1, c1 = parts(v1)
@@ -43,6 +49,15 @@ local function muxletSatisfied()
     -- rather than trigger a redundant reinstall.
     if not installed or installed == "unknown" then return true end
     return not versionIsNewer(F2T_REQUIRED_MUXLET, installed)
+end
+
+-- Returns true when MUXLET_URL targets a bare (non-v) tag, i.e. a prerelease.
+-- Prerelease tags can be pushed multiple times with the same name, so the same
+-- version string does not guarantee the same build; force reinstall every session.
+local function isMuxletPrerelease()
+    if not MUXLET_URL then return false end
+    local tag = MUXLET_URL:match("/download/([^/]+)/Muxlet%.mpackage")
+    return tag ~= nil and not tag:match("^v")
 end
 
 -- ── generic_mapper removal ────────────────────────────────────────────────────
@@ -74,40 +89,6 @@ registerAnonymousEventHandler("sysInstall", function(_, pkg)
     end
 end)
 
--- ── Workspace startup ─────────────────────────────────────────────────────────
-
-local function startWorkspace()
-    -- fed2-tools owns Muxlet version management; disable Muxlet's own update
-    -- checker so it cannot self-upgrade to an MPR version that bypasses the
-    -- version pin in F2T_REQUIRED_MUXLET.
-    if Mux.settings then
-        Mux.settings.set("mux", "update_check_enabled", false)
-    end
-
-    if f2t_settings_flush_registrations then
-        f2t_settings_flush_registrations()
-    end
-
-    if f2tRegisterMapContent then f2tRegisterMapContent() end
-    if f2tRegisterWorkspace  then f2tRegisterWorkspace()  end
-
-    if Mux._running then
-        tempTimer(0.5, function()
-            local mapPane = Mux.getPane("map")
-            if mapPane then Mux._applyContent(mapPane, "fed2_map") end
-        end)
-        tempTimer(0.8, function()
-            if f2tCheckWelcome then f2tCheckWelcome() end
-        end)
-        return
-    end
-
-    Mux.fullStart()
-    tempTimer(0.8, function()
-        if f2tCheckWelcome then f2tCheckWelcome() end
-    end)
-end
-
 -- ── Muxlet install / upgrade ──────────────────────────────────────────────────
 
 local function installMuxlet()
@@ -119,16 +100,9 @@ local function installMuxlet()
     local ver = F2T_REQUIRED_MUXLET and (" " .. F2T_REQUIRED_MUXLET) or ""
 
     local function doInstall()
-        local handlerId
-        handlerId = registerAnonymousEventHandler("sysInstallPackage", function(_, name)
-            if name ~= MUXLET_PKG then return end
-            killAnonymousEventHandler(handlerId)
-            cecho("\n<green>[fed2-tools]<reset> Muxlet ready — starting fed2-tools.\n")
-            -- Small delay so new Muxlet's own init timer (if any) can fire first.
-            tempTimer(0.5, startWorkspace)
-        end)
         cecho(string.format("\n<cyan>[fed2-tools]<reset> Installing Muxlet%s...\n", ver))
         installPackage(MUXLET_URL)
+        -- muxletReady fires after install completes and Muxlet initializes.
     end
 
     if table.contains(getPackages(), MUXLET_PKG) then
@@ -176,7 +150,6 @@ local function startDevReloadWatcher()
             lastStamp = stamp
             cecho("\n<yellow>[fed2-tools]<reset> Build updated — reloading...\n")
             installPackage(pkgPath)
-            -- init.lua re-runs on reload and handles any Muxlet version change.
         else
             tempTimer(5, poll)
         end
@@ -186,15 +159,53 @@ local function startDevReloadWatcher()
     cecho("\n<cyan>[fed2-tools]<reset> Dev reload watcher active (polling every 5s).\n")
 end
 
--- ── Boot ──────────────────────────────────────────────────────────────────────
--- Defer past Muxlet's 1-second auto_start timer so it fires first.
+-- ── Initialization ────────────────────────────────────────────────────────────
+-- All fed2-tools setup is driven by Muxlet's muxletReady event so there is no
+-- timing guesswork.  The handler is registered synchronously so it is always
+-- in place before any timer fires.
+--
+-- Content and workspace are registered every session regardless of mode so
+-- they are available for manual use (e.g. mux workspace load fed2-tools).
+--
+-- mux_autostart drives whether Muxlet actually starts:
+--   nil   → first run; show mode-selection dialog (ui/popups.lua)
+--   true  → auto-start (Full or BYOW choice from first run)
+--   false → minimal; Muxlet stays idle until user runs mux start
+--
+-- fed2-tools suppresses Muxlet's own welcome popup (mux.welcome_shown = true)
+-- because it provides its own onboarding via f2tShowModeSelect().  It also
+-- prevents Muxlet's auto_start timer from double-starting by owning fullStart().
 
-tempTimer(1.1, function()
-    startDevReloadWatcher()
+registerAnonymousEventHandler("muxletReady", function()
+    if not muxletSatisfied() then return end
 
-    if not muxletSatisfied() then
-        installMuxlet()
-    else
-        startWorkspace()
+    -- fed2-tools owns the Muxlet version pin; prevent Muxlet auto-upgrading.
+    Mux.settings.set("mux", "update_check_enabled", false)
+
+    -- Suppress Muxlet's standalone welcome; fed2-tools provides its own onboarding.
+    Mux.settings.set("mux", "welcome_shown", true)
+
+    if f2t_settings_flush_registrations then f2t_settings_flush_registrations() end
+    if f2tRegisterMapContent            then f2tRegisterMapContent()            end
+    if f2tRegisterWorkspace             then f2tRegisterWorkspace()             end
+    if f2tRegisterMapperCss             then f2tRegisterMapperCss()             end
+
+    local d         = Mux.settings._data
+    local autostart = d and d["f2t"] and d["f2t"]["mux_autostart"]
+
+    if autostart == nil then
+        -- First run: let the user choose their startup mode.
+        if f2tShowModeSelect then f2tShowModeSelect() end
+    elseif autostart == true then
+        Mux.fullStart()
     end
+    -- autostart == false: Minimal mode — Muxlet is available but not started.
 end)
+
+-- ── Boot ──────────────────────────────────────────────────────────────────────
+
+startDevReloadWatcher()
+
+if not muxletSatisfied() or isMuxletPrerelease() then
+    installMuxlet()
+end

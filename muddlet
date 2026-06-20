@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# build.sh — Build the fed2-tools package.
+# muddlet — Build the fed2-tools package.
 #
 # Derives version from git tags, reads muxlet_version from mfile, patches
 # mfile and init.lua temporarily, runs muddle, then restores everything so
 # committed values stay clean.
 #
-# Local builds always use the Muxlet prerelease URL (bare tag, no "v" prefix).
-# Production builds (exact v* tag at HEAD, normally a CI scenario) use the
-# v-prefixed production Muxlet URL.
-#
 # The Muxlet version is controlled solely by "muxlet_version" in mfile.
-# To test against a different Muxlet build, change muxlet_version in mfile.
+# To target a different Muxlet build, change muxlet_version in mfile.
+# The GitHub release URL always uses the v-prefixed tag (e.g. v1.0.6)
+# regardless of whether this fed2-tools build is a dev or release build.
 #
 # When --profile is given, the Mudlet profile's connection files (url, port,
 # login) are written in Mudlet's binary format so the profile connects to Fed2
 # without any manual configuration. Pass --username to pre-fill the login field.
 #
+# --fresh wipes the profile directory (keeping connection files) and writes a
+# bootstrap XML so fed2-tools installs automatically on the next Mudlet load —
+# no Package Manager step required. Close the profile in Mudlet first.
+#
 # Usage:
-#   ./build.sh [--profile PROFILE] [--username NAME] [--mudlet-config PATH]
+#   ./muddlet [--profile PROFILE] [--username NAME] [--mudlet-config PATH]
+#             [--fresh]
 #
 # Examples:
-#   ./build.sh
-#   ./build.sh --profile fed2-dev --username jackrungh
+#   ./muddlet
+#   ./muddlet --profile fed2-dev --username jackrungh
+#   ./muddlet --profile fed2-dev --username jackrungh --fresh
 
 set -euo pipefail
 
@@ -35,6 +39,7 @@ USERNAME=""
 MUDLET_CONFIG=""
 GAME_HOST="play.federation2.com"
 GAME_PORT="30003"
+FRESH=0
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
 
@@ -43,6 +48,7 @@ while [[ $# -gt 0 ]]; do
         --profile)       PROFILE="$2";       shift 2 ;;
         --username)      USERNAME="$2";      shift 2 ;;
         --mudlet-config) MUDLET_CONFIG="$2"; shift 2 ;;
+        --fresh)         FRESH=1;            shift   ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -69,24 +75,18 @@ fi
 EXACT_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
 if [[ "$EXACT_TAG" == "v$BASE_VERSION" ]]; then
     VERSION="$BASE_VERSION"
-    IS_RELEASE=true
 else
     SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo "local")"
     VERSION="$BASE_VERSION-$SHORT_SHA"
-    IS_RELEASE=false
 fi
 
 echo "Version       : $VERSION"
 
 # ── Build Muxlet URL ──────────────────────────────────────────────────────────
-# Local builds target the prerelease Muxlet (bare tag = no "v").
-# IS_RELEASE=true only for an exact v* tag at HEAD; use the production URL.
+# mfile contains the exact GitHub release tag (e.g. v1.0.6 for production,
+# 1.0.7-beta1 for prerelease). Use it verbatim — no tag manipulation here.
 
-if [[ "$IS_RELEASE" == true ]]; then
-    MUXLET_TAG="v$MUXLET_VERSION"
-else
-    MUXLET_TAG="$MUXLET_VERSION"
-fi
+MUXLET_TAG="$MUXLET_VERSION"
 MUXLET_URL="https://github.com/tmtocloud/Muxlet/releases/download/$MUXLET_TAG/Muxlet.mpackage"
 
 echo "Muxlet        : $MUXLET_VERSION  ($MUXLET_URL)"
@@ -131,6 +131,66 @@ if [[ -z "$PROFILE" ]]; then
     echo ""
     exit 0
 fi
+
+# Pause if Mudlet is running — any profile could be open.
+wait_for_profile_close() {
+    local profile_name="$1"
+    local running
+    running=$(powershell.exe -NoProfile -Command \
+        "if (Get-Process mudlet -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }" \
+        2>/dev/null | tr -d '\r\n') || true
+    if [[ "$running" == "yes" ]]; then
+        echo ""
+        echo "  Mudlet is running. Close the '$profile_name' profile, then press Enter."
+        read -r _
+    fi
+}
+
+# Remove all entries in DIR except the named files passed as additional args.
+wipe_profile() {
+    local dir="$1"; shift
+    local -a keep=("$@")
+    local find_args=("$dir" -maxdepth 1 -mindepth 1)
+    for k in "${keep[@]}"; do find_args+=("!" "-name" "$k"); done
+    find_args+=("-print0")
+    while IFS= read -r -d '' entry; do
+        echo "Removed       : $(basename "$entry")"
+        rm -rf "$entry"
+    done < <(find "${find_args[@]}")
+}
+
+# Write a minimal Mudlet profile XML containing a bootstrap script that
+# auto-installs PKG_NAME.mpackage from the profile directory on first load.
+write_bootstrap_xml() {
+    local xml_path="$1"
+    local pkg_name="$2"
+    sed "s/__PKG__/$pkg_name/g" > "$xml_path" << 'BOOTSTRAP_XML_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MudletPackage>
+<MudletPackage version="1.001">
+  <ScriptPackage>
+    <Script isActive="yes" isFolder="no">
+      <name>__PKG__ dev autoinstall</name>
+      <packageName></packageName>
+      <script>
+local _pkgPath = getMudletHomeDir() .. "/__PKG__.mpackage"
+tempTimer(0, function()
+  local _f = io.open(_pkgPath, "r")
+  if _f then
+    _f:close()
+    if not table.contains(getPackages(), "__PKG__") then
+      installPackage(_pkgPath)
+    end
+  end
+end)
+</script>
+      <eventHandlerList />
+    </Script>
+  </ScriptPackage>
+</MudletPackage>
+BOOTSTRAP_XML_EOF
+    echo "Bootstrap XML : $xml_path"
+}
 
 echo ""
 echo "=== Deploying to profile: $PROFILE ==="
@@ -183,6 +243,15 @@ if [[ ! -d "$PROFILE_DIR" ]]; then
     FIRST_TIME=1
 else
     echo "Profile       : $PROFILE"
+    if [[ $FRESH -eq 1 ]]; then
+        echo ""
+        echo "=== Fresh wipe: $PROFILE ==="
+        wait_for_profile_close "$PROFILE"
+        wipe_profile "$PROFILE_DIR" url port login description
+        echo "=== Wipe complete ==="
+        echo ""
+        FIRST_TIME=1
+    fi
 fi
 
 write_mudlet_string "$PROFILE_DIR/url"         "$GAME_HOST"
@@ -206,6 +275,11 @@ STAMP_PATH="$PROFILE_DIR/fed2-tools-rebuild.stamp"
 date +%s > "$STAMP_PATH"
 echo "Stamp written : $STAMP_PATH"
 
+if [[ $FIRST_TIME -eq 1 ]]; then
+    mkdir -p "$PROFILE_DIR/current"
+    write_bootstrap_xml "$PROFILE_DIR/current/bootstrap.xml" "fed2-tools"
+fi
+
 echo ""
 
 if [[ $FIRST_TIME -eq 1 ]]; then
@@ -217,14 +291,13 @@ if [[ $FIRST_TIME -eq 1 ]]; then
     else
         echo "  3. Enter username + password, connect"
     fi
-    echo "  4. Toolbox -> Package Manager -> Install from file:"
-    echo "     $DEST_PACKAGE"
     echo ""
-    echo "After this one-time install, fed2-tools reloads automatically on each build."
+    echo "  fed2-tools installs automatically on connect. No Package Manager step needed."
+    echo "  After the first connect, fed2-tools auto-reloads on every build."
     echo ""
 fi
 
 echo "WORKFLOW:"
-echo "  ./build.sh --profile $PROFILE"
+echo "  ./muddlet --profile $PROFILE"
 echo "  fed2-tools auto-reloads within ~30 seconds via the dev stamp watcher."
 echo ""

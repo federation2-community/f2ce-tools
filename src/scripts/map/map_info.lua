@@ -10,7 +10,8 @@
 -- QWidget#widget_panel     = the collapsible controls panel in dlgMapper
 -- QToolButton#togglePanel  = the expand/collapse arrow
 -- Forcing dimensions to 0 collapses both out of sight.
-setProfileStyleSheet([[
+
+local _MAPPER_TOOLBAR_CSS = [[
 QWidget#widget_panel {
     max-height: 0px;
     min-height: 0px;
@@ -25,7 +26,18 @@ QToolButton#toolButton_togglePanel {
     padding:    0px;
     border:     none;
 }
-]])
+]]
+
+-- Apply immediately at load time as a baseline so the panel is hidden even
+-- before Muxlet is initialised.  init.lua's muxletReady handler re-registers
+-- this via Mux.addProfileCss so the rule survives subsequent theme changes.
+setProfileStyleSheet(_MAPPER_TOOLBAR_CSS)
+
+function f2tRegisterMapperCss()
+    if Mux and Mux.addProfileCss then
+        Mux.addProfileCss(_MAPPER_TOOLBAR_CSS)
+    end
+end
 
 -- ── Map info overlay ──────────────────────────────────────────────────────────
 
@@ -118,4 +130,4 @@ end)
 
 enableMapInfo("fed2_bc")
 enableMapInfo("fed2_rm")
-tempTimer(2, function() updateMap() end)
+registerAnonymousEventHandler("muxletStarted", function() updateMap() end)

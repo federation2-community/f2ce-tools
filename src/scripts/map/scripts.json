@@ -1,6 +1,6 @@
 [
+  {"name": "settings"},
   {"name": "init"},
-  {"name": "content"},
   {"name": "coords"},
   {"name": "area"},
   {"name": "style"},

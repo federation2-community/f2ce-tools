@@ -42,7 +42,7 @@ elseif subcommand == "debug" then
 elseif subcommand == "settings" then
     local settings_args = args:match("^settings%s*(.*)") or ""
     if f2t_handle_help("f2t settings", settings_args) then return end
-    f2t_handle_settings_command("shared", settings_args)
+    f2t_handle_settings_command("f2t", settings_args)
 
 elseif subcommand == "version" then
     f2t_check_latest_version()

@@ -1,8 +1,8 @@
 -- fed2-tools — Muxlet workspace definition
 --
--- f2tRegisterWorkspace() is called by init.lua inside startWorkspace() so it
--- always runs after Muxlet is confirmed available, whether it was already
--- installed or was just installed this session.
+-- f2tRegisterWorkspace() is called from init.lua's muxletReady handler, which
+-- guarantees Mux is available regardless of whether Muxlet was already installed
+-- or was just installed and initialized this session.
 --
 -- A single screen-zone PaneSet with an internal horizontal split keeps the
 -- output and map panes in the same layout tree.  This means:
@@ -10,9 +10,8 @@
 --     the map pane in slotB is never covered.
 --   • Console borders are set correctly by updateConsoleBorders on the output
 --     pane rather than by a separate right-zone border management pass.
---   • The "fed2_map" content is applied automatically at load time via
---     activeContent, so init.lua does not need a manual applyMapContent call
---     for initial workspace startup.
+--   • The "fed2_map" content is applied automatically via activeContent when
+--     the workspace loads — no manual content call needed in init.lua.
 
 local function buildDef()
     return {
@@ -33,7 +32,7 @@ local function buildDef()
                         name            = "Main",
                         mainConsoleHost = true,
                         showTitlebar    = true,
-                        noRename        = true,
+                        renamable       = false,
                         noTabs          = true,
                     },
                     b = {
@@ -41,7 +40,7 @@ local function buildDef()
                         id            = "map",
                         name          = "Map",
                         showTitlebar  = true,
-                        noRename      = true,
+                        renamable     = false,
                         noTabs        = true,
                         activeContent = "fed2_map",
                     },
@@ -53,8 +52,4 @@ end
 
 function f2tRegisterWorkspace()
     Mux.registerWorkspace("fed2-tools", buildDef())
-end
-
-if Mux and Mux.registerWorkspace then
-    f2tRegisterWorkspace()
 end

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Thomas\\\\OneDrive\\\\Documents\\\\GitHub\\\\Muxlet\\\\src\" -Recurse -Force | Where-Object {$_.PSIsContainer} | Select-Object FullName | Sort-Object FullName)",
+      "Read(//c/Users/Thomas/OneDrive/Documents/GitHub/Muxlet/src/scripts/**)",
+      "Bash(grep -rn \"setBgColor\\\\|\\\\.bgColor\\\\|\\\\.color\\\\b\" /c/Users/Thomas/AppData/Local/Mudlet_64_/app-4.20.1/mudlet-lua/lua/geyser/GeyserLabel.lua 2>/dev/null | head -20)",
+      "Read(//c/Users/Thomas/AppData/Local/Mudlet_64_/app-4.20.1/mudlet-lua/lua/geyser/**)",
+      "Bash(grep -rn \"bgColor\\\\|fgColor\\\\|\\\\.color\\\\b\" /c/Users/Thomas/AppData/Local/Mudlet_64_/app-4.20.1/mudlet-lua/lua/geyser/ 2>/dev/null | grep -v \"GeyserColor\" | head -40)",
+      "Read(//c/Users/Thomas/AppData/Local/Mudlet_64_/app-4.20.1/mudlet-lua/lua/geyser//**)",
+      "Read(//c/Users/Thomas/AppData/Local/Programs/**)",
+      "Read(//c/Users/Thomas/AppData/Local/**)",
+      "Read(//c/Users/Thomas/AppData/Local/Mudlet_64_/app-4.21.0/mudlet-lua/lua/geyser/**)",
+      "Read(//c/Users/Thomas/OneDrive/Documents/GitHub/**)",
+      "Bash(\\\\.mfile)",
+      "Bash(mfile\")",
+      "Read(//c/Users/Thomas/.config/mudlet/profiles/fed2-dev/**)",
+      "Read(//c/Users/Thomas/OneDrive/Documents/GitHub/Mudlet/src/**)",
+      "PowerShell(Select-String -Path \"C:\\\\Users\\\\Thomas\\\\OneDrive\\\\Documents\\\\GitHub\\\\Mudlet\\\\src\\\\mudlet.cpp\" -Pattern \"\\\\.xml\" -SimpleMatch | Where-Object { $_.Line -match \"profile|load|read|open\" } | Select-Object LineNumber, Line | Select-Object -First 30)"
+    ]
+  }
+}

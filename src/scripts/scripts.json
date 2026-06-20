@@ -1,12 +1,14 @@
 [
-  {"name": "debug"},
-  {"name": "settings_compat"},
-  {"name": "string_utils"},
+  {"name": "utils"},
+  {"name": "settings"},
   {"name": "arg_parser"},
-  {"name": "table_utils"},
-  {"name": "tools"},
   {"name": "help"},
   {"name": "table_renderer"},
-  {"name": "workspace"},
+  {"name": "connection"},
+  {"name": "char"},
+  {"name": "rank"},
+  {"name": "version"},
+  {"name": "status"},
+  {"name": "devmode"},
   {"name": "init"}
 ]
