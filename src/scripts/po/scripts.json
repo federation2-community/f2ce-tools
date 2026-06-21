@@ -1,0 +1,8 @@
+[
+  {"name": "init"},
+  {"name": "commodity_groups"},
+  {"name": "economy_parser"},
+  {"name": "economy_formatter"},
+  {"name": "economy_capture"},
+  {"name": "help"}
+]

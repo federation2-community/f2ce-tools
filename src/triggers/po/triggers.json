@@ -1,0 +1,68 @@
+[
+  {
+    "name": "capture_line",
+    "patterns": [
+      {
+        "pattern": "^\\s+\\w[^:]+: value \\d+ig/ton",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\d+%\\s+Net:",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\s+\\w[^:]+: production \\d+,",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "error_invalid_planet",
+    "patterns": [
+      {
+        "pattern": "That doesn't seem to be either a commodity group, or the name of a planet!",
+        "type": "substring"
+      },
+      {
+        "pattern": "I don't seem to recognise that planet name!",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "error_not_owner",
+    "patterns": [
+      {
+        "pattern": "You don't own the exchange on this planet!",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "exchange_header",
+    "patterns": [
+      {
+        "pattern": "exchange - all products:",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "exchange_summary",
+    "patterns": [
+      {
+        "pattern": "^\\d+ commodities,",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "production_header",
+    "patterns": [
+      {
+        "pattern": "exchange - production and consumption:",
+        "type": "substring"
+      }
+    ]
+  }
+]
