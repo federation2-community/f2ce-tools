@@ -1,0 +1,17 @@
+[
+  {"name": "init"},
+  {"name": "merchant"},
+  {"name": "mode_detection"},
+  {"name": "state_machine"},
+  {"name": "ac_capture_timer"},
+  {"name": "armstrong_cuthbert"},
+  {"name": "ac_phases"},
+  {"name": "akaturi_capture_timer"},
+  {"name": "akaturi"},
+  {"name": "akaturi_phases"},
+  {"name": "exchange_phases"},
+  {"name": "po_discovery"},
+  {"name": "po_queue"},
+  {"name": "po_phases"},
+  {"name": "help"}
+]

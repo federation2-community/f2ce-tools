@@ -1,0 +1,200 @@
+[
+  {
+    "name": "game_shutdown_warning",
+    "patterns": [
+      {
+        "pattern": "^Federation II will be closing down for a short while in six minutes time\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_collect_errors",
+    "patterns": [
+      {
+        "pattern": "^You (?:have already collected your cargo|don't have a job to collect)!$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_collect_success",
+    "patterns": [
+      {
+        "pattern": "The clerk plugs your com unit into a terminal",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "ac_deliver_capture_payment",
+    "patterns": [
+      {
+        "pattern": "([\\d,]+)ig",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_deliver_error",
+    "patterns": [
+      {
+        "pattern": "^You don't have a cargo to deliver",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_deliver_success",
+    "patterns": [
+      {
+        "pattern": "has been transferred to your account",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "ac_deliver_waiting",
+    "patterns": [
+      {
+        "pattern": "there are no stevedores available to unload your ship",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "ac_job_taken",
+    "patterns": [
+      {
+        "pattern": "^Couldn't find any job in the Sol cartel with number (\\d+)\\. Either there is no job with that number or someone else has taken it\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_loan_repaid",
+    "patterns": [
+      {
+        "pattern": "Your loan has been cleared!",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "ac_work_line",
+    "patterns": [
+      {
+        "pattern": "^\\s+\\d+\\.\\s+From\\s+.+\\s+to\\s+.+\\s+\\-\\s+\\d+\\s+tons of\\s+.+\\s+\\-\\s+\\d+gtu\\s+\\d+ig/tn\\s+\\d+hcr",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "ac_work_start",
+    "patterns": [
+      {
+        "pattern": "^Work available from Armstrong Cuthbert:$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_dropoff_error",
+    "patterns": [
+      {
+        "pattern": "There's no one here expecting anything from you\\.",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_dropoff_success",
+    "patterns": [
+      {
+        "pattern": "^You hand over the package and receive a receipt for it\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_job_end_marker",
+    "patterns": [
+      {
+        "pattern": "^Delivery details will be provided when you collect the package\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_job_error",
+    "patterns": [
+      {
+        "pattern": "No one here has the faintest idea what you're burbling about!",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_job_line",
+    "patterns": [
+      {
+        "pattern": "^.+",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_job_start",
+    "patterns": [
+      {
+        "pattern": "^Your task is to pick up a package on",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_payment",
+    "patterns": [
+      {
+        "pattern": "payment of ([\\d,]+)ig has been credited to your account",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_pickup_error",
+    "patterns": [
+      {
+        "pattern": "There's nothing here for you to pick up\\.",
+        "type": "substring"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_pickup_line",
+    "patterns": [
+      {
+        "pattern": "^.+",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "akaturi_pickup_success",
+    "patterns": [
+      {
+        "pattern": "^You pickup the valuable package and sign for it\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "daily_limit_error",
+    "patterns": [
+      {
+        "pattern": "^Your order is rejected, since you have exceeded the daily gross income limit for commodity trading!$",
+        "type": "regex"
+      }
+    ]
+  }
+]
