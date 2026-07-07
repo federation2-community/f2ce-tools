@@ -11,11 +11,11 @@ end
 f2t_check_connection()
 
 registerAnonymousEventHandler("sysConnectionEvent", function()
-    local wasConnected = F2T_CONNECTED
     f2t_check_connection()
-    if F2T_CONNECTED and not wasConnected then
-        f2t_debug_log("[connection] Connected")
-    elseif not F2T_CONNECTED and wasConnected then
-        f2t_debug_log("[connection] Disconnected")
-    end
+    f2t_debug_log("[connection] Connected")
+end)
+
+registerAnonymousEventHandler("sysDisconnectionEvent", function()
+    f2t_check_connection()
+    f2t_debug_log("[connection] Disconnected")
 end)

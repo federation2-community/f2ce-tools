@@ -60,8 +60,24 @@ function f2t_player_db_save()
     else f2t_debug_log("[player_db] save error: %s", tostring(err)) end
 end
 
+-- Debounced save: gmcp.players deltas arrive every few seconds while players
+-- move, and writing the whole DB per delta was constant synchronous disk churn.
+-- The in-memory DB (and every UI reading it) stays realtime; disk catches up
+-- within SAVE_INTERVAL, with forced saves on disconnect and Mudlet exit.
+local SAVE_INTERVAL = 30
+local _saveTimer = nil
+
+function f2t_player_db_save_debounced()
+    if not _dirty or _saveTimer then return end
+    _saveTimer = tempTimer(SAVE_INTERVAL, function()
+        _saveTimer = nil
+        f2t_player_db_save()
+    end)
+end
+
 -- Unconditional save — for disconnect/logout where we must persist immediately.
 function f2t_player_db_save_forced()
+    if _saveTimer then killTimer(_saveTimer); _saveTimer = nil end
     _ensure_dir()
     local ok, err = pcall(table.save, _path(), F2T_PLAYER_DB)
     if ok then _dirty = false
@@ -204,7 +220,7 @@ function f2t_player_db_feed_from_gmcp()
         end
     end
 
-    f2t_player_db_save()
+    f2t_player_db_save_debounced()
     raiseEvent("f2tPlayerDbUpdated")
 end
 
@@ -218,6 +234,11 @@ end)
 -- On disconnect, mark everyone offline and persist so last_seen stays accurate.
 registerAnonymousEventHandler("sysDisconnectionEvent", function()
     f2t_player_db_mark_all_offline()
+    f2t_player_db_save_forced()
+end)
+
+-- Mudlet exit is the other session-ending path the debounced save must survive.
+registerAnonymousEventHandler("sysExitEvent", function()
     f2t_player_db_save_forced()
 end)
 

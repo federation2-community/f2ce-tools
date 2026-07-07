@@ -7,29 +7,24 @@
 -- -------------------------------------
 -- Muxlet tears down content by deleting the disposable Geyser.Container slot it
 -- wraps each apply() in; that delete is recursive, so for ordinary widgets no
--- remove() cleanup is needed.  A Geyser.Mapper is the exception on two counts:
---   1. The Mudlet map widget it wraps is NOT a true Qt child of its container,
---      so deleting the slot does not remove it (it would keep painting over
---      whatever replaced it), and Mudlet exposes no deleteMapper().
---   2. The native map is a GL surface that does NOT survive being reparented:
---      reparenting it into a new slot (or hiding then re-showing it) leaves it
---      blank, and updateMap()/show() do not revive it.
+-- remove() cleanup is needed.  A Geyser.Mapper is the exception: the native
+-- embedded map widget is a PER-PROFILE SINGLETON (TMainConsole::mpMapper in
+-- Mudlet) — every createMapper call after the first just moves/resizes/shows
+-- that same widget, and Geyser.Mapper:hide() merely sizes it to 0×0.  It is
+-- NOT a Qt child of its Geyser container, so deleting the slot does not remove
+-- it, and reparenting an existing wrapper leaves it blank.
 --
--- So a single mapper cannot simply be moved between slots.  Instead we CREATE A
--- FRESH mapper on every acquire (a fresh createMapper always renders), and PARK
--- the previous one — hidden, in a persistent off-view garage container — on
--- release.  Parked mappers are inert and invisible; they are kept referenced so
--- they are never garbage-orphaned over live content.  (Mudlet has no deleteMapper,
--- so a small number of parked widgets is the cost of reliable rendering; map
--- content is normally placed once, not toggled in a hot loop.)
+-- So on release we hide the native mapper (0×0) and DELETE the disposable
+-- Geyser wrapper; on acquire we create a fresh wrapper, which re-points the
+-- singleton at the new slot and always renders.  Nothing accumulates across
+-- add/remove cycles or package reloads, and none of this can touch the map
+-- database — that lives in Host::mpMap and is only affected by deleteMap().
 --
 -- f2tRegisterMapContent() is called from init.lua's muxletReady handler.
 
 -- ── Mapper management ───────────────────────────────────────────────────────────
-local liveMapper  = nil    -- the mapper currently shown in a pane (or nil)
-local parked      = {}     -- previous mappers, hidden in the garage
-local mapperGarage = nil
-local mapperSeq   = 0
+local liveMapper = nil    -- the wrapper currently shown in a pane (or nil)
+local mapperSeq  = 0      -- wrapper names are never reused (Qt caches by name)
 
 -- Slot container + gid of the currently live map pane, so code outside this
 -- apply() closure (settings gear menu, "map import db" alias) can build the
@@ -37,34 +32,21 @@ local mapperSeq   = 0
 local liveSlotContent = nil
 local liveGid         = nil
 
--- Persistent, hidden, full-size holder that parked mappers live in so they are
--- never orphaned inside a deleted content slot.
-local function ensureGarage()
-    if mapperGarage then return mapperGarage end
-    mapperGarage = Geyser.Container:new({
-        name   = "f2t_mapper_garage",
-        x      = 0, y = 0, width = "100%", height = "100%",
-    })
-    pcall(function() mapperGarage:hide() end)
-    return mapperGarage
-end
-
--- Move the current live mapper into the hidden garage (and remember it).
-local function parkLive()
+-- Hide the native mapper and dispose of the current wrapper.
+local function releaseLive()
     if not liveMapper then return end
-    ensureGarage()
     local m = liveMapper
     liveMapper = nil
-    pcall(function() m:hide() end)
-    pcall(function() m:changeContainer(mapperGarage) end)
-    parked[#parked + 1] = m
+    pcall(function() m:hide() end)      -- sizes the singleton native mapper to 0×0
+    if m.delete then
+        pcall(function() m:delete() end)   -- drop the Geyser wrapper; map DB unaffected
+    end
 end
 
--- Acquire a mapper into `slotContent`.  Always a FRESH widget (reparenting an
--- existing one renders blank), with the prior one parked first.
+-- Acquire a mapper into `slotContent`.  Always a FRESH wrapper (reparenting an
+-- existing one renders blank), with the prior one released first.
 local function mapperAcquire(slotContent)
-    ensureGarage()
-    parkLive()
+    releaseLive()
     mapperSeq = mapperSeq + 1
     liveMapper = Geyser.Mapper:new({
         name   = "f2t_mapper_" .. mapperSeq,
@@ -79,10 +61,11 @@ local function mapperAcquire(slotContent)
     return liveMapper
 end
 
--- Park the live mapper on content removal, BEFORE the slot is destroyed, so it is
--- never orphaned in a deleted container nor left drawing over the replacement.
+-- Release the live mapper on content removal, BEFORE the slot is destroyed, so
+-- it is never orphaned in a deleted container nor left drawing over the
+-- replacement.
 local function mapperRelease()
-    parkLive()
+    releaseLive()
 end
 
 -- Refit the live mapper to the current slot (called from resize()).

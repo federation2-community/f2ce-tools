@@ -92,6 +92,7 @@ f2t_register_help("f2t", {
         {cmd = "f2t version", desc = "Show package version"},
         {cmd = "f2t debug on/off", desc = "Toggle debug logging"},
         {cmd = "f2t settings", desc = "Manage system settings"},
+        {cmd = "f2t chat wipe", desc = "Wipe chat history and re-fetch comhistory"},
         {cmd = "", desc = ""},
         {cmd = "Components:", desc = ""},
         {cmd = "map help", desc = "Auto-mapping, navigation, destinations"},
@@ -131,6 +132,16 @@ f2t_register_help("f2t settings", {
         "",
         "factory settings                        # Factory component settings",
         "price settings set results_count 10     # Commodities component settings"
+    }
+})
+
+f2t_register_help("f2t chat", {
+    description = "Manage the persistent chat history",
+    usage = {
+        {cmd = "f2t chat wipe", desc = "Wipe the current character's saved chat history and re-fetch comhistory"}
+    },
+    examples = {
+        "f2t chat wipe    # Start the chat log over from the game's com history"
     }
 })
 

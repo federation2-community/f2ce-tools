@@ -61,12 +61,26 @@ local EYE_CSS = [[
     QLabel::hover { background-color: rgba(42,48,78,230); }
 ]]
 
-local headers = {}   -- target._gid → header Geyser.Label
-local rows    = {}   -- target._gid → list of row Geyser.Label widgets
-local targets = {}   -- target._gid → target (pane/tab), for live auto-fit requests
+local headers  = {}   -- target._gid → header Geyser.Label
+local rows     = {}   -- target._gid → list of row Geyser.Label widgets
+local targets  = {}   -- target._gid → target (pane/tab), for live auto-fit requests
+local rendered = {}   -- target._gid → fingerprint of the player list last drawn
 
 local function roomPlayers()
     return gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.players or nil
+end
+
+-- gmcp.room.info fires on every room move, but the local player list is
+-- usually unchanged (and usually empty). Fingerprint it so the widget rebuild
+-- only runs when the list actually differs from what's on screen.
+local function playersFingerprint()
+    local players = roomPlayers()
+    if not players or #players == 0 then return "" end
+    local parts = {}
+    for i, p in ipairs(players) do
+        parts[i] = (p.name or "") .. "\1" .. (p.rank or "")
+    end
+    return table.concat(parts, "\2")
 end
 
 local function destroyWidget(w)
@@ -158,15 +172,21 @@ local function render(target)
 end
 
 local function refreshAll()
+    local fp = playersFingerprint()
+    local anyRendered = false
     for gid, target in pairs(targets) do
-        local ok, height = pcall(render, target)
-        if ok and Mux and Mux.requestAutoFit then
-            Mux.requestAutoFit(target, height)
+        if rendered[gid] ~= fp then
+            local ok, height = pcall(render, target)
+            if ok then
+                rendered[gid] = fp
+                anyRendered = true
+                if Mux and Mux.requestAutoFit then Mux.requestAutoFit(target, height) end
+            end
         end
     end
     -- Freshly recreated widgets land on top of the Qt stacking order, so
-    -- re-assert dialogs/floats above content every refresh.
-    if Mux and Mux.raiseFloatingPanes then Mux.raiseFloatingPanes() end
+    -- re-assert dialogs/floats above content — but only when something rebuilt.
+    if anyRendered and Mux and Mux.raiseFloatingPanes then Mux.raiseFloatingPanes() end
 end
 
 local function buildLocalPlayersDef()
@@ -184,12 +204,14 @@ local function buildLocalPlayersDef()
             end
             targets[target._gid] = target
             target._autoFitHeight = render(target)
+            rendered[target._gid] = playersFingerprint()
         end,
         remove = function(target)
             local gid = target._gid
             clearRows(gid)
             if headers[gid] then destroyWidget(headers[gid]); headers[gid] = nil end
-            targets[gid] = nil
+            targets[gid]  = nil
+            rendered[gid] = nil
         end,
         resize    = function(target) render(target) end,
         serialize = function(_t) return {} end,

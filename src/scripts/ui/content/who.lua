@@ -359,6 +359,16 @@ end
 F2T_CONTENT_REGISTRARS = F2T_CONTENT_REGISTRARS or {}
 table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterWho)
 
-registerAnonymousEventHandler("f2tPlayerDbUpdated", function() refreshAll() end)
+-- Coalesce repaints: gmcp.players deltas can arrive several times a second with
+-- many players online. One repaint per 0.2s window keeps the list effectively
+-- realtime at a fraction of the render cost.
+local _refreshTimer = nil
+registerAnonymousEventHandler("f2tPlayerDbUpdated", function()
+    if _refreshTimer then return end
+    _refreshTimer = tempTimer(0.2, function()
+        _refreshTimer = nil
+        refreshAll()
+    end)
+end)
 
 if f2t_debug_log then f2t_debug_log("[who] module loaded") end

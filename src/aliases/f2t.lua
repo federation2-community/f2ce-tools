@@ -44,6 +44,18 @@ elseif subcommand == "settings" then
     if f2t_handle_help("f2t settings", settings_args) then return end
     f2t_handle_settings_command("f2t", settings_args)
 
+elseif subcommand == "chat" then
+    local chatArgs = args:match("^chat%s*(.*)") or ""
+    if f2t_handle_help("f2t chat", chatArgs) then return end
+
+    if chatArgs == "wipe" then
+        f2tChatWipe()
+        f2tChatComhistoryRefetch()
+    else
+        cecho(string.format("\n<red>[f2t]<reset> Unknown chat option: %s\n", chatArgs))
+        f2t_show_help_hint("f2t chat")
+    end
+
 elseif subcommand == "version" then
     f2t_check_latest_version()
 

@@ -97,9 +97,7 @@ function f2tChatInboundBeginContinuation(mtype, name, msg)
     armPeek()
 end
 
-registerAnonymousEventHandler("sysConnectionEvent", function()
-    local _, _, connected = getConnectionInfo()
-    if connected then return end
+registerAnonymousEventHandler("sysDisconnectionEvent", function()
     killPeek()
     state.pending = nil
 end)

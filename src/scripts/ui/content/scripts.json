@@ -10,5 +10,6 @@
   {"name": "hauling_jobs"},
   {"name": "trading"},
   {"name": "company"},
-  {"name": "futures"}
+  {"name": "futures"},
+  {"name": "exchange"}
 ]

@@ -260,6 +260,7 @@ local function searchNext()
     if not commodity then
         -- Done: show verdict.
         ps.active = false
+        pcall(disableTrigger, "trading_profit_tick")   -- catch-all ^$ pattern; armed only while scanning
         table.sort(ps.results, function(a, b) return a.profit > b.profit end)
         searchConsoles(function(mc)
             mc:cecho("\n<white>==========================================\n")
@@ -360,6 +361,7 @@ local function findBestProfit()
         mc:raise()
         mc:cecho(string.format("<yellow>Searching %d commodities for best profit...\n\n", ps.totalCount))
     end)
+    pcall(enableTrigger, "trading_profit_tick")
     searchNext()
 end
 
@@ -654,6 +656,11 @@ function f2tRegisterTrading()
         return
     end
     Mux.registerContent("fed2_trading", buildTradingDef())
+    -- Package (re)install re-enables all triggers; the profit-tick trigger is a
+    -- catch-all blank-line pattern, so park it unless a scan is actually running.
+    if not (F2T_TRADING.profitSearch and F2T_TRADING.profitSearch.active) then
+        pcall(disableTrigger, "trading_profit_tick")
+    end
     if f2t_debug_log then f2t_debug_log("[trading] registered fed2_trading content") end
 end
 

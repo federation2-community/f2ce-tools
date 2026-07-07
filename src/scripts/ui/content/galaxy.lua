@@ -43,6 +43,15 @@ F2T_GALAXY = F2T_GALAXY or {
 -- blank line as authoritative "end of di systems" cut capture short after just
 -- the first few entries, leaking the (much longer) remainder of the listing
 -- straight to the console. See CLAUDE.md's "Timer-Based Completion Rules".
+-- The capture triggers include catch-all line patterns (galaxy_nav_line ^(.+)$,
+-- galaxy_nav_end ^$) that otherwise run on every line of output forever. They
+-- are armed only for the duration of a scrape.
+local function setCaptureTriggers(on)
+    local fn = on and enableTrigger or disableTrigger
+    pcall(fn, "galaxy_nav_line")
+    pcall(fn, "galaxy_nav_end")
+end
+
 local finishTimer = nil
 local function resetFinishTimer()
     if finishTimer then killTimer(finishTimer) end
@@ -67,6 +76,7 @@ function f2t_galaxy_scrape()
     F2T_GALAXY.loading        = true
     F2T_GALAXY.capture_active = true
     F2T_GALAXY.capture_lines  = {}
+    setCaptureTriggers(true)
     f2t_galaxy_refresh_open()              -- show the loading state in any open navigator
     sendAll("di systems", false)           -- false = don't echo the command; triggers delete the output
     resetFinishTimer()
@@ -120,6 +130,7 @@ end
 function f2t_galaxy_finish_capture()
     if not F2T_GALAXY.capture_active then return end
     F2T_GALAXY.capture_active = false
+    setCaptureTriggers(false)
     if finishTimer then killTimer(finishTimer); finishTimer = nil end
 
     if #F2T_GALAXY.capture_lines == 0 then
@@ -426,6 +437,17 @@ local function populate(gid)
     pcall(function() inst.content:resize(inst.contentW or 200, math.max(y + 4, viewportH)) end)
 end
 
+-- True while the hosting pane/tab (or its owning pane) is condition-hidden;
+-- the search poll idles then instead of reading the command line.
+local function targetHidden(target)
+    local t = target
+    while t do
+        if t._conditionHidden then return true end
+        t = t.pane
+    end
+    return false
+end
+
 -- ── Build the header / scroll / footer panel into a content target ────────────
 local function buildPanel(target)
     local gid = target._gid
@@ -437,7 +459,7 @@ local function buildPanel(target)
     if instances[gid] then populate(gid); return end
 
     local C = target.content
-    local inst = { gid = gid, epoch = 0, rows = {} }
+    local inst = { gid = gid, epoch = 0, rows = {}, target = target }
     instances[gid] = inst
 
     local topbar_h, footer_h = 86, 24
@@ -519,11 +541,17 @@ local function buildPanel(target)
     populate(gid)
 
     -- Debounced search poll: rebuild the tree shortly after typing stops.
+    -- Runs at 0.4s (fast enough to feel live for typed search) and idles
+    -- entirely while the hosting pane/tab is condition-hidden.
     inst.pollActive = true
     inst.lastSearch = nil
     local function poll()
         local i = instances[gid]
         if not i or not i.pollActive then return end
+        if i.target and targetHidden(i.target) then
+            tempTimer(0.5, poll)
+            return
+        end
         local q = (i.searchCmd and i.searchCmd:getText() or ""):match("^%s*(.-)%s*$")
         if q ~= i.lastSearch then
             i.lastSearch = q
@@ -533,9 +561,9 @@ local function buildPanel(target)
                 if instances[gid] then populate(gid) end
             end)
         end
-        tempTimer(0.15, poll)
+        tempTimer(0.4, poll)
     end
-    tempTimer(0.15, poll)
+    tempTimer(0.4, poll)
 end
 
 local function teardownPanel(gid)
@@ -626,6 +654,9 @@ end
 function f2tRegisterGalaxy()
     if not (Mux and Mux.registerContent) then return end
     Mux.registerContent("fed2_galaxy", buildGalaxyDef())
+    -- Package (re)install re-enables all triggers; park the catch-all capture
+    -- triggers unless a scrape is actually in flight.
+    if not F2T_GALAXY.capture_active then setCaptureTriggers(false) end
     -- Background scrape only for a genuine hot-reload (script re-executed
     -- with no index built yet). Normal login path: f2tCharacterChanged fires
     -- after vitals and schedules the scrape. Guarding on `loaded` also stops

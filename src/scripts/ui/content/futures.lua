@@ -18,6 +18,9 @@
 --   To auto-show only while holding contracts: GMCP has value → char.futures.
 --
 -- Ported from archive's ui_futures.lua.
+--
+-- Market columns/rows are exposed as f2tFuturesMarketCols/f2tFuturesMarketRows
+-- so the exchange content (content/exchange.lua) can host the same table.
 
 local H_HDR = 20    -- status header strip height (px)
 local H_COL = 20    -- column header bar height (px)
@@ -145,7 +148,24 @@ end
 
 -- ══ MARKET TABLE ══════════════════════════════════════════════════════════════
 
-local function buildMarketRows()
+-- Exchange presence must come from room flags: gmcp.exchange keys persist
+-- (stale, from the last exchange visited) after leaving an exchange, so their
+-- mere existence can't be trusted as "live data here".
+local function inExchangeRoom()
+    local flags = gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.flags
+    if type(flags) == "table" then
+        for _, f in ipairs(flags) do
+            if tostring(f):lower() == "exchange" then return true end
+        end
+        return false
+    end
+    if type(flags) == "string" then
+        return flags:lower():find("exchange", 1, true) ~= nil
+    end
+    return false
+end
+
+function f2tFuturesMarketRows()
     local exchange = gmcp and gmcp.exchange
     if not exchange or not exchange.futures then return {} end
 
@@ -212,7 +232,7 @@ local function buildMarketRows()
     return rows
 end
 
-local function marketCols()
+function f2tFuturesMarketCols()
     return {
         {
             key           = "commodity",
@@ -379,6 +399,20 @@ end
 local function refreshMarket(gid)
     local inst = marketInstances[gid]
     if not inst then return end
+    -- Outside an exchange room the gmcp.exchange keys are stale leftovers from
+    -- the last exchange visited — never render them as live. Draw the away
+    -- state once, then skip further room moves entirely.
+    if not inExchangeRoom() then
+        if inst.mode == "away" then return end
+        inst.mode = "away"
+        if inst.hdr then
+            inst.hdr:echo("<span style='font-size:9px;color:#888888;padding-left:6px;'>"
+                .. "Not at an exchange — contracts show live at an exchange.</span>")
+        end
+        f2tTableSetData(inst.tableId, {})
+        return
+    end
+    inst.mode = "live"
     local planet = gmcp and gmcp.room and gmcp.room.info and
         (gmcp.room.info.area or gmcp.room.info.system)
     local hasData = gmcp and gmcp.exchange and gmcp.exchange.futures
@@ -392,7 +426,7 @@ local function refreshMarket(gid)
                 "<span style='font-size:9px;color:#888888;padding-left:6px;'>No exchange data — visit an exchange.</span>")
         end
     end
-    f2tTableSetData(inst.tableId, buildMarketRows())
+    f2tTableSetData(inst.tableId, f2tFuturesMarketRows())
 end
 
 local function refreshAllMarkets()
@@ -720,7 +754,7 @@ function f2tRegisterFutures()
     Mux.registerContent("fed2_futures_market", makeDef(
         "Futures Market",
         "Futures contracts on offer at the current exchange, scored by profit potential.",
-        marketInstances, "fut_mkt", marketCols, refreshMarket))
+        marketInstances, "fut_mkt", f2tFuturesMarketCols, refreshMarket))
     Mux.registerContent("fed2_futures", makeDef(
         "Futures (Owned)",
         "Your open futures contracts with P&L and margin health.",

@@ -21,16 +21,19 @@
 --
 -- Ported from archive's ui_chat_comhistory.lua.
 
+local MAX_CONTINUATION_LINES = 6   -- per-entry safety cap, same as chat_inbound.lua
+
 local state = {
     -- sent: false = not requested yet; "pending" = requested, header not seen;
     --       true  = capture consumed this session (prevents re-capture)
-    sent    = false,
-    active  = false,   -- true while collecting message lines
-    inEntry = false,   -- true if the most recent line could still take a wrapped continuation
-    current = nil,     -- buffer entry the next continuation line (if any) folds into
-    refTime = nil,
-    buffer  = {},      -- list of {name, ago, text}
-    timerId = nil,
+    sent      = false,
+    active    = false,   -- true while collecting message lines
+    inEntry   = false,   -- true if the most recent line could still take a wrapped continuation
+    current   = nil,     -- buffer entry the next continuation line (if any) folds into
+    contLines = 0,       -- continuation lines folded into the current entry
+    refTime   = nil,
+    buffer    = {},      -- list of {name, ago, text}
+    timerId   = nil,
 }
 
 -- Returns (estimatedUnixTime, toleranceSeconds).  "N hours ago" means the
@@ -84,6 +87,17 @@ local function merge(newRecords)
     F2T_CHAT.history = merged
 end
 
+-- The backfill triggers include a catch-all line pattern (comhistory_line,
+-- ^.*$) that otherwise runs on every line of game output forever. They are
+-- only needed between the login request and capture completion, so they are
+-- disabled once the backfill has run and re-armed on disconnect — before the
+-- next connection can need them.
+local function setBackfillTriggers(on)
+    local fn = on and enableTrigger or disableTrigger
+    pcall(fn, "comhistory_capture")
+    pcall(fn, "comhistory_line")
+end
+
 local finish, resetFinishTimer, matchHeader
 
 resetFinishTimer = function()
@@ -106,6 +120,7 @@ finish = function()
     state.inEntry = false
     state.current = nil
     state.timerId = nil
+    setBackfillTriggers(false)   -- backfill done for this session
 
     local buffer = state.buffer
     state.buffer = {}
@@ -148,6 +163,7 @@ function f2tChatComhistoryBegin()
 
     if line:match("^No COM messages") then
         state.sent = true
+        setBackfillTriggers(false)
         f2t_debug_log("[comhistory] no history to fetch")
         return
     end
@@ -173,6 +189,10 @@ end
 function f2tChatComhistoryLine()
     if not state.active then return end
 
+    -- The galaxy navigator's background "di systems" scrape can interleave
+    -- with this capture at login; its lines belong to that capture, not here.
+    if F2T_GALAXY and F2T_GALAXY.capture_active then return end
+
     local name, ago, text = matchHeader(line)   -- `line` is Mudlet's global for the trigger's current line
 
     if name then
@@ -183,7 +203,8 @@ function f2tChatComhistoryLine()
         -- empty data).
         resetFinishTimer()
 
-        state.inEntry = true
+        state.inEntry   = true
+        state.contLines = 0
         if F2T_CHAR_NAME and name:lower() == F2T_CHAR_NAME:lower() then
             state.current = nil
         else
@@ -195,19 +216,57 @@ function f2tChatComhistoryLine()
 
     if not state.inEntry then return end
 
+    -- Fed2 delimits an output block with a blank line, even mid-wrap (same
+    -- rule as chat_inbound.lua) — the entry is complete; anything after the
+    -- blank is unrelated output and must not be folded in.
+    if line:match("^%s*$") then
+        deleteLine()
+        resetFinishTimer()
+        state.inEntry = false
+        state.current = nil
+        return
+    end
+
     deleteLine()
     resetFinishTimer()
     if state.current then
         state.current.text = state.current.text .. " " .. line
     end
+    state.contLines = state.contLines + 1
+    if state.contLines >= MAX_CONTINUATION_LINES then
+        state.inEntry = false
+        state.current = nil
+    end
+end
+
+-- Re-arm the once-per-session gate and fetch again (used by `f2t chat wipe`).
+-- Offline it just resets the gate so the next login auto-fetches.
+function f2tChatComhistoryRefetch()
+    if state.timerId then killTimer(state.timerId) end
+    state.active, state.inEntry, state.current = false, false, nil
+    state.buffer, state.timerId = {}, nil
+    local name = gmcp and gmcp.char and gmcp.char.vitals and gmcp.char.vitals.name
+    if not name or name == "" then
+        state.sent = false
+        cecho("\n<yellow>[chat]<reset> Not logged in — com history will be fetched at next login.\n")
+        return
+    end
+    state.sent = "pending"
+    setBackfillTriggers(true)
+    send("comhistory", false)
+    cecho("\n<yellow>[chat]<reset> Re-fetching com history...\n")
 end
 
 -- ── Session wiring ────────────────────────────────────────────────────────────
 
 local function requestOnLogin()
     if state.sent then return end
-    if f2t_settings_get("chat", "fetch_history") == false then return end
+    if f2t_settings_get("chat", "fetch_history") == false then
+        setBackfillTriggers(false)   -- no backfill this session; stop the per-line tax
+        return
+    end
     state.sent = "pending"
+    setBackfillTriggers(true)
     tempTimer(2, function()
         send("comhistory", false)
         f2t_debug_log("[comhistory] auto-requested")
@@ -231,14 +290,14 @@ registerAnonymousEventHandler("gmcp.char.vitals", onVitals)
 -- backfill still runs once after a reload instead of silently never firing.
 onVitals()
 
-registerAnonymousEventHandler("sysConnectionEvent", function()
-    local _, _, connected = getConnectionInfo()
-    if connected then return end
-    -- Reset on disconnect so the next login fetches again.
+-- Reset on disconnect so the next login fetches again. Re-arming the triggers
+-- here guarantees they are live before the next connection needs them.
+registerAnonymousEventHandler("sysDisconnectionEvent", function()
     if state.timerId then killTimer(state.timerId) end
     state.sent, state.active, state.refTime = false, false, nil
     state.inEntry, state.current = false, nil
     state.buffer, state.timerId = {}, nil
+    setBackfillTriggers(true)
 end)
 
 f2t_debug_log("[chat] comhistory module loaded")

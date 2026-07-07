@@ -41,6 +41,33 @@ function f2tChatSave()
     if not ok then f2t_debug_log("[chat] save error: %s", tostring(err)) end
 end
 
+-- Debounced save: rendering stays realtime (records append in memory and the
+-- f2tChatUpdated event fires immediately); only the disk write is deferred, so
+-- a busy com channel doesn't rewrite the whole history file per message.
+-- Guardrails: f2tChatFlush() runs on disconnect and Mudlet exit.
+local SAVE_DEBOUNCE = 10
+local _saveTimer = nil
+
+local function scheduleSave()
+    if _saveTimer then return end
+    _saveTimer = tempTimer(SAVE_DEBOUNCE, function()
+        _saveTimer = nil
+        f2tChatSave()
+    end)
+end
+
+function f2tChatFlush()
+    if _saveTimer then killTimer(_saveTimer); _saveTimer = nil end
+    f2tChatSave()
+end
+
+-- Drop a pending write without saving — used when history is about to be
+-- replaced wholesale (character change); the old character's data was already
+-- flushed by the disconnect guardrail.
+local function cancelPendingSave()
+    if _saveTimer then killTimer(_saveTimer); _saveTimer = nil end
+end
+
 function f2tChatLoad()
     local buf = {}
     local ok  = pcall(table.load, chatPath(), buf)
@@ -61,13 +88,13 @@ end
 function f2tChatAdd(mtype, from, message)
     local r = { t = os.time(), type = mtype, from = from or "", msg = message or "" }
     table.insert(F2T_CHAT.history, r)
-    f2tChatSave()
+    scheduleSave()
     raiseEvent("f2tChatUpdated", "append")
 end
 
 function f2tChatWipe()
     F2T_CHAT.history = {}
-    f2tChatSave()
+    f2tChatFlush()
     raiseEvent("f2tChatUpdated", "replay")
     cecho("\n<yellow>[chat]<reset> Chat history wiped.\n")
 end
@@ -75,6 +102,7 @@ end
 -- Discard in-memory history and reload from the (possibly different) per-char
 -- path.  Called when the logged-in character changes.
 function f2tChatReload()
+    cancelPendingSave()
     F2T_CHAT.history = {}
     F2T_CHAT.loaded  = false
     f2tChatLoad()
@@ -91,21 +119,23 @@ local function addStatus(msg, line)
         t = os.time(), type = "status", from = "", msg = msg, line = line,
     }
     table.insert(F2T_CHAT.history, r)
-    f2tChatSave()
+    scheduleSave()
     raiseEvent("f2tChatUpdated", "append")
 end
 
 registerAnonymousEventHandler("sysConnectionEvent", function()
-    -- connection.lua's own handler keeps F2T_CONNECTED current; read the live
-    -- state directly so ordering between the two handlers doesn't matter.
-    local _, _, connected = getConnectionInfo()
-    if connected then
-        addStatus("Connected", string.format(
-            "#2d6e2d── Connected %s ─────────────────────────\n", os.date("%H:%M")))
-    else
-        addStatus("Disconnected", string.format(
-            "#6e2d2d── Disconnected %s ──────────────────────\n", os.date("%H:%M")))
-    end
+    addStatus("Connected", string.format(
+        "#2d6e2d── Connected %s ─────────────────────────\n", os.date("%H:%M")))
+end)
+
+registerAnonymousEventHandler("sysDisconnectionEvent", function()
+    addStatus("Disconnected", string.format(
+        "#6e2d2d── Disconnected %s ──────────────────────\n", os.date("%H:%M")))
+    f2tChatFlush()   -- session ending: persist everything now, marker included
+end)
+
+registerAnonymousEventHandler("sysExitEvent", function()
+    f2tChatFlush()
 end)
 
 registerAnonymousEventHandler("f2tCharacterChanged", function()
