@@ -13,19 +13,22 @@
 --      two triggers, so nothing spams the main console. Because the index is
 --      pre-built in the background, opening the navigator is instant.
 --
---   2. A "fed2_galaxy" Muxlet content type (singleton) rendering the cartel →
---      system → planet tree in a scrollable console (expand/collapse, click a
---      name for "di" info, click → to navigate). Add it to a pane from the
---      Content Library, position/anchor that pane, and save the workspace —
+--   2. A "fed2_galaxy" Muxlet content type (singleton) rendering the syndicate →
+--      cartel → system → planet tree in a scrollable console (expand/collapse,
+--      click a name for "di" info, click → to navigate). Add it to a pane from
+--      the Content Library, position/anchor that pane, and save the workspace —
 --      Muxlet's own pane persistence carries the placement from there. To
 --      show/hide it from a Button Grid button, bind the button to Muxlet's
 --      generic "Toggle Pane/Tab Visibility" action and pick that pane as the
 --      target (see Muxlet's conditional.lua / contentLibrary/buttons.lua).
 
 -- ── Data store ───────────────────────────────────────────────────────────────
--- cartels[cartel] = { name, systems = { [sys] = { name, cartel, planets = { {name,system,cartel}, ... } } } }
+-- cartels[cartel] = { name, syndicate, systems = { [sys] = { name, cartel, syndicate, planets = { {name,system,cartel,syndicate}, ... } } } }
+-- syndicates[syn] = { name, cartels = { [cartel] = <same table object as cartels[cartel]> } } — a
+-- grouping view over the same cartel tables, not a copy, so cartel/system lookups stay unchanged.
 F2T_GALAXY = F2T_GALAXY or {
     cartels        = {},
+    syndicates     = {},
     loaded         = false,
     loading        = false,
     builtAt        = 0,        -- unix time of last successful scrape
@@ -107,23 +110,24 @@ function f2t_galaxy_capture_blank()
 end
 
 -- Parse one combined system line into its components.
--- Format: "SystemName - CartelName cartel - Rank Owner[tag]: Planet(T) Planet(T) ..."
+-- Format: "SystemName - SyndicateName syndicate - CartelName cartel - Rank Owner[tag]: Planet(T) Planet(T) ..."
 local function parseSystemLine(line)
-    local system_name, cartel_name, planet_str =
-        line:match("^(.+) %- (.+) cartel %- [^:]+: (.*)$")
+    local system_name, syndicate_name, cartel_name, planet_str =
+        line:match("^(.+) %- (.+) syndicate %- (.+) cartel %- [^:]+: (.*)$")
     if not system_name then return nil end
-    system_name = system_name:match("^%s*(.-)%s*$")
-    cartel_name = cartel_name:match("^%s*(.-)%s*$")
+    system_name    = system_name:match("^%s*(.-)%s*$")
+    syndicate_name = syndicate_name:match("^%s*(.-)%s*$")
+    cartel_name    = cartel_name:match("^%s*(.-)%s*$")
 
     local planets = {}
     -- "Planet Name(T)" where T is the planet type tag in parentheses.
     for planet_name in (planet_str or ""):gmatch("(.-)%([^%)]+%)%s*") do
         planet_name = planet_name:match("^%s*(.-)%s*$")
         if planet_name ~= "" then
-            planets[#planets + 1] = { name = planet_name, system = system_name, cartel = cartel_name }
+            planets[#planets + 1] = { name = planet_name, system = system_name, cartel = cartel_name, syndicate = syndicate_name }
         end
     end
-    return system_name, cartel_name, planets
+    return system_name, syndicate_name, cartel_name, planets
 end
 
 -- Called when the 0.5s silence timer (resetFinishTimer) expires.
@@ -139,16 +143,20 @@ function f2t_galaxy_finish_capture()
         return
     end
 
-    local cartels = {}
+    local cartels    = {}
+    local syndicates = {}
     for _, line in ipairs(F2T_GALAXY.capture_lines) do
-        local sys, cart, planets = parseSystemLine(line)
-        if sys and cart then
-            cartels[cart] = cartels[cart] or { name = cart, systems = {} }
-            cartels[cart].systems[sys] = { name = sys, cartel = cart, planets = planets }
+        local sys, syn, cart, planets = parseSystemLine(line)
+        if sys and syn and cart then
+            cartels[cart] = cartels[cart] or { name = cart, syndicate = syn, systems = {} }
+            cartels[cart].systems[sys] = { name = sys, cartel = cart, syndicate = syn, planets = planets }
+            syndicates[syn] = syndicates[syn] or { name = syn, cartels = {} }
+            syndicates[syn].cartels[cart] = cartels[cart]   -- same table object, not a copy
         end
     end
 
-    F2T_GALAXY.cartels = cartels
+    F2T_GALAXY.cartels    = cartels
+    F2T_GALAXY.syndicates = syndicates
     F2T_GALAXY.loading = false
     F2T_GALAXY.loaded  = true
     F2T_GALAXY.builtAt = os.time()
@@ -204,6 +212,15 @@ local function cartelHasChildrenMatch(cd, q)
     for _, sd in pairs(cd.systems or {}) do if systemHasMatch(sd, q) then return true end end
     return false
 end
+local function syndicateHasMatch(syd, q)
+    if qMatches(syd.name, q) then return true end
+    for _, cd in pairs(syd.cartels or {}) do if cartelHasMatch(cd, q) then return true end end
+    return false
+end
+local function syndicateHasChildrenMatch(syd, q)
+    for _, cd in pairs(syd.cartels or {}) do if cartelHasMatch(cd, q) then return true end end
+    return false
+end
 
 -- ── Styles (self-contained; no dependency on the v1 UI.style table) ───────────
 local ROW_H      = 24    -- px per row (tied to font size, not pane size)
@@ -233,7 +250,12 @@ local CSS_NAV = [[
         border-radius:3px; color:white; font-size:10px; font-weight:bold; qproperty-alignment:AlignCenter; }
     QLabel::hover{ background-color: rgba(55,150,95,230); }
 ]]
-local ICONS = { cartel = { "🌌", "#ff6b9d" }, system = { "⭐", "#ffd700" }, planet = { "🌍", "#4ecdc4" } }
+local ICONS = {
+    syndicate = { "🏛️", "#a78bfa" },
+    cartel    = { "🌌", "#ff6b9d" },
+    system    = { "⭐", "#ffd700" },
+    planet    = { "🌍", "#4ecdc4" },
+}
 
 -- Small square icon button (refresh / collapse / clear): bordered square, bigger glyph.
 local CSS_ICONBTN = [[
@@ -269,9 +291,10 @@ local function ageStr(ts)
     else                    return string.format("%dd ago", math.floor(age / 86400)) end
 end
 
--- ── Styled row (cartel / system / planet) ────────────────────────────────────
+-- ── Styled row (syndicate / cartel / system / planet) ─────────────────────────
 local function createRow(inst, parent, name, row_type, indent_level, y_px, data, is_current)
-    local cartel_ctx = (data and data.cartel) or ""
+    local cartel_ctx    = (data and data.cartel) or ""
+    local syndicate_ctx = (data and data.syndicate) or ""
     -- "_r" suffix keeps the uid from ending in a Class$ pattern Geyser would skip.
     local uid = (string.format("gx_%s_%d_%s_%s_%s", inst.gid, inst.epoch, row_type, cartel_ctx, name)
         :gsub("[^%w_]", "_")) .. "_r"
@@ -282,7 +305,8 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
     local indent_pct = 1 + indent_level * INDENT_PCT
 
     local exp_key
-    if row_type == "cartel" then exp_key = name
+    if row_type == "syndicate" then exp_key = name
+    elseif row_type == "cartel" then exp_key = syndicate_ctx .. ":" .. name
     elseif row_type == "system" then exp_key = cartel_ctx .. ":" .. name end
 
     if exp_key then
@@ -375,9 +399,9 @@ local function populate(gid)
     if inst.searchCmd then q = (inst.searchCmd:getText() or ""):match("^%s*(.-)%s*$") end
     local searching = q ~= ""
 
-    local sorted = {}
-    for cn in pairs(g.cartels) do sorted[#sorted + 1] = cn end
-    table.sort(sorted)
+    local syn_sorted = {}
+    for syn in pairs(g.syndicates or {}) do syn_sorted[#syn_sorted + 1] = syn end
+    table.sort(syn_sorted)
 
     local ri         = gmcp and gmcp.room and gmcp.room.info
     local cur_cartel = ri and ri.cartel or ""
@@ -393,33 +417,48 @@ local function populate(gid)
     end
 
     local y = 2
-    for _, cn in ipairs(sorted) do
-        local cd = g.cartels[cn]
-        if not searching or cartelHasMatch(cd, q) then
-            createRow(inst, inst.content, cn, "cartel", 0, y, cd); y = y + ROW_H
-            local auto_c = searching and cartelHasChildrenMatch(cd, q)
-            if g.expanded[cn] or auto_c then
-                local ss = {}
-                for sn in pairs(cd.systems or {}) do ss[#ss + 1] = sn end
-                table.sort(ss)
-                for _, sn in ipairs(ss) do
-                    if sn ~= (cn .. " Space") then
-                        local sd = cd.systems[sn]
-                        local show_s = not searching or g.expanded[cn] or systemHasMatch(sd, q)
-                        if show_s then
-                            local sys_cur = (sn == cur_system) and (cn == cur_cartel) and (cur_planet == "")
-                            createRow(inst, inst.content, sn, "system", 1, y, sd, sys_cur); y = y + ROW_H
-                            local skey = cn .. ":" .. sn
-                            local s_named = searching and qMatches(sd.name, q)
-                            local auto_s  = searching and not s_named and systemHasPlanetMatch(sd, q)
-                            if g.expanded[skey] or auto_s then
-                                for _, pd in ipairs(sd.planets or {}) do
-                                    if pd.name ~= (sn .. " Space") then
-                                        local show_p = not searching or g.expanded[skey] or planetMatches(pd, q)
-                                        if show_p then
-                                            local pcur = (pd.name == cur_planet) and (sn == cur_system)
-                                            createRow(inst, inst.content, pd.name, "planet", 2, y, pd, pcur)
-                                            y = y + ROW_H
+    for _, syn in ipairs(syn_sorted) do
+        local syd = g.syndicates[syn]
+        if not searching or syndicateHasMatch(syd, q) then
+            createRow(inst, inst.content, syn, "syndicate", 0, y, syd); y = y + ROW_H
+            local auto_syn = searching and syndicateHasChildrenMatch(syd, q)
+            if g.expanded[syn] or auto_syn then
+                local cn_sorted = {}
+                for cn in pairs(syd.cartels or {}) do cn_sorted[#cn_sorted + 1] = cn end
+                table.sort(cn_sorted)
+                for _, cn in ipairs(cn_sorted) do
+                    local cd = syd.cartels[cn]
+                    local show_c = not searching or g.expanded[syn] or cartelHasMatch(cd, q)
+                    if show_c then
+                        createRow(inst, inst.content, cn, "cartel", 1, y, cd); y = y + ROW_H
+                        local ckey = syn .. ":" .. cn
+                        local c_named = searching and qMatches(cd.name, q)
+                        local auto_c  = searching and not c_named and cartelHasChildrenMatch(cd, q)
+                        if g.expanded[ckey] or auto_c then
+                            local ss = {}
+                            for sn in pairs(cd.systems or {}) do ss[#ss + 1] = sn end
+                            table.sort(ss)
+                            for _, sn in ipairs(ss) do
+                                if sn ~= (cn .. " Space") then
+                                    local sd = cd.systems[sn]
+                                    local show_s = not searching or g.expanded[ckey] or systemHasMatch(sd, q)
+                                    if show_s then
+                                        local sys_cur = (sn == cur_system) and (cn == cur_cartel) and (cur_planet == "")
+                                        createRow(inst, inst.content, sn, "system", 2, y, sd, sys_cur); y = y + ROW_H
+                                        local skey = cn .. ":" .. sn
+                                        local s_named = searching and qMatches(sd.name, q)
+                                        local auto_s  = searching and not s_named and systemHasPlanetMatch(sd, q)
+                                        if g.expanded[skey] or auto_s then
+                                            for _, pd in ipairs(sd.planets or {}) do
+                                                if pd.name ~= (sn .. " Space") then
+                                                    local show_p = not searching or g.expanded[skey] or planetMatches(pd, q)
+                                                    if show_p then
+                                                        local pcur = (pd.name == cur_planet) and (sn == cur_system)
+                                                        createRow(inst, inst.content, pd.name, "planet", 3, y, pd, pcur)
+                                                        y = y + ROW_H
+                                                    end
+                                                end
+                                            end
                                         end
                                     end
                                 end
@@ -536,12 +575,17 @@ local function buildPanel(target)
     footer:setStyleSheet(CSS_HEADER)
     local legend = Geyser.Label:new({ name = gid .. "_gx_legend", x = "1%", y = 0, width = "98%", height = "100%" }, footer)
     legend:setStyleSheet("background-color:transparent; color:rgba(160,160,170,190); font-size:9px;")
-    legend:echo("<center>🌌 Cartel&nbsp;&nbsp;&nbsp;⭐ System&nbsp;&nbsp;&nbsp;🌍 Planet</center>")
+    legend:echo("<center>🏛️ Syndicate&nbsp;&nbsp;&nbsp;🌌 Cartel&nbsp;&nbsp;&nbsp;⭐ System&nbsp;&nbsp;&nbsp;🌍 Planet</center>")
 
-    -- Auto-expand current cartel/system on open.
+    -- Auto-expand current syndicate/cartel/system on open.
     local ri = gmcp and gmcp.room and gmcp.room.info
     if ri and ri.cartel and ri.cartel ~= "" then
-        F2T_GALAXY.expanded[ri.cartel] = true
+        local cd  = F2T_GALAXY.cartels[ri.cartel]
+        local syn = cd and cd.syndicate
+        if syn then
+            F2T_GALAXY.expanded[syn] = true
+            F2T_GALAXY.expanded[syn .. ":" .. ri.cartel] = true
+        end
         if ri.system and ri.system ~= "" then F2T_GALAXY.expanded[ri.cartel .. ":" .. ri.system] = true end
     end
 
@@ -590,7 +634,7 @@ end
 local function buildGalaxyDef()
     return {
         name        = "Galaxy Navigator",
-        description = "Browse every cartel, system, and planet from 'di systems'; click → to travel.",
+        description = "Browse every syndicate, cartel, system, and planet from 'di systems'; click → to travel.",
         group       = "Fed2 Tools",
         -- One navigator at a time: Muxlet tracks the active instance itself
         -- (def._activeTargetRef), which f2t_galaxy_show_nav/hide_nav below use to

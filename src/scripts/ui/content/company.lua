@@ -33,6 +33,13 @@ local DEPOT_PCT = 26 -- depot console share of the factories panel (%)
 
 local CELL_FONT = "font-size:10pt;font-family:Consolas,Monaco,monospace;"
 
+-- Shared "nothing here" look for empty tables (no factories, no depots, ...)
+-- so every empty state in this content reads the same way.
+local function emptyStateHtml(text)
+    return string.format(
+        "<div style='padding:10px 6px;color:#888888;%s'>%s</div>", CELL_FONT, text)
+end
+
 local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
@@ -109,6 +116,37 @@ end
 
 local function companyData()
     return gmcp and gmcp.char and gmcp.char.company or nil
+end
+
+-- ── One-shot GMCP prime ───────────────────────────────────────────────────────
+-- gmcp.char.company only exists once the server has answered a di
+-- company/business query at least once this session — it doesn't arrive
+-- unprompted on login. So the first time a panel opens with no data yet,
+-- send that query once (output gagged) purely to populate GMCP; every
+-- update after that is the live gmcp.char.company push, same as before —
+-- this is priming, not polling, so it never repeats once data exists.
+local _priming = false
+
+local function primeCompanyDataIfMissing()
+    if companyData() or _priming then return end
+    _priming = true
+
+    local triggerId, timerId
+    local function finish()
+        _priming = false
+        if triggerId then killTrigger(triggerId); triggerId = nil end
+        if timerId   then killTimer(timerId);     timerId   = nil end
+    end
+    local function resetTimer()
+        if timerId then killTimer(timerId) end
+        -- Timer-based completion: always ends the capture when output goes quiet.
+        timerId = tempTimer(0.8, finish)
+    end
+    triggerId = tempRegexTrigger("^.*$", function()
+        if _priming then deleteLine(); resetTimer() end
+    end)
+    resetTimer()
+    send(f2t_is_rank_or_above("Manufacturer") and "di company" or "di business", false)
 end
 
 -- ── Dialogs (Muxlet primitives) ───────────────────────────────────────────────
@@ -557,6 +595,7 @@ end
 
 local function buildOverview(target)
     local gid = target._gid
+    primeCompanyDataIfMissing()
     if target.contentBg then
         target.contentBg:echo("")
         target.contentBg:setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
@@ -716,6 +755,27 @@ local function factoryCols()
     }
 end
 
+local function depotCols()
+    return {
+        {
+            key           = "name",
+            label         = "Depots",
+            sortable      = false,
+            scrollbox_pct = 100,
+            render_label  = function(v, row, cell)
+                cell:echo(string.format("<span style='%scolor:#00cccc;'>%s</span>", CELL_FONT, v))
+                cell:setToolTip("Click to repair depot on " .. tostring(v))
+                cell:setClickCallback(function()
+                    dialogConfirm("Repair Depot",
+                        string.format("<b>Depot on %s</b><br>Repair this depot?", v),
+                        "Repair",
+                        function() send("repair depot " .. v, false) end)
+                end)
+            end,
+        },
+    }
+end
+
 local function renderFactories(inst)
     local c = companyData()
     local rows = {}
@@ -738,32 +798,19 @@ local function renderFactories(inst)
         if #rows == 0 then inst.noFactoriesLbl:show() else inst.noFactoriesLbl:hide() end
     end
 
-    local w = inst.depotConsole
-    if w then
-        w:clear()
-        if not c or not c.depots or #c.depots == 0 then
-            w:cecho("<dim_grey>  No depots.\n")
-        else
-            w:cecho("<dim_grey>  ── DEPOTS<reset>\n")
-            for _, d in ipairs(c.depots) do
-                local pname = tostring(d)
-                w:cechoLink(string.format("  <ansiCyan>%s<reset>\n", pname),
-                    function()
-                        dialogConfirm("Repair Depot",
-                            string.format("<b>Depot on %s</b><br>Repair this depot?", pname),
-                            "Repair",
-                            function()
-                                send("repair depot " .. pname, false)
-                            end)
-                    end,
-                    "Click to repair depot on " .. pname, true)
-            end
-        end
+    local depotRows = {}
+    for _, d in ipairs(c and c.depots or {}) do
+        depotRows[#depotRows + 1] = { name = tostring(d) }
+    end
+    if inst.depotTableId then f2tTableSetData(inst.depotTableId, depotRows) end
+    if inst.noDepotsLbl then
+        if #depotRows == 0 then inst.noDepotsLbl:show() else inst.noDepotsLbl:hide() end
     end
 end
 
 local function buildFactories(target)
     local gid = target._gid
+    primeCompanyDataIfMissing()
     if target.contentBg then
         target.contentBg:echo("")
         target.contentBg:setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
@@ -793,21 +840,35 @@ local function buildFactories(target)
         height = (100 - DEPOT_PCT) .. "%-" .. (H_BAR + H_COL) .. "px",
     }, target.content)
     noFactoriesLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
-    noFactoriesLbl:echo("<div style='padding:10px;color:#888888;font-size:10px;'>No factories.</div>")
+    noFactoriesLbl:echo(emptyStateHtml("No factories."))
     noFactoriesLbl:hide()
 
-    local depotConsole = Geyser.MiniConsole:new({
+    -- Depots reuse the same table system as factories (was a MiniConsole,
+    -- which always reserved a scrollbar track even with one line of text or
+    -- none at all) so the empty state and row styling both match factories.
+    local depotContainer = Geyser.Container:new({
         name = wid(), x = 0, y = (100 - DEPOT_PCT) .. "%", width = "100%", height = DEPOT_PCT .. "%",
-        fontSize = 9, scrollBar = true,
     }, target.content)
-    depotConsole:setColor(14, 14, 22)
+
+    local depotTableId = "co_depots_" .. gid
+    local depotArea = buildTableArea(depotContainer, wid, depotTableId, depotCols(),
+        0, "100%-" .. H_COL .. "px")
+
+    local noDepotsLbl = Geyser.Label:new({
+        name = wid(), x = 0, y = H_COL, width = "100%", height = "100%-" .. H_COL .. "px",
+    }, depotContainer)
+    noDepotsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+    noDepotsLbl:echo(emptyStateHtml("No depots."))
+    noDepotsLbl:hide()
 
     instances[gid] = {
         kind            = "factories",
         tableId         = tableId,
         area            = area,
         noFactoriesLbl  = noFactoriesLbl,
-        depotConsole    = depotConsole,
+        depotTableId    = depotTableId,
+        depotArea       = depotArea,
+        noDepotsLbl     = noDepotsLbl,
     }
     renderFactories(instances[gid])
 end
@@ -943,6 +1004,7 @@ end
 
 local function buildFinancials(target)
     local gid = target._gid
+    primeCompanyDataIfMissing()
     if target.contentBg then
         target.contentBg:echo("")
         target.contentBg:setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
@@ -1014,7 +1076,8 @@ local function makeDef(name, description, buildFn)
         remove = function(target)
             local inst = instances[target._gid]
             if inst then
-                if inst.tableId then f2tTableDestroy(inst.tableId) end
+                if inst.tableId      then f2tTableDestroy(inst.tableId) end
+                if inst.depotTableId then f2tTableDestroy(inst.depotTableId) end
                 instances[target._gid] = nil
             end
         end,
@@ -1026,6 +1089,13 @@ local function makeDef(name, description, buildFn)
                 inst.area.contentW = newCw
                 inst.area.contentLabel:resize(newCw, inst.area.contentLabel:get_height())
                 f2tTableOnResize(inst.tableId, newCw)
+            end
+            -- The depot container is 100% wide within target.content, so it
+            -- tracks the same content width as the main factories table.
+            if inst.depotArea and newCw ~= inst.depotArea.contentW then
+                inst.depotArea.contentW = newCw
+                inst.depotArea.contentLabel:resize(newCw, inst.depotArea.contentLabel:get_height())
+                f2tTableOnResize(inst.depotTableId, newCw)
             end
         end,
         serialize = function(_t) return {} end,

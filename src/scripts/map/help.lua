@@ -7,6 +7,8 @@ f2t_register_help("map", {
         {cmd="map on", desc="Enable auto-mapping"},
         {cmd="map off", desc="Disable auto-mapping"},
         {cmd="map sync", desc="Force sync current location with GMCP"},
+        {cmd="map resync jumps", desc="Force re-probe of every mapped link room's jump exits"},
+        {cmd="map resync here", desc="Force re-probe of the current link room's jump exits"},
         {cmd="map clear", desc="Clear entire map (requires confirmation)"},
         {cmd="map confirm", desc="Confirm pending destructive operation"},
         {cmd="map cancel", desc="Cancel pending confirmation"},
@@ -59,6 +61,18 @@ f2t_register_help("map", {
         "map explore                         # Context-aware brief exploration",
         "map settings set planet_nav_default orbit     # Default to orbit",
         "map search exchange                 # Search for exchange in current area",
+    },
+})
+
+f2t_register_help("map resync", {
+    description = "Force a re-probe of mapped jump exits (link rooms only re-probe once by default)",
+    usage = {
+        {cmd="map resync jumps", desc="Re-probe every mapped link room's jump destinations"},
+        {cmd="map resync here", desc="Re-probe just the current room's jump destinations"},
+    },
+    examples = {
+        "map resync jumps   # After a syndicate beacon build changes routing",
+        "map resync here    # Force-refresh just this link room",
     },
 })
 

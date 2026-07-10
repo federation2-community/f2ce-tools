@@ -126,6 +126,7 @@ local function buildCols()
             label         = "GTU",
             sortable      = false,
             scrollbox_pct = 16,
+            header_tooltip = "Allowed/actual route GTU. A bare number with no slash means the route isn't in your map yet, so it can't be checked.",
             render_label  = function(_v, row, cell)
                 local html
                 if row.distance then
@@ -146,7 +147,7 @@ local function buildCols()
                     html = string.format(
                         "<span style='%scolor:#c8c8c8;'><b>%d</b></span>",
                         CELL_FONT, row.allowedMoves)
-                    cell:setToolTip("Allowed GTU (route unknown)")
+                    cell:setToolTip("Allowed GTU (route unknown — no slash shown because origin or destination isn't in your map yet)")
                 end
                 cell:echo(html)
             end,
@@ -349,7 +350,9 @@ local function buildContent(target)
         if col.sortable then
             local tid, key = tableId, col.key
             lbl:setClickCallback(function() f2tTableToggleSort(tid, key) end)
-            lbl:setToolTip("Sort by " .. col.label)
+            lbl:setToolTip(col.header_tooltip or ("Sort by " .. col.label))
+        elseif col.header_tooltip then
+            lbl:setToolTip(col.header_tooltip)
         end
         colHdrs[col.key] = lbl
         xPct = xPct + col.scrollbox_pct

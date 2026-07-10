@@ -125,21 +125,30 @@ local FRAME_W  = tostring(-(SEND_W + GAP + CMD_R_M + CMD_L_M - 2))
 local function openInGalaxy(cartelName, entityName)
     if not F2T_GALAXY then return end
 
+    -- Cartel rows key off "syndicate:cartel" (see galaxy.lua createRow); a
+    -- cartel found here needs both its own key and its parent syndicate
+    -- expanded so the navigator actually reveals it.
+    local function expandCartel(cn, cd)
+        if cd.syndicate then F2T_GALAXY.expanded[cd.syndicate] = true end
+        F2T_GALAXY.expanded[(cd.syndicate or "") .. ":" .. cn] = true
+    end
+
     local function expand()
         if cartelName and cartelName ~= "" then
-            F2T_GALAXY.expanded[cartelName] = true
+            local cd = F2T_GALAXY.cartels[cartelName]
+            if cd then expandCartel(cartelName, cd) end
         elseif entityName and entityName ~= "" then
             for cn, cd in pairs(F2T_GALAXY.cartels or {}) do
                 if cd.systems then
                     if cd.systems[entityName] then
-                        F2T_GALAXY.expanded[cn] = true
+                        expandCartel(cn, cd)
                         F2T_GALAXY.expanded[cn .. ":" .. entityName] = true
                         break
                     end
                     for sn, sd in pairs(cd.systems) do
                         for _, pd in ipairs(sd.planets or {}) do
                             if pd.name == entityName then
-                                F2T_GALAXY.expanded[cn] = true
+                                expandCartel(cn, cd)
                                 F2T_GALAXY.expanded[cn .. ":" .. sn] = true
                                 break
                             end

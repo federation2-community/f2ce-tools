@@ -129,6 +129,18 @@ local function commodityList()
     return list
 end
 
+-- Find Best works with lowercased commodity names (the game command needs
+-- them lowercase); resolve back to the properly-cased name from
+-- commodities.json before displaying/storing one, so the dropdown label and
+-- its icon lookup (keyed by proper case) match what picking it manually gives.
+local function canonicalCommodityName(name)
+    if not name then return name end
+    for _, c in ipairs(commodityList()) do
+        if c.name:lower() == name:lower() then return c.name end
+    end
+    return name
+end
+
 -- ── Table columns ─────────────────────────────────────────────────────────────
 
 local function buildCols()
@@ -299,17 +311,18 @@ local function searchNext()
             mc:cecho("\n<white>==========================================\n")
             if ps.best then
                 local best = ps.results[1]
+                local bestName = canonicalCommodityName(best.commodity)
                 mc:cecho("<yellow>BEST PROFIT: <reset>")
-                mc:cechoLink("<green><b>" .. best.commodity .. "</b><reset>",
+                mc:cechoLink("<green><b>" .. bestName .. "</b><reset>",
                     function()
-                        F2T_PRICE_CHECKER.selectedCommodity = best.commodity
+                        F2T_PRICE_CHECKER.selectedCommodity = bestName
                         updateSelectorButtons()
                         if f2tPriceCheckerCheck then f2tPriceCheckerCheck() end
                     end,
-                    "View full cartel prices for " .. best.commodity, true)
+                    "View full cartel prices for " .. bestName, true)
                 mc:cecho(string.format(" | <green>%dig/ton profit<reset>\n", best.profit))
                 mc:cecho(string.format("Buy at %dig, sell at %dig\n", best.bestBuy, best.bestSell))
-                F2T_PRICE_CHECKER.selectedCommodity = best.commodity
+                F2T_PRICE_CHECKER.selectedCommodity = bestName
                 updateSelectorButtons()
             else
                 mc:cecho("<red>No profitable commodities found<reset>\n")
