@@ -229,11 +229,18 @@ Mux.registerWorkspace("fed2-tools", {
                                 }
                             },
                             {
-                                closeable = true,
-                                contentable = true,
+                                _activeContent = "fed2_exchange",
+                                closeable = false,
+                                contentState = {
+                                    autoView = false,
+                                    showTicker = true,
+                                    view = "prices"
+                                },
+                                contentable = false,
                                 movable = true,
                                 name = "Exchange",
                                 nameAlign = "center",
+                                propertiesButton = false,
                                 renamable = false,
                                 rules = {
                                     {
@@ -244,6 +251,24 @@ Mux.registerWorkspace("fed2-tools", {
                                         },
                                         enabled = true,
                                         id = "r1"
+                                    },
+                                    {
+                                        act = "mux.overlay.disconnected.show",
+                                        actElse = "mux.overlay.disconnected.hide",
+                                        cond = {
+                                            ref = "disconnected"
+                                        },
+                                        enabled = true,
+                                        id = "r13"
+                                    },
+                                    {
+                                        act = "mux.overlay.connecting.show",
+                                        actElse = "mux.overlay.connecting.hide",
+                                        cond = {
+                                            ref = "connecting"
+                                        },
+                                        enabled = true,
+                                        id = "r14"
                                     }
                                 },
                                 visible = false
