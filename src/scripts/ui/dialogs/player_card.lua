@@ -164,20 +164,12 @@ local function openInGalaxy(cartelName, entityName, syndicateName)
     if f2t_galaxy_show_nav then f2t_galaxy_show_nav() end
 end
 
--- ── Syndicate lookup (a cartel's parent, from the galaxy navigator's scrape) ──
-
-local function syndicateFor(cartelName)
-    if not (F2T_GALAXY and F2T_GALAXY.cartels and cartelName and cartelName ~= "") then return nil end
-    local cd = F2T_GALAXY.cartels[cartelName]
-    return cd and cd.syndicate and cd.syndicate ~= "" and cd.syndicate or nil
-end
-
 -- ── Fingerprint (detects data changes for f2tPlayerCardsRefreshAll) ───────────
 
 local function fingerprint(p)
     return table.concat({
         p.rank or "", p.location or "", p.company or "",
-        p.system or "", p.cartel or "", p.ship_class or "",
+        p.system or "", p.cartel or "", p.syndicate or "", p.ship_class or "",
         p.staff or "", tostring(p.is_online == false),
     }, "\0")
 end
@@ -185,13 +177,14 @@ end
 -- ── Initial pane size (the only size — the pane is not resizable) ─────────────
 
 local function initialContentSize(player)
-    local rank    = player.rank       or "Unknown"
-    local staff   = player.staff      or ""
-    local loc     = player.location   or ""
-    local company = player.company    or ""
-    local system  = player.system     or ""
-    local cartel  = player.cartel     or ""
-    local ship    = player.ship_class or ""
+    local rank      = player.rank       or "Unknown"
+    local staff     = player.staff      or ""
+    local loc       = player.location   or ""
+    local company   = player.company    or ""
+    local system    = player.system     or ""
+    local cartel    = player.cartel     or ""
+    local syndField = player.syndicate  or ""
+    local ship      = player.ship_class or ""
     local isOffline = (player.is_online == false)
 
     local isFounder    = rank == "Founder"
@@ -205,12 +198,10 @@ local function initialContentSize(player)
         rank == "Magnate"    or rank == "Mogul")
     local hasPlanet    = isFounder and system ~= ""
     local hasCartel    = cartel ~= "" and isPlutocrat
-    -- Plutocrats own a cartel; the syndicate row is derived from its parent.
-    -- Syndicrats own a syndicate directly — GMCP reports it in the same
-    -- "cartel" field, so it's used as the syndicate name as-is.
-    local syndicate    = hasCartel and syndicateFor(cartel)
-        or (isSyndicrat and cartel ~= "" and cartel)
-        or nil
+    -- A card shows a player's own fief, not everything it's nested inside —
+    -- a Plutocrat's cartel belongs to a syndicate same as a Mogul's system
+    -- belongs to a cartel, but neither of those parents gets its own row.
+    local syndicate    = isSyndicrat and syndField ~= "" and syndField or nil
     local hasSyndicate = syndicate ~= nil
     local hasShip      = ship ~= ""
     local hasOwnership = (hasCompany and (isIndustrial or isMfrFin))
@@ -284,6 +275,7 @@ local function render(target, player)
     local company   = player.company    or ""
     local system    = player.system     or ""
     local cartel    = player.cartel     or ""
+    local syndField = player.syndicate  or ""
     local staff     = player.staff      or ""
     local ship      = player.ship_class or ""
     local titles    = player.titles     or {}
@@ -303,15 +295,10 @@ local function render(target, player)
         rank == "Magnate"    or rank == "Mogul")
     local hasPlanet    = isFounder and system ~= ""
     local hasCartel    = cartel ~= "" and isPlutocrat
-    -- Plutocrats own a cartel; the syndicate row is derived from its parent.
-    -- Syndicrats own a syndicate directly — GMCP reports it in the same
-    -- "cartel" field, so it's used as the syndicate name as-is.
-    local syndicate    = hasCartel and syndicateFor(cartel)
-        or (isSyndicrat and cartel ~= "" and cartel)
-        or nil
-    local syndicateGalaxyFn = hasCartel and function() openInGalaxy(cartel, nil) end
-        or (isSyndicrat and function() openInGalaxy(nil, nil, syndicate) end)
-        or nil
+    -- A card shows a player's own fief, not everything it's nested inside —
+    -- a Plutocrat's cartel belongs to a syndicate same as a Mogul's system
+    -- belongs to a cartel, but neither of those parents gets its own row.
+    local syndicate    = isSyndicrat and syndField ~= "" and syndField or nil
     local hasSyndicate = syndicate ~= nil
     local hasShip      = ship   ~= ""
     local hasOwnership = (hasCompany and (isIndustrial or isMfrFin))
@@ -519,7 +506,7 @@ local function render(target, player)
         })
     end
 
-    -- ── Syndicate (Plutocrats: their cartel's parent. Syndicrats: their own.) ──
+    -- ── Syndicate (Syndicrats only — their own) ─────────────────────────────────
     if hasSyndicate then
         addLinkRow({
             icon       = "🏛️",
@@ -528,7 +515,7 @@ local function render(target, player)
             text_color = "rgba(200, 160, 255, 255)",
             di_cmd     = "di syndicate " .. syndicate,
             di_tooltip = "Get syndicate info  (di syndicate " .. syndicate .. ")",
-            galaxy_fn  = syndicateGalaxyFn,
+            galaxy_fn  = function() openInGalaxy(nil, nil, syndicate) end,
         })
     end
 

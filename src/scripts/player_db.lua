@@ -85,8 +85,11 @@ function f2t_player_db_save_forced()
 end
 
 -- ── Entry schema ──────────────────────────────────────────────────────────────
--- { name, rank, rank_order, location, company, system, cartel, ship_class,
---   staff, titles, is_online (bool), last_seen (os.time()|nil), first_seen }
+-- { name, rank, rank_order, location, company, system, cartel, syndicate,
+--   ship_class, staff, titles, is_online (bool), last_seen (os.time()|nil),
+--   first_seen }
+-- cartel and syndicate are distinct GMCP fields (Plutocrats own a cartel;
+-- Syndicrats own a syndicate directly) -- never derive one from the other.
 
 local function _key(name) return name:lower() end
 
@@ -106,6 +109,7 @@ function f2t_player_db_upsert(entry)
         company    = entry.company    or (existing and existing.company)    or "",
         system     = entry.system     or (existing and existing.system)     or "",
         cartel     = entry.cartel     or (existing and existing.cartel)     or "",
+        syndicate  = entry.syndicate  or (existing and existing.syndicate)  or "",
         ship_class = entry.ship_class or (existing and existing.ship_class) or "",
         staff      = entry.staff      or (existing and existing.staff)      or "",
         titles     = entry.titles     or (existing and existing.titles)     or {},
@@ -120,6 +124,7 @@ function f2t_player_db_upsert(entry)
         or existing.company    ~= new_entry.company
         or existing.system     ~= new_entry.system
         or existing.cartel     ~= new_entry.cartel
+        or existing.syndicate  ~= new_entry.syndicate
         or existing.ship_class ~= new_entry.ship_class
         or existing.is_online  ~= new_entry.is_online
 
@@ -193,6 +198,7 @@ function f2t_player_db_feed_from_gmcp()
                     company    = p.company or "",
                     system     = p.system or "",
                     cartel     = p.cartel or "",
+                    syndicate  = p.syndicate or "",
                     ship_class = p.ship_class or "",
                     staff      = p.staff_role or "",
                     titles     = p.titles or {},
@@ -211,6 +217,7 @@ function f2t_player_db_feed_from_gmcp()
                     company    = p.company,
                     system     = p.system,
                     cartel     = p.cartel,
+                    syndicate  = p.syndicate,
                     ship_class = p.ship_class,
                     staff      = p.staff_role,
                     titles     = p.titles,
