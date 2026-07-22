@@ -313,6 +313,11 @@ local function buildWhoDef()
             local inst = instances[target._gid]
             if not inst then return end
             local newCw = math.max(100, target.content:get_width() - SB_W)
+            f2t_debug_log("[who] resize gid=%s content.w=%s scroll.w=%s scroll.h=%s oldCw=%s newCw=%s",
+                tostring(target._gid), tostring(target.content:get_width()),
+                tostring(inst.scroll and inst.scroll:get_width()),
+                tostring(inst.scroll and inst.scroll:get_height()),
+                tostring(inst.contentW), tostring(newCw))
             if newCw ~= inst.contentW then
                 inst.contentW = newCw
                 inst.contentLabel:resize(newCw, inst.contentLabel:get_height())

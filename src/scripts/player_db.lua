@@ -226,6 +226,13 @@ end
 
 registerAnonymousEventHandler("gmcp.players", "f2t_player_db_feed_from_gmcp")
 
+-- Seed from whatever roster is already sitting in the gmcp table right now (Mudlet
+-- keeps the last-received payload there regardless of listener timing). Without this,
+-- a package installed/reloaded mid-session (e.g. via "gui on" after login) misses the
+-- server's one-time full roster and the DB silently stays empty until something
+-- happens to trigger another push.
+f2t_player_db_feed_from_gmcp()
+
 -- Reload the DB whenever the logged-in character changes.
 registerAnonymousEventHandler("f2tCharacterChanged", function()
     f2t_player_db_reload()

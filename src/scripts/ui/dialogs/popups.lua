@@ -31,24 +31,41 @@ end
 
 local _MODES = {
     { id = "full",    label = "Full  (Recommended)",
-      desc = "Load the fed2-tools workspace: output pane and map side by side.\nMuxlet starts automatically on every session." },
+      desc = "Load the fed2-tools workspace: output pane and map side by side.<br>" ..
+             "Muxlet starts automatically on every session." },
     { id = "byow",    label = "Build Your Own Workspace",
-      desc = "Start Muxlet with a blank canvas. All fed2-tools content is\nregistered — add it to any pane with right-click › Add Content." },
+      desc = "Start Muxlet with a blank canvas. All fed2-tools content is<br>" ..
+             "registered &mdash; add it to any pane with right-click &rsaquo; Add Content." },
     { id = "minimal", label = "Minimal",
-      desc = "No changes to your Mudlet layout. All commands and aliases work.\nRun  mux start  at any time to open a workspace later." },
+      desc = "No changes to your Mudlet layout. All commands and aliases work.<br>" ..
+             "Run <b>mux start</b> any time to open a workspace later." },
 }
 
-local _WELCOME_HTML =
-    "<font color='#c6d2ee'>" ..
-        "A living toolkit for Federation 2 that grows alongside you.<br>" ..
-        "Each component is independent &mdash; use what suits your playstyle." ..
-    "</font><br><br>" ..
-    "<font color='#73de94'><b>COMPONENTS</b></font><br>" ..
-    "<font color='#7ab4ff'>Map</font><font color='#c6d2ee'> &mdash; Auto-mapper, speedwalk navigation, galaxy explorer</font><br>" ..
-    "<font color='#7ab4ff'>Hauling</font><font color='#c6d2ee'> &mdash; Rank-aware commodity trading automation</font><br>" ..
-    "<font color='#7ab4ff'>Factory</font><font color='#c6d2ee'> &mdash; Monitor all factory statuses at a glance</font><br>" ..
-    "<font color='#7ab4ff'>Commodities</font><font color='#c6d2ee'> &mdash; Price analysis and bulk buy/sell tools</font><br>" ..
-    "<font color='#7ab4ff'>Refuel</font><font color='#c6d2ee'> &mdash; Automatic ship refueling</font>"
+local _INTRO_HTML =
+    "<font color='#c6d2ee'>Mapping, automated trading, factory management, and quality-of-life " ..
+    "tools for Federation 2 &mdash; grab what fits your playstyle.</font>"
+
+local _COMPONENTS = {
+    { name = "Map & Nav",        desc = "auto-mapping, galaxy topology, speedwalk travel" },
+    { name = "Hauling",          desc = "rank-aware automated commodity trading" },
+    { name = "Factory",          desc = "status table, one-command flush-to-market" },
+    { name = "Planet Owner",     desc = "exchange breakdowns for your planets" },
+    { name = "Commodities",      desc = "bulk buy/sell, cross-cartel price checks" },
+    { name = "Stamina & Refuel", desc = "automatic food runs and ship refueling" },
+    { name = "Death Protection", desc = "halts automation when you die" },
+    { name = "Chat",             desc = "persistent com/tell/say history" },
+}
+
+local function buildComponentsHtml()
+    local parts = {}
+    for _, comp in ipairs(_COMPONENTS) do
+        parts[#parts + 1] = string.format(
+            "<font color='#7ab4ff'><b>%s</b></font><font color='#c6d2ee'> &mdash; %s</font>",
+            comp.name, comp.desc
+        )
+    end
+    return table.concat(parts, "<br>")
+end
 
 -- ── Content apply function ────────────────────────────────────────────────────
 -- Called by Mux._applyContent; target is the MuxPane (the dialog).
@@ -62,18 +79,45 @@ local function applyModeSelectToPane(target)
 
     local c   = target.content
     local pfx = target._gid .. "_ms_"
+    local SB_W = 16
 
-    -- Welcome body
-    local body = Geyser.Label:new({
-        name = pfx .. "body", x = INNER_X, y = 8, width = INNER_W, height = 160,
+    -- Intro line
+    local intro = Geyser.Label:new({
+        name = pfx .. "intro", x = INNER_X, y = 8, width = INNER_W, height = 32,
     }, c)
-    body:setStyleSheet([[
+    intro:setStyleSheet([[
         background: transparent;
         color: rgba(198,210,238,255);
         font-size: 10px;
         padding: 4px 14px;
     ]])
-    body:echo(_WELCOME_HTML)
+    intro:echo(_INTRO_HTML)
+
+    -- "COMPONENTS" header
+    local compHdr = Geyser.Label:new({
+        name = pfx .. "comp_hdr", x = INNER_X, y = 42, width = INNER_W, height = 14,
+    }, c)
+    compHdr:setStyleSheet(
+        "background: transparent; color: #73de94; font-size: 9px; font-weight: bold; padding: 0 14px;"
+    )
+    compHdr:echo("COMPONENTS")
+
+    -- Scrollable component list (keeps the dialog compact as the list grows)
+    local compScroll = Geyser.ScrollBox:new({
+        name = pfx .. "comp_scroll", x = INNER_X, y = 58, width = INNER_W, height = 112,
+    }, c)
+
+    local compContentW = math.max(100, compScroll:get_width() - SB_W)
+    local compBody = Geyser.Label:new({
+        name = pfx .. "comp_body", x = 0, y = 0, width = compContentW, height = 200,
+    }, compScroll)
+    compBody:setStyleSheet([[
+        background: transparent;
+        color: rgba(198,210,238,255);
+        font-size: 10px;
+        padding: 2px 14px;
+    ]])
+    compBody:echo(buildComponentsHtml())
 
     -- Divider
     local div = Geyser.Label:new({

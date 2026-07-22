@@ -16,10 +16,54 @@
 -- another player messages you right after login): f2tChatComhistoryLine()
 -- defers while chat_inbound.lua has a message pending, and treats a live
 -- message header as an entry boundary, so the two catch-alls never collide.
+--
+-- comhistory's header always names the server's current cycle, even when it
+-- has no messages to report ("No COM messages have been sent yet in cycle
+-- N."). Every entry in one response belongs to that same cycle (the game
+-- itself scopes comhistory to the current cycle only), so each capture also
+-- ensures a "cycle" divider record (chat/history.lua) exists in F2T_CHAT for
+-- that cycle number, positioned at the server's ~10am Eastern reset —
+-- computed DST-aware below since that's the actual start of the cycle,
+-- whether or not any messages happened to survive comhistory's own window.
 
 local MAX_CONTINUATION_LINES = 6   -- per-entry safety cap, same as chat_inbound.lua
 -- Wider than other captures since a long comhistory dump can span socket reads.
 local FINISH_TIMEOUT = 1.5
+
+-- ── Cycle reset boundary (~10:00 America/New_York, DST-aware) ────────────────
+-- US DST rules since 2007: starts 2nd Sunday of March, ends 1st Sunday of
+-- November, both at 2am local. Only the calendar date (not the 2am cutover
+-- itself) is used below, so the one or two days a year spanning an actual
+-- transition can be off by an hour — acceptable for "roughly where the cycle
+-- break should occur."
+local DOW_TABLE = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 }
+
+local function dayOfWeek(y, m, d)   -- 0 = Sunday
+    if m < 3 then y = y - 1 end
+    return (y + math.floor(y / 4) - math.floor(y / 100) + math.floor(y / 400) + DOW_TABLE[m] + d) % 7
+end
+
+local function nthSundayOfMonth(year, month, n)
+    local firstSunday = ((7 - dayOfWeek(year, month, 1)) % 7) + 1
+    return firstSunday + (n - 1) * 7
+end
+
+local function isEasternDST(year, month, day)
+    if month < 3 or month > 11 then return false end
+    if month > 3 and month < 11 then return true end
+    if month == 3 then return day >= nthSundayOfMonth(year, 3, 2) end
+    return day < nthSundayOfMonth(year, 11, 1)
+end
+
+-- Most recent 10:00 America/New_York at-or-before refTime, as a unix time.
+local function cycleResetBoundary(refTime)
+    local estGuess = os.date("!*t", refTime - 5 * 3600)
+    local offset = isEasternDST(estGuess.year, estGuess.month, estGuess.day) and -4 * 3600 or -5 * 3600
+    local eastern = os.date("!*t", refTime + offset)
+    local dayStart = refTime + offset - (eastern.hour * 3600 + eastern.min * 60 + eastern.sec) + 10 * 3600
+    if eastern.hour < 10 then dayStart = dayStart - 86400 end
+    return dayStart - offset
+end
 
 local state = {
     -- sent: false = not requested yet; "pending" = requested, header not seen;
@@ -30,6 +74,7 @@ local state = {
     current   = nil,     -- buffer entry the next continuation line (if any) folds into
     contLines = 0,       -- continuation lines folded into the current entry
     refTime   = nil,
+    cycle     = nil,      -- comhistory's reported cycle number for this capture
     buffer    = {},      -- list of {name, ago, text}
     timerId   = nil,
 }
@@ -85,6 +130,34 @@ local function merge(newRecords)
     F2T_CHAT.history = merged
 end
 
+-- ── Cycle divider records ─────────────────────────────────────────────────────
+-- r.type == "cycle" is rendered by ui/content/chat.lua as a day-style divider;
+-- r.cycle is the game's own cycle number, used only to dedup against re-runs.
+
+local function hasCycleMarker(cycleNum)
+    for _, r in ipairs(F2T_CHAT.history) do
+        if r.type == "cycle" and r.cycle == cycleNum then return true end
+    end
+    return false
+end
+
+local function cycleMarkerRecord(cycleNum, t)
+    return {
+        t = t, type = "cycle", from = "", cycle = cycleNum,
+        msg  = "Cycle " .. cycleNum,
+        line = string.format("#1a3040── Cycle %d ──────────────────────────\n", cycleNum),
+    }
+end
+
+-- Used when comhistory reports no messages for the cycle at all — nothing to
+-- anchor the marker to, so it goes straight in at the computed reset time.
+local function ensureCycleMarker(cycleNum, t)
+    if not cycleNum or hasCycleMarker(cycleNum) then return end
+    merge({ cycleMarkerRecord(cycleNum, t) })
+    f2tChatSave()
+    raiseEvent("f2tChatUpdated", "replay")
+end
+
 -- The backfill triggers include a catch-all line pattern (comhistory_line,
 -- ^.*$) that otherwise runs on every line of game output forever. They are
 -- only needed between the login request and capture completion, so they are
@@ -132,6 +205,22 @@ finish = function()
         end
     end
 
+    -- All of these entries belong to state.cycle (comhistory itself only ever
+    -- shows the current cycle) — anchor the marker just before the earliest
+    -- one so it reads as "start of cycle" regardless of how the ~10am
+    -- estimate lines up, rather than trusting the estimate outright.
+    local addedMarker = false
+    if state.cycle and not hasCycleMarker(state.cycle) then
+        local minT = nil
+        for _, r in ipairs(newRecords) do
+            if not minT or r.t < minT then minT = r.t end
+        end
+        local markerT = math.min(minT or math.huge, cycleResetBoundary(state.refTime))
+        if minT then markerT = markerT - 1 end
+        table.insert(newRecords, cycleMarkerRecord(state.cycle, markerT))
+        addedMarker = true
+    end
+
     if #newRecords == 0 then
         f2t_debug_log("[comhistory] no new messages")
         return
@@ -144,8 +233,9 @@ finish = function()
     -- The chat panel isn't necessarily open/enabled, so this stays out of the
     -- main console — the merged records show up in the chat log whenever the
     -- user next looks at it.
-    f2t_debug_log("[comhistory] %d missed message%s added to chat",
-        #newRecords, #newRecords == 1 and "" or "s")
+    local msgCount = #newRecords - (addedMarker and 1 or 0)
+    f2t_debug_log("[comhistory] %d missed message%s added to chat%s",
+        msgCount, msgCount == 1 and "" or "s", addedMarker and " (+cycle marker)" or "")
 end
 
 -- ── Trigger entry points ──────────────────────────────────────────────────────
@@ -159,9 +249,12 @@ function f2tChatComhistoryBegin()
 
     deleteLine()   -- hide the header/no-history line of our automated request
 
+    local cycleNum = tonumber(line:match("cycle (%d+)"))
+
     if line:match("^No COM messages") then
         state.sent = true
         setBackfillTriggers(false)
+        if cycleNum then ensureCycleMarker(cycleNum, cycleResetBoundary(os.time())) end
         f2t_debug_log("[comhistory] no history to fetch")
         return
     end
@@ -172,6 +265,7 @@ function f2tChatComhistoryBegin()
     state.current = nil
     state.refTime = os.time()
     state.buffer  = {}
+    state.cycle   = cycleNum
 
     state.timerId = tempTimer(FINISH_TIMEOUT, finish)
     f2t_debug_log("[comhistory] capture started")
@@ -254,6 +348,16 @@ function f2tChatComhistoryLine()
     end
 end
 
+-- True from the moment the backfill request is sent until its capture
+-- finishes. f2t_galaxy_schedule_scrape (ui/content/galaxy.lua) defers its own
+-- login-time "di systems" scrape while this is true — both modules can be
+-- triggered around the same login window, and galaxy's catch-all capture
+-- trigger would otherwise steal comhistory's own lines out from under it
+-- (see F2T_GALAXY.capture_active check in f2tChatComhistoryLine above).
+function F2T_CHAT_COMHISTORY_PENDING()
+    return state.sent == "pending" or state.active
+end
+
 -- Re-arm the once-per-session gate and fetch again (used by `f2t chat wipe`).
 -- Offline it just resets the gate so the next login auto-fetches.
 function f2tChatComhistoryRefetch()
@@ -310,7 +414,7 @@ onVitals()
 registerAnonymousEventHandler("sysDisconnectionEvent", function()
     if state.timerId then killTimer(state.timerId) end
     state.sent, state.active, state.refTime = false, false, nil
-    state.inEntry, state.current = false, nil
+    state.inEntry, state.current, state.cycle = false, nil, nil
     state.buffer, state.timerId = {}, nil
     setBackfillTriggers(true)
 end)

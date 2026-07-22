@@ -162,6 +162,12 @@ end
 function f2tTableOnResize(tableId, newContentW)
     local t = _tables[tableId]
     if not t or not t.scrollbox then return end
+    if f2t_debug_log then
+        f2t_debug_log("[table_system] onResize %s newContentW=%s rows=%d scrollWidget.w=%s scrollWidget.h=%s",
+            tostring(tableId), tostring(newContentW), #t.scrollbox.rows,
+            tostring(t.scrollbox.scrollWidget and t.scrollbox.scrollWidget:get_width()),
+            tostring(t.scrollbox.scrollWidget and t.scrollbox.scrollWidget:get_height()))
+    end
     t.scrollbox.contentW = newContentW
     local colWs = _colWidths(t)
     for _, rowLbl in ipairs(t.scrollbox.rows) do

@@ -148,10 +148,17 @@ function f2tShowMapImportOverlay(slotContent, gid, reason)
     -- not a full-bleed wall of controls. Height must fit: 12 top pad + title
     -- (24) + intro (48) + div1 (10) + optLbl (18) + 3 options (32 each = 96)
     -- + gap (4) + div2 (8) + status (22) + import btn (38) + div3 (8) + skip
-    -- btn (28) = 316, plus bottom padding.
-    local PANEL_W, PANEL_H = 380, 340
+    -- btn (28) = 316, plus bottom padding. Scales modestly with the host pane
+    -- (clamped to that minimum) so it doesn't read as a tiny card adrift in a
+    -- huge dark void on a large map pane.
+    local slotW = (slotContent.get_width  and slotContent:get_width())  or 380
+    local slotH = (slotContent.get_height and slotContent:get_height()) or 340
+    local PANEL_W = math.max(380, math.min(520, math.floor(slotW * 0.42)))
+    local PANEL_H = math.max(340, math.min(460, math.floor(slotH * 0.42)))
     local panel = Geyser.Container:new({
-        name = pfx.."panel", x="50%-190", y="50%-170", width=PANEL_W, height=PANEL_H,
+        name = pfx.."panel",
+        x = "50%-" .. math.floor(PANEL_W / 2), y = "50%-" .. math.floor(PANEL_H / 2),
+        width = PANEL_W, height = PANEL_H,
     }, shell)
     local panelBg = Geyser.Label:new({ name = pfx.."panelBg", x=0, y=0, width="100%", height="100%" }, panel)
     panelBg:setStyleSheet(_CSS_PANEL)

@@ -146,10 +146,24 @@ function f2t_galaxy_finish_capture()
 end
 
 local scrapeTimer = nil
-function f2t_galaxy_schedule_scrape(delay)
+-- Bounds how long a scrape defers to a pending comhistory backfill (below)
+-- before giving up and running anyway, in case that flag ever gets stuck.
+local SCRAPE_DEFER_LIMIT = 10
+
+function f2t_galaxy_schedule_scrape(delay, deferCount)
     if scrapeTimer then killTimer(scrapeTimer); scrapeTimer = nil end
     scrapeTimer = tempTimer(delay or 3, function()
         scrapeTimer = nil
+        deferCount = deferCount or 0
+        -- comhistory's own login-time backfill can still be in flight here;
+        -- "di systems" would otherwise steal its lines out from under it
+        -- (see F2T_GALAXY.capture_active check in comhistory.lua). Wait for
+        -- it to clear rather than racing.
+        if deferCount < SCRAPE_DEFER_LIMIT
+           and F2T_CHAT_COMHISTORY_PENDING and F2T_CHAT_COMHISTORY_PENDING() then
+            f2t_galaxy_schedule_scrape(1, deferCount + 1)
+            return
+        end
         local ok, err = pcall(f2t_galaxy_scrape)
         if not ok then f2t_debug_log("[galaxy] scrape error: %s", tostring(err)) end
     end)
