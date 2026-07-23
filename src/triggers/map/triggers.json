@@ -70,5 +70,9 @@
   {
     "name": "topology_syndicates_line",
     "patterns": [{"pattern": "^   #\\d+ (.+)$", "type": "regex"}]
+  },
+  {
+    "name": "topology_capture_blank",
+    "patterns": [{"pattern": "^$", "type": "regex"}]
   }
 ]

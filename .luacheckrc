@@ -8,4 +8,5 @@ ignore = {
     "111", -- setting non-standard global variable
     "112", -- mutating non-standard global variable
     "113", -- accessing undefined variable
+    "143", -- accessing undefined field of a global variable (e.g. table.contains)
 }

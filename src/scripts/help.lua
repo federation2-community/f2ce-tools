@@ -82,6 +82,8 @@ f2t_register_help("f2t", {
         {cmd = "f2t version", desc = "Show package version and check for updates"},
         {cmd = "f2t credits", desc = "Show acknowledgments"},
         {cmd = "f2t debug on/off", desc = "Toggle debug logging"},
+        {cmd = "f2t on/off", desc = "Start/stop the Muxlet UI (won't auto-start next login if off)"},
+        {cmd = "f2t mode", desc = "Re-pick a startup mode (Full/BYOW/Minimal)"},
         {cmd = "f2t settings", desc = "Manage system settings"},
         {cmd = "f2t chat wipe", desc = "Wipe chat history and re-fetch comhistory"},
         {cmd = "", desc = ""},

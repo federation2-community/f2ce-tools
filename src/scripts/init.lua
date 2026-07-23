@@ -165,7 +165,7 @@ local function bootHostOpts()
         -- pinMuxletVersion = true makes that boot gate an exact pin instead of
         -- a floor: if F2T_REQUIRED_MUXLET is ever set OLDER than what's
         -- installed, Mux.bootHost downgrades rather than treating it as fine.
-        updateRepo              = "tmtocloud/fed2-tools",
+        updateRepo              = "federation2-community/fed2-tools",
         requiredMuxletVersion   = F2T_REQUIRED_MUXLET,
         requiredMuxletUrl       = MUXLET_URL,
         pinMuxletVersion        = true,
@@ -204,7 +204,8 @@ if Mux and Mux._ready then
     onMuxletReady()
 elseif not table.contains(getPackages(), MUXLET_PKG) then
     if not MUXLET_URL then
-        cecho("\n<red>[fed2-tools]<reset> Cannot install Muxlet: build is missing MUXLET_URL injection. Reinstall fed2-tools from MPR.\n")
+        cecho("\n<red>[fed2-tools]<reset> Cannot install Muxlet: build is missing MUXLET_URL injection. "
+            .. "Reinstall fed2-tools from its latest GitHub release.\n")
     else
         f2t_debug_log("Muxlet install queued: not installed (required=%s)", tostring(F2T_REQUIRED_MUXLET))
         afterLogin(function() installPackage(MUXLET_URL) end)

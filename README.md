@@ -2,8 +2,6 @@
 
 A Mudlet package for [Federation 2 Community Edition](https://federation2.com) — mapping, navigation, automated trading, factory management, planet-owner tools, and quality-of-life automation, with an optional [Muxlet](https://github.com/tmtocloud/Muxlet)-based GUI.
 
-Version 2 is a full rewrite of the original fed2-tools. If you're upgrading from a 1.x install, expect commands and settings to have moved; see [Getting Started](#getting-started) below.
-
 ![fed2-tools Muxlet GUI](screenshot.png)
 
 ## Installation

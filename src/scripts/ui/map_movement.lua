@@ -40,9 +40,33 @@ local _CSS_TOGGLE = [[
         border-color: rgba(90,110,160,200);
     }
 ]]
+local _CSS_BTN_DISABLED = [[
+    QLabel {
+        background-color: rgba(18,20,30,150);
+        color: rgba(120,128,145,140);
+        border: 1px solid rgba(50,56,75,120);
+        border-radius: 3px;
+        font-size: 11px;
+        qproperty-alignment: AlignCenter;
+    }
+]]
+
+-- Handler id for the last-built pane's exit-state updater, so a fresh
+-- f2tBuildMapMovement() call (new pane instance) doesn't leave a stale
+-- handler pointing at buttons that no longer exist.
+local _exitHandlerId = nil
 
 function f2tBuildMapMovement(parent, gid)
     local pfx = gid .. "_mv_"
+
+    if _exitHandlerId then
+        killAnonymousEventHandler(_exitHandlerId)
+        _exitHandlerId = nil
+    end
+
+    -- Buttons that get enabled/disabled based on gmcp.room.info.exits (and the
+    -- board flag below). Keyed by the direction/command sent on click.
+    local dirButtons = {}
 
     -- ── Outer shell ───────────────────────────────────────────────────────────
     local shell = Geyser.Container:new({
@@ -64,6 +88,7 @@ function f2tBuildMapMovement(parent, gid)
     boardBtn:setStyleSheet(_CSS_BTN)
     boardBtn:echo("<center>B</center>")
     boardBtn:setClickCallback(function() send("board", true) end)
+    dirButtons["board"] = boardBtn
 
     -- ── IN / OUT container ────────────────────────────────────────────────────
     local inOutBox = Geyser.Container:new({
@@ -84,6 +109,7 @@ function f2tBuildMapMovement(parent, gid)
     btnIn:setStyleSheet(_CSS_BTN)
     btnIn:echo("<center>IN</center>")
     btnIn:setClickCallback(function() send("in", true) end)
+    dirButtons["in"] = btnIn
 
     local btnOut = Geyser.Label:new({
         name   = pfx .. "out",
@@ -95,6 +121,7 @@ function f2tBuildMapMovement(parent, gid)
     btnOut:setStyleSheet(_CSS_BTN)
     btnOut:echo("<center>OUT</center>")
     btnOut:setClickCallback(function() send("out", true) end)
+    dirButtons["out"] = btnOut
 
     -- ── Press button + flyout ─────────────────────────────────────────────────
     local pressPanel = nil
@@ -190,6 +217,9 @@ function f2tBuildMapMovement(parent, gid)
         btn:echo("<center>" .. b.lbl .. "</center>")
         local cmd = b.cmd
         btn:setClickCallback(function() send(cmd, true) end)
+        if cmd ~= "look" then
+            dirButtons[cmd] = btn
+        end
     end
 
     -- ── UP / DN column ────────────────────────────────────────────────────────
@@ -211,6 +241,7 @@ function f2tBuildMapMovement(parent, gid)
     btnUp:setStyleSheet(_CSS_BTN)
     btnUp:echo("<center>UP</center>")
     btnUp:setClickCallback(function() send("up", true) end)
+    dirButtons["up"] = btnUp
 
     local btnDn = Geyser.Label:new({
         name   = pfx .. "down",
@@ -222,6 +253,36 @@ function f2tBuildMapMovement(parent, gid)
     btnDn:setStyleSheet(_CSS_BTN)
     btnDn:echo("<center>DN</center>")
     btnDn:setClickCallback(function() send("down", true) end)
+    dirButtons["down"] = btnDn
+
+    -- ── Exit-state updater ───────────────────────────────────────────────────
+    -- Greys out (and disables the click callback of) any directional button
+    -- whose direction isn't a valid exit from the current room, per GMCP room
+    -- info. "board" is a synthetic exit added whenever docked/orbiting.
+    local function updateExitState()
+        if not gmcp or not gmcp.room or not gmcp.room.info then return end
+
+        local exits = {}
+        for exit in pairs(gmcp.room.info.exits or {}) do
+            table.insert(exits, exit:lower())
+        end
+        if f2t_has_room_flag("shuttlepad") or f2t_has_room_flag("orbit") or gmcp.room.info.orbit then
+            table.insert(exits, "board")
+        end
+
+        for dir, button in pairs(dirButtons) do
+            if f2t_has_value(exits, dir) then
+                button:setStyleSheet(_CSS_BTN)
+                button:setClickCallback(function() send(dir, true) end)
+            else
+                button:setStyleSheet(_CSS_BTN_DISABLED)
+                button:setClickCallback(function() end)
+            end
+        end
+    end
+
+    updateExitState()
+    _exitHandlerId = registerAnonymousEventHandler("gmcp.room.info", updateExitState)
 
     -- ── Show / hide toggle ────────────────────────────────────────────────────
     -- Small tab on the left edge of the shell (x=0-4%), vertically within the

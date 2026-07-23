@@ -187,4 +187,17 @@ function f2t_map_topology_capture_syndicates_line(rest)
     return true
 end
 
+-- Neither "display cartels" nor "display syndicates" is a single unbroken
+-- block — a blank line separates the header from the listing and each
+-- syndicate group from the next. None of the other capture triggers above
+-- match a blank line, so without this one those blanks print through to the
+-- console on every login.
+function f2t_map_topology_capture_blank()
+    local capture = F2T_MAP_TOPOLOGY_CAPTURE
+    if not capture.active then return false end
+    deleteLine()
+    f2t_map_topology_capture_reset_timer()
+    return true
+end
+
 f2t_debug_log("[map] Loaded topology_capture.lua")

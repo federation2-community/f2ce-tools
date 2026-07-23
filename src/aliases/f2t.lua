@@ -56,6 +56,32 @@ elseif subcommand == "chat" then
         f2t_show_help_hint("f2t chat")
     end
 
+elseif subcommand == "on" then
+    if not (Mux and Mux.fullStart) then
+        cecho("\n<red>[f2t]<reset> Muxlet isn't ready yet; try again in a moment.\n")
+        return
+    end
+    f2tSetAutostart(true)
+    if not Mux._running then Mux.fullStart() end
+    cecho("\n<green>[f2t]<reset> fed2-tools UI is on.\n")
+
+elseif subcommand == "off" then
+    if not (Mux and Mux.fullStop) then
+        cecho("\n<red>[f2t]<reset> Muxlet isn't ready yet; try again in a moment.\n")
+        return
+    end
+    f2tSetAutostart(false)
+    if Mux._running then Mux.fullStop() end
+    cecho("\n<yellow>[f2t]<reset> fed2-tools UI is off and won't auto-start next login. "
+        .. "Type <green>f2t on<reset> to resume, or <green>f2t mode<reset> to re-pick a startup mode.\n")
+
+elseif subcommand == "mode" then
+    if f2tShowModeSelect then
+        f2tShowModeSelect(true)
+    else
+        cecho("\n<red>[f2t]<reset> Mode selection isn't available right now.\n")
+    end
+
 elseif subcommand == "version" then
     local info = getPackageInfo("fed2-tools")
     cecho(string.format(
