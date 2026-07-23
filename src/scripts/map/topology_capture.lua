@@ -1,4 +1,4 @@
--- fed2-tools map — topology sync capture
+-- f2ce-tools map — topology sync capture
 --
 -- Two-phase capture that rebuilds the whole topology model from the server:
 --   Phase "cartels":    "display cartels" lists every cartel grouped by

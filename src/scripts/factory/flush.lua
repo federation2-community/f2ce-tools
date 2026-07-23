@@ -1,4 +1,4 @@
--- fed2-tools factory — flush sequence
+-- f2ce-tools factory — flush sequence
 --
 -- Sends "flush factory N" for N = 1..max_factories.  Success and empty-slot
 -- responses are handled by the flush triggers, which call back into

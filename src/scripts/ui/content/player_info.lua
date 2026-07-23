@@ -244,7 +244,7 @@ local function buildPlayerInfoDef()
     return {
         name        = "Player Info",
         description = "Live rank / fuel / stamina / groats / slithies / hold strip with Buy Fuel.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

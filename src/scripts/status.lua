@@ -1,8 +1,8 @@
--- fed2-tools — component status display
+-- f2ce-tools — component status display
 
 function f2t_show_status()
     local version = F2T_VERSION or "unknown"
-    cecho(string.format("\n<green>[fed2-tools]<reset> v%s\n\n", version))
+    cecho(string.format("\n<green>[f2ce-tools]<reset> v%s\n\n", version))
 
     -- Map component
     local mapEnabled = F2T_MAP_ENABLED

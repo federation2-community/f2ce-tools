@@ -11,7 +11,7 @@ local function load_commodities()
     end
 
     -- Note: @PKGNAME@ substitution only works in XML, use actual package name
-    local filePath = getMudletHomeDir() .. "/fed2-tools/commodities.json"
+    local filePath = getMudletHomeDir() .. "/f2ce-tools/commodities.json"
     local file = io.open(filePath, "r")
 
     if not file then

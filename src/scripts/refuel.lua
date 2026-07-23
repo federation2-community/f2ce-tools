@@ -1,4 +1,4 @@
--- fed2-tools refuel — settings registration
+-- f2ce-tools refuel — settings registration
 --
 -- Legacy stored the threshold under the "shared" namespace; the new layout gives
 -- refuel its own namespace and settings tab.  An explicit "enabled" toggle makes
@@ -6,7 +6,7 @@
 -- GMCP-driven top-up and the emergency out-of-fuel trigger.
 
 f2t_settings_register("refuel", "enabled", {
-    tab         = "Fed2-Tools/Misc",
+    tab         = "F2CE-Tools/Misc",
     order       = 2,
     label       = "Auto refuel",
     description = "Enable automatic refueling at shuttlepads and emergency refueling",
@@ -20,7 +20,7 @@ f2t_settings_register("refuel", "threshold", {
     min = 0, max = 99,
 })
 
--- fed2-tools refuel — automatic refueling
+-- f2ce-tools refuel — automatic refueling
 --
 -- Listens for GMCP room changes (more reliable than a prompt trigger).  When the
 -- player arrives at a shuttlepad and fuel is at/below the configured threshold,

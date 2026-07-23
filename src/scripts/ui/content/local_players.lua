@@ -187,7 +187,7 @@ local function buildLocalPlayersDef()
     return {
         name        = "Local Players",
         description = "Players in the current room from gmcp.room.info.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

@@ -1542,7 +1542,7 @@ local function makeDef(name, description, buildFn)
     return {
         name        = name,
         description = description,
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

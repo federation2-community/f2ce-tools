@@ -1,4 +1,4 @@
--- fed2-tools map — circuit data storage (ported from map_circuit_data.lua)
+-- f2ce-tools map — circuit data storage (ported from map_circuit_data.lua)
 
 function f2t_map_circuit_save(area_name, circuit_id, circuit_data)
     if not area_name or not circuit_id or not circuit_data then return false end

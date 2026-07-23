@@ -1,7 +1,7 @@
--- fed2-tools map — settings registration
+-- f2ce-tools map — settings registration
 
 f2t_settings_register("map", "enabled", {
-    tab         = "Fed2-Tools/Map",
+    tab         = "F2CE-Tools/Map",
     label       = "Enable mapping",
     description = "Enable/disable auto-mapping",
     default     = true,
@@ -82,7 +82,7 @@ f2t_settings_register("map", "topology_auto_sync", {
 -- count — the map always has at least the current room once mapping is
 -- enabled, so room count can't signal "first run". A plain on/off toggle
 -- (rather than a version-number stepper) so it's an intuitive control from
--- Fed2-Tools/Map: turn it on to see the import prompt again next time the map
+-- F2CE-Tools/Map: turn it on to see the import prompt again next time the map
 -- content loads. import_check.lua flips it back on by itself whenever a newer
 -- bundled map database ships, even if the user had turned it off.
 f2t_settings_register("map", "show_import_prompt", {

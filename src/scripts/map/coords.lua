@@ -1,4 +1,4 @@
--- fed2-tools map — coordinate calculation (ported from map_coords.lua)
+-- f2ce-tools map — coordinate calculation (ported from map_coords.lua)
 
 function f2t_map_calculate_coords_from_room_num(room_num)
     if not room_num then

@@ -8,7 +8,7 @@ local function load_data()
         return po_commodity_cache
     end
 
-    local file_path = getMudletHomeDir() .. "/fed2-tools/commodities.json"
+    local file_path = getMudletHomeDir() .. "/f2ce-tools/commodities.json"
     local file = io.open(file_path, "r")
 
     if not file then

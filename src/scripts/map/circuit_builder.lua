@@ -1,4 +1,4 @@
--- fed2-tools map — circuit builder commands (ported from map_circuit_builder.lua)
+-- f2ce-tools map — circuit builder commands (ported from map_circuit_builder.lua)
 
 function f2t_map_circuit_cmd_create(circuit_id)
     if not circuit_id or circuit_id == "" then

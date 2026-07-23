@@ -1,4 +1,4 @@
--- commodities.lua — Commodity reference table content for fed2-tools.
+-- commodities.lua — Commodity reference table content for f2ce-tools.
 --
 -- Sortable reference of every commodity (name, short code, base price) from
 -- resources/commodities.json.  Static data — no triggers, no GMCP.
@@ -30,7 +30,7 @@ local _rows = nil   -- lazy-loaded, shared by all instances (static data)
 
 local function loadRows()
     if _rows then return _rows end
-    local filePath = getMudletHomeDir() .. "/fed2-tools/commodities.json"
+    local filePath = getMudletHomeDir() .. "/f2ce-tools/commodities.json"
     local file = io.open(filePath, "r")
     if not file then
         f2t_debug_log("[commodities panel] could not open commodities.json")
@@ -177,7 +177,7 @@ local function buildCommoditiesDef()
     return {
         name        = "Commodities",
         description = "Commodity reference: names, short codes, and base prices.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

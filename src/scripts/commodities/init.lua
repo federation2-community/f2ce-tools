@@ -1,4 +1,4 @@
--- fed2-tools commodities — initialization
+-- f2ce-tools commodities — initialization
 --
 -- Price checking/analysis (price, pr) and bulk trading (bb, bs).  No enabled
 -- toggle: the commands are the entry points, and the capture triggers self-gate
@@ -12,7 +12,7 @@
 -- widget, so it is dropped.
 
 f2t_settings_register("commodities", "results_count", {
-    tab         = "Fed2-Tools/Misc",
+    tab         = "F2CE-Tools/Misc",
     order       = 4,
     label       = "Results count",
     description = "Number of top exchanges to show in price tables",

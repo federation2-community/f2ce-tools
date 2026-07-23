@@ -1,4 +1,4 @@
--- fed2-tools — rank comparison utilities
+-- f2ce-tools — rank comparison utilities
 
 F2T_RANK_LEVELS = {
     groundhog    = 1,
@@ -107,7 +107,7 @@ function f2t_check_rank_requirement(requiredRank, featureName)
     local currentRank  = f2t_get_rank()
     local currentLevel = f2t_get_rank_level(currentRank)
     local requiredLevel = f2t_get_rank_level(requiredRank)
-    cecho(string.format("\n<red>[fed2-tools]<reset> %s requires rank <cyan>%s<reset> or higher\n",
+    cecho(string.format("\n<red>[f2ce-tools]<reset> %s requires rank <cyan>%s<reset> or higher\n",
         featureName, requiredRank))
     if currentRank then
         cecho(string.format("<dim_grey>Your rank: <white>%s<reset> (level %d / %d)<reset>\n",

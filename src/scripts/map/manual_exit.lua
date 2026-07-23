@@ -1,4 +1,4 @@
--- fed2-tools map — manual exit management (ported from map_manual_exit.lua)
+-- f2ce-tools map — manual exit management (ported from map_manual_exit.lua)
 
 function f2t_map_manual_add_exit(from_room, to_room, direction, bidirectional)
     if not from_room or not roomExists(from_room) then

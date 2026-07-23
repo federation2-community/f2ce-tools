@@ -1,4 +1,4 @@
--- fed2-tools map — GMCP room handler (ported from map_core.lua)
+-- f2ce-tools map — GMCP room handler (ported from map_core.lua)
 
 function f2t_map_handle_gmcp_room()
     if not F2T_MAP_ENABLED then return end

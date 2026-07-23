@@ -1,4 +1,4 @@
--- fed2-tools map — room search (ported from map_search.lua)
+-- f2ce-tools map — room search (ported from map_search.lua)
 
 function f2t_map_search_area(area_id, search_text)
     if not area_id or not search_text or search_text == "" then return {} end

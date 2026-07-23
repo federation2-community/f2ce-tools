@@ -176,7 +176,7 @@ local _commodGroups = nil
 local function commodGroups()
     if _commodGroups then return _commodGroups end
     local groups = {}
-    local file = io.open(getMudletHomeDir() .. "/fed2-tools/commodities.json", "r")
+    local file = io.open(getMudletHomeDir() .. "/f2ce-tools/commodities.json", "r")
     if file then
         local raw = file:read("*all")
         file:close()
@@ -690,7 +690,7 @@ local function buildExchangeDef()
     return {
         name        = "Exchange",
         description = "Live board for the exchange you are in: prices (or futures for Traders/Financiers) plus a price ticker.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)
@@ -804,14 +804,14 @@ end)
 -- ── Settings ──────────────────────────────────────────────────────────────────
 
 f2t_settings_register("exchange", "console_spam", {
-    tab         = "Fed2-Tools/Exchange",
+    tab         = "F2CE-Tools/Exchange",
     label       = "Ticker spam to console",
     description = "Show the +++ exchange ticker announcements in the main console (the Exchange content gets them via GMCP either way)",
     default     = false,
 })
 
 f2t_settings_register("exchange", "show_icons", {
-    tab         = "Fed2-Tools/Exchange",
+    tab         = "F2CE-Tools/Exchange",
     label       = "Commodity icons",
     description = "Show emoji icons next to commodity names in the prices table and ticker",
     default     = true,

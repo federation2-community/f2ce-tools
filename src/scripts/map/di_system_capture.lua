@@ -1,4 +1,4 @@
--- fed2-tools map — DI system capture (ported from map_di_system_capture.lua)
+-- f2ce-tools map — DI system capture (ported from map_di_system_capture.lua)
 
 F2T_MAP_DI_SYSTEM_CAPTURE = F2T_MAP_DI_SYSTEM_CAPTURE or {
     active = false, system_name = nil, planet_names = {}, timer_id = nil,

@@ -1,4 +1,4 @@
--- fed2-tools po — initialization
+-- f2ce-tools po — initialization
 --
 -- Planet-owner economy tools: capture and display a planet's exchange
 -- (production/consumption) data via the `po` command.  Also provides the remote

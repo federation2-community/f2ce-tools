@@ -1,4 +1,4 @@
--- fed2-tools stamina monitor — settings registration
+-- f2ce-tools stamina monitor — settings registration
 --
 -- Namespace "stamina" (own module).  Muxlet stores the settings-UI tab path
 -- per namespace on first registration, so each module must use its own
@@ -8,7 +8,7 @@
 -- threshold = 0 disables stamina monitoring; 1-99 enables auto-eat at that %.
 
 f2t_settings_register("stamina", "threshold", {
-    tab         = "Fed2-Tools/Misc",
+    tab         = "F2CE-Tools/Misc",
     order       = 3,
     label       = "Auto-eat threshold (%)",
     description = "Stamina % that triggers food buying (0 = disabled, 1-99 = trigger at this %)",

@@ -1,4 +1,4 @@
--- fed2-tools factory — output parser
+-- f2ce-tools factory — output parser
 --
 -- Converts a captured "display factory N" block (capture_buffer) into a single
 -- structured factory record.  Field patterns match Fed2's facility display:

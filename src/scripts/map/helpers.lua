@@ -1,4 +1,4 @@
--- fed2-tools map — GMCP and map lookup helpers (ported from map_helpers.lua)
+-- f2ce-tools map — GMCP and map lookup helpers (ported from map_helpers.lua)
 
 function f2t_get_current_system()
     if not gmcp or not gmcp.room or not gmcp.room.info then return nil end

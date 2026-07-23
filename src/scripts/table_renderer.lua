@@ -1,4 +1,4 @@
--- fed2-tools — table renderer (ported from shared/scripts/f2t_table_renderer.lua)
+-- f2ce-tools — table renderer (ported from shared/scripts/f2t_table_renderer.lua)
 
 -- ── Formatters ────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
--- Registers the Fed2 Map content with Muxlet: apply/remove lifecycle hooks
+-- Registers the F2CE Map content with Muxlet: apply/remove lifecycle hooks
 -- mount and unmount a Geyser.Mapper widget inside a Muxlet pane.
 --
 -- The embedded map widget is a per-profile singleton (TMainConsole::mpMapper
@@ -106,9 +106,9 @@ local function buildContentDef()
     local activeToken = nil
 
     return {
-        name        = "Fed2 Map",
-        description = "Federation 2 mapper",
-        group       = "Fed2 Tools",
+        name        = "F2CE Map",
+        description = "F2CE mapper",
+        group       = "F2CE Tools",
         singleton   = true,
 
         apply = function(target)
@@ -145,13 +145,13 @@ local function buildContentDef()
                     -- Mudlet's own mapper widget shows a built-in "No map yet
                     -- for this profile" empty-state overlay whenever the room
                     -- database is empty, with its own raw Load/Create buttons
-                    -- — entirely outside fed2-tools' control, no Lua hook to
+                    -- — entirely outside f2ce-tools' control, no Lua hook to
                     -- suppress it. This is UNRELATED to the show_import_prompt
                     -- decision below: it just seeds the player's current room
                     -- from already-cached GMCP data (no command sent to the
                     -- game) whenever the database happens to be empty, purely
                     -- so that native overlay never gets a chance to stick —
-                    -- fed2-tools decides what the user sees here, never raw
+                    -- f2ce-tools decides what the user sees here, never raw
                     -- Mudlet. See map/import_check.lua for the prompt decision
                     -- itself, which never looks at room count.
                     if next(getRooms()) == nil and type(f2t_map_handle_gmcp_room) == "function" then
@@ -219,7 +219,7 @@ end
 
 -- Lets code outside this apply() closure (settings gear menu, "map import db"
 -- alias) build the import overlay into the live map pane's slot. Returns
--- nil, nil if no Fed2 Map content is currently applied anywhere.
+-- nil, nil if no F2CE Map content is currently applied anywhere.
 function f2tGetMapSlotInfo()
     return liveSlotContent, liveGid
 end
@@ -228,7 +228,7 @@ end
 --
 -- Mudlet gates loadJsonMap/saveJsonMap/deleteMap behind an open mapper widget
 -- (they fail with "no map present or loaded" otherwise). The widget only exists
--- once a Fed2 Map pane has mounted it via mapperAcquire() above — i.e. in Full
+-- once a F2CE Map pane has mounted it via mapperAcquire() above — i.e. in Full
 -- or BYOW mode, or after "mux start" + opening the map. In Minimal mode no pane
 -- ever mounts, so no widget exists, and callers must take a widget-free path
 -- rather than touching those functions. import_export.lua uses this to decide

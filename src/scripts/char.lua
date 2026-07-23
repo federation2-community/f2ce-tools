@@ -14,7 +14,7 @@ F2T_CHAR_NAME  = nil
 F2T_LOGGED_IN  = false
 
 local loginDone = false
-local PERSISTENT_BASE = getMudletHomeDir() .. "/fed2-tools_persistent"
+local PERSISTENT_BASE = getMudletHomeDir() .. "/f2ce-tools_persistent"
 
 function f2t_get_char_persistent_dir()
     if F2T_CHAR_NAME and F2T_CHAR_NAME ~= "" then

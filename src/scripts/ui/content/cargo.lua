@@ -67,7 +67,7 @@ local function buildCargoDef()
     return {
         name        = "Cargo",
         description = "Live ship cargo manifest from gmcp.char.ship.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

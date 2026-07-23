@@ -1,4 +1,4 @@
--- fed2-tools map — confirmation system (ported from map_manual_confirm.lua)
+-- f2ce-tools map — confirmation system (ported from map_manual_confirm.lua)
 
 F2T_MAP_MANUAL_PENDING_ACTION = nil
 

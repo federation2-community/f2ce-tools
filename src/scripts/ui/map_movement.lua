@@ -1,5 +1,5 @@
 -- f2tBuildMapMovement(parent, gid) creates a compass + navigation button
--- panel as a transparent overlay in the bottom-left of the Fed2 Map pane.
+-- panel as a transparent overlay in the bottom-left of the F2CE Map pane.
 --
 -- Shell: x=0%, y=80%, width=30%, height=21% (left 30% of pane, bottom 21%)
 -- Inside shell:

@@ -1,4 +1,4 @@
--- fed2-tools: first-run mode selection dialog
+-- f2ce-tools: first-run mode selection dialog
 --
 -- f2tShowModeSelect() is called by init.lua's muxletReady handler on first run.
 -- Presents three startup modes with radio-style option selection.
@@ -24,14 +24,14 @@ end
 -- Three modes presented as a radio list:
 --   minimal: no Muxlet start; command-line tools only; layout unchanged
 --   byow:    Muxlet starts with blank default workspace; user builds own layout
---   full:    Muxlet starts and fed2-tools workspace loads (recommended)
+--   full:    Muxlet starts and f2ce-tools workspace loads (recommended)
 
 local _MODES = {
     { id = "full",    label = "Full  (Recommended)",
-      desc = "Load the fed2-tools workspace: output pane and map side by side.<br>" ..
+      desc = "Load the f2ce-tools workspace: output pane and map side by side.<br>" ..
              "Muxlet starts automatically on every session." },
     { id = "byow",    label = "Build Your Own Workspace",
-      desc = "Start Muxlet with a blank canvas. All fed2-tools content is<br>" ..
+      desc = "Start Muxlet with a blank canvas. All f2ce-tools content is<br>" ..
              "registered &mdash; add it to any pane with right-click &rsaquo; Add Content." },
     { id = "minimal", label = "Minimal",
       desc = "No changes to your Mudlet layout. All commands and aliases work.<br>" ..
@@ -39,7 +39,7 @@ local _MODES = {
 }
 
 local _INTRO_HTML =
-    "<font color='#c6d2ee'>fed2-tools is a Mudlet package for F2CE covering mapping, " ..
+    "<font color='#c6d2ee'>f2ce-tools is a Mudlet package for F2CE covering mapping, " ..
     "automated trading, factory management, and the other quality-of-life tools listed " ..
     "below. It also includes a full GUI workspace, which is the recommended way to use it.</font>"
 
@@ -274,9 +274,9 @@ local function applyModeSelectToPane(target)
         if selectedMode == "full" then
             f2tSetAutostart(true)
             -- Set before fullStart() so its no-'current'-yet fallback picks up
-            -- "fed2-tools" directly: no separate apply call, no race with
+            -- "f2ce-tools" directly: no separate apply call, no race with
             -- fullStart's own internal deferred setup.
-            Mux.configureHost({ defaultWorkspace = "fed2-tools" })
+            Mux.configureHost({ defaultWorkspace = "f2ce-tools" })
             Mux.fullStart()
         elseif selectedMode == "byow" then
             f2tSetAutostart(true)
@@ -307,9 +307,9 @@ function f2tShowModeSelect(force)
 
     if not (Mux and Mux.createDialog and Mux.registerContent and Mux._applyContent) then
         cecho(
-            "\n<cyan>[fed2-tools]<reset> <white>Welcome!<reset>"
+            "\n<cyan>[f2ce-tools]<reset> <white>Welcome!<reset>"
             .. " To start with the full workspace: <cyan>mux start<reset>"
-            .. " then <cyan>mux workspace load fed2-tools<reset>\n"
+            .. " then <cyan>mux workspace load f2ce-tools<reset>\n"
         )
         f2tSetAutostart(false)
         return
@@ -326,7 +326,7 @@ function f2tShowModeSelect(force)
     -- height is a placeholder; applyModeSelectToPane's closing fitContent()
     -- call resizes the dialog to the content it actually built.
     local dialog = Mux.createDialog({
-        title     = "Welcome to fed2-tools",
+        title     = "Welcome to f2ce-tools",
         width     = 540,
         height    = 300,
         closeable = force == true,

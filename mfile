@@ -1,8 +1,8 @@
 {
-  "package": "fed2-tools",
-  "version": "2.2.0",
+  "package": "f2ce-tools",
+  "version": "3.0.0",
   "muxlet_version": "2.2.4",
   "author": "tmtocloud",
-  "description": "Federation 2 Tools — Mudlet package for Federation 2 Community Edition.",
-  "title": "fed2-tools"
+  "description": "F2CE-Tools — Mudlet package for Federation 2 Community Edition.",
+  "title": "f2ce-tools"
 }

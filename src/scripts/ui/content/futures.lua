@@ -202,7 +202,7 @@ local _commodsLookup = nil
 local function commodsLookup()
     if _commodsLookup then return _commodsLookup end
     local lookup = {}
-    local file = io.open(getMudletHomeDir() .. "/fed2-tools/commodities.json", "r")
+    local file = io.open(getMudletHomeDir() .. "/f2ce-tools/commodities.json", "r")
     if file then
         local raw = file:read("*all")
         file:close()
@@ -826,7 +826,7 @@ local function makeDef(name, description, registry, idPrefix, colsFn, refreshFn)
     return {
         name        = name,
         description = description,
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

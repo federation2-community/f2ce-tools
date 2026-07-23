@@ -4,7 +4,7 @@
 -- Load commodities list from JSON
 local function load_commodities_list()
     -- Note: @PKGNAME@ substitution only works in XML, use actual package name
-    local file_path = string.format("%s/fed2-tools/commodities.json", getMudletHomeDir())
+    local file_path = string.format("%s/f2ce-tools/commodities.json", getMudletHomeDir())
 
     local file, err = io.open(file_path, "r")
     if not file then

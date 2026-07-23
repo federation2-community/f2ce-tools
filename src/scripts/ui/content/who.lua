@@ -293,7 +293,7 @@ local function buildWhoDef()
     return {
         name        = "Who",
         description = "Online player list from gmcp.players.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

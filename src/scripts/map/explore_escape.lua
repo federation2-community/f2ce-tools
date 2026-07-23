@@ -1,4 +1,4 @@
--- fed2-tools map — exploration escape logic (ported from map_explore_escape.lua)
+-- f2ce-tools map — exploration escape logic (ported from map_explore_escape.lua)
 
 function f2t_map_explore_escape_start(destination_room_id, on_success, on_failure)
     if not F2T_MAP_EXPLORE_STATE.active then

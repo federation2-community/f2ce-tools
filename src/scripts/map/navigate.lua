@@ -1,4 +1,4 @@
--- fed2-tools map — navigation (ported from map_navigate.lua)
+-- f2ce-tools map — navigation (ported from map_navigate.lua)
 
 function f2t_map_navigate(destination)
     f2t_debug_log("[map] f2t_map_navigate destination is '%s'", destination)

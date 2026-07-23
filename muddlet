@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# muddlet — Build the fed2-tools package and deploy it to a Mudlet profile.
+# muddlet — Build the f2ce-tools package and deploy it to a Mudlet profile.
 #
 # Derives version from git tags, reads muxlet_version from mfile, patches
 # mfile and init.lua temporarily, runs muddler, then restores everything so
@@ -15,14 +15,14 @@
 # New profile workflow (no --fresh):
 #   Run muddlet to create the profile folder and drop the .mpackage in it.
 #   Open Mudlet — it initialises the profile with its default packages.
-#   Install fed2-tools once via Package Manager using the .mpackage in the
+#   Install f2ce-tools once via Package Manager using the .mpackage in the
 #   profile folder. After that, every muddlet run auto-reloads via the stamp
 #   watcher — no further manual steps needed.
 #
 # --fresh writes a fresh flag file alongside the stamp file. The in-session
 #   stamp watcher picks up both files and does a fresh reload, which wipes
-#   Muxlet_persistent and fed2-tools_persistent, uninstalls Muxlet from the
-#   profile XML, then reinstalls fed2-tools so init.lua downloads a clean
+#   Muxlet_persistent and f2ce-tools_persistent, uninstalls Muxlet from the
+#   profile XML, then reinstalls f2ce-tools so init.lua downloads a clean
 #   Muxlet. Mudlet does not need to be closed.
 #
 # Usage:
@@ -31,17 +31,17 @@
 #
 # Examples:
 #   ./muddlet
-#   ./muddlet --profile fed2-dev --username jackrungh
-#   ./muddlet --profile fed2-dev --username jackrungh --fresh
+#   ./muddlet --profile f2ce-dev --username jackrungh
+#   ./muddlet --profile f2ce-dev --username jackrungh --fresh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MFILE="$SCRIPT_DIR/mfile"
 INIT_LUA="$SCRIPT_DIR/src/scripts/init.lua"
-SRC_PACKAGE="$SCRIPT_DIR/build/fed2-tools.mpackage"
+SRC_PACKAGE="$SCRIPT_DIR/build/f2ce-tools.mpackage"
 
-PROFILE="fed2-dev"
+PROFILE="f2ce-dev"
 USERNAME=""
 MUDLET_CONFIG=""
 GAME_HOST="play.federation2.com"
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo ""
-echo "=== fed2-tools build ==="
+echo "=== f2ce-tools build ==="
 
 # ── Read mfile ────────────────────────────────────────────────────────────────
 
@@ -201,21 +201,21 @@ fi
 echo "Connection    : $GAME_HOST:$GAME_PORT${USERNAME:+ ($USERNAME)}"
 
 if [[ ! -f "$SRC_PACKAGE" ]]; then
-    echo "ERROR: build/fed2-tools.mpackage not found after build step." >&2
+    echo "ERROR: build/f2ce-tools.mpackage not found after build step." >&2
     exit 1
 fi
 
-DEST_PACKAGE="$PROFILE_DIR/fed2-tools.mpackage"
+DEST_PACKAGE="$PROFILE_DIR/f2ce-tools.mpackage"
 cp "$SRC_PACKAGE" "$DEST_PACKAGE"
 echo "Deployed      : $DEST_PACKAGE"
 
-STAMP_PATH="$PROFILE_DIR/fed2-tools-rebuild.stamp"
+STAMP_PATH="$PROFILE_DIR/f2ce-tools-rebuild.stamp"
 STAMP="$(date +%s)"
 echo "$STAMP" > "$STAMP_PATH"
 echo "Stamp written : $STAMP  ($STAMP_PATH)"
 
 if [[ $FRESH -eq 1 ]]; then
-    FRESH_PATH="$PROFILE_DIR/fed2-tools-fresh.stamp"
+    FRESH_PATH="$PROFILE_DIR/f2ce-tools-fresh.stamp"
     date +%s > "$FRESH_PATH"
     echo "Fresh flag    : $FRESH_PATH"
 fi
@@ -230,13 +230,13 @@ if [[ $NEW_PROFILE -eq 1 ]]; then
     else
         echo "  2. Enter username + password and connect"
     fi
-    echo "  3. Open Package Manager and install fed2-tools.mpackage from the profile folder"
+    echo "  3. Open Package Manager and install f2ce-tools.mpackage from the profile folder"
     echo ""
-    echo "  After the first install, fed2-tools auto-reloads on every build."
+    echo "  After the first install, f2ce-tools auto-reloads on every build."
     echo ""
 fi
 
 echo "WORKFLOW:"
 echo "  ./muddlet --profile $PROFILE"
-echo "  fed2-tools auto-reloads within ~30 seconds via the dev stamp watcher."
+echo "  f2ce-tools auto-reloads within ~30 seconds via the dev stamp watcher."
 echo ""

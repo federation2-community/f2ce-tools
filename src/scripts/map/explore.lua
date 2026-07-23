@@ -1,4 +1,4 @@
--- fed2-tools map — Layer 1 core exploration engine (ported from map_explore.lua)
+-- f2ce-tools map — Layer 1 core exploration engine (ported from map_explore.lua)
 
 F2T_MAP_EXPLORE_STATE = F2T_MAP_EXPLORE_STATE or {
     active = false, paused = false, pause_requested = false, phase = nil, mode = nil, planet_mode = nil,

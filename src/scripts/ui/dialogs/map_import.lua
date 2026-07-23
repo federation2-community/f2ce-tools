@@ -98,7 +98,7 @@ local function _doImport(filePath, statusLbl, importBtn)
         statusLbl:echo(string.format("Map imported — %d rooms loaded", result))
         importBtn:setStyleSheet(_CSS_BTN_DONE)
         importBtn:echo("<center>Map Imported</center>")
-        cecho(string.format("\n<green>[fed2-tools]<reset> Map imported — %d rooms\n", result))
+        cecho(string.format("\n<green>[f2ce-tools]<reset> Map imported — %d rooms\n", result))
         return true
     else
         statusLbl:setStyleSheet(_CSS_STATUS_ERR)
@@ -125,7 +125,7 @@ end
 -- callers (import_check.lua) can avoid burning the "seen" flag on a failed show.
 function f2tShowMapImportOverlay(slotContent, gid, reason)
     if not slotContent then
-        cecho("\n<yellow>[fed2-tools]<reset> Map import: no map pane is open to show the picker in.\n")
+        cecho("\n<yellow>[f2ce-tools]<reset> Map import: no map pane is open to show the picker in.\n")
         return false
     end
 
@@ -187,7 +187,7 @@ function f2tShowMapImportOverlay(slotContent, gid, reason)
     optLbl:echo("SELECT MAP DATABASE")
     y = y + 18
 
-    local mapDir   = getMudletHomeDir() .. "/fed2-tools/"
+    local mapDir   = getMudletHomeDir() .. "/f2ce-tools/"
     local selected = 1
     local done     = false
     local optBtns  = {}

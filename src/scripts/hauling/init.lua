@@ -1,6 +1,6 @@
 -- Automated, rank-adaptive hauling. Owns the global F2T_HAULING_STATE table
 -- and registers hauling's settings into the Muxlet settings UI
--- (Fed2-Tools/Hauling tab).
+-- (F2CE-Tools/Hauling tab).
 --
 -- No "enabled" toggle: inert until `haul start`, resets on `haul stop` /
 -- `haul terminate`.
@@ -114,7 +114,7 @@ F2T_HAULING_STATE = {
 -- so they are dropped here.
 
 f2t_settings_register("hauling", "margin_threshold", {
-    tab         = "Fed2-Tools/Hauling",
+    tab         = "F2CE-Tools/Hauling",
     label       = "Margin threshold (%)",
     description = "Minimum profit margin % to continue trading a commodity",
     default     = 40,

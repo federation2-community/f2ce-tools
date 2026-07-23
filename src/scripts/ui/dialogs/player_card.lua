@@ -691,7 +691,7 @@ local function renderCard(target)
     target._f2tCardFingerprint = fingerprint(player)
 end
 
--- Deferred to F2T_CONTENT_REGISTRARS like every other fed2-tools content module.
+-- Deferred to F2T_CONTENT_REGISTRARS like every other f2ce-tools content module.
 function f2tRegisterPlayerCard()
     if not (Mux and Mux.registerContent) then
         if f2t_debug_log then f2t_debug_log("[player_card] Muxlet content API unavailable; skipping") end
@@ -701,7 +701,7 @@ function f2tRegisterPlayerCard()
     Mux.registerContent("f2t_player_card", {
         name        = "Player Card",
         description = "Rank-colored info card for a player, with quick-send.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = true,
         singleton   = false,
 

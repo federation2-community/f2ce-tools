@@ -1,4 +1,4 @@
--- fed2-tools map — raw diagnostic display (ported from map_raw.lua)
+-- f2ce-tools map — raw diagnostic display (ported from map_raw.lua)
 
 local function display_table(tbl, indent, max_depth)
     indent = indent or 0; max_depth = max_depth or 5

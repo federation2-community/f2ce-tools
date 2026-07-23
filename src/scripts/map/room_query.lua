@@ -1,4 +1,4 @@
--- fed2-tools map — room query utilities (ported from map_room_query.lua)
+-- f2ce-tools map — room query utilities (ported from map_room_query.lua)
 
 function f2t_map_find_room_with_flag(area_id, flag)
     if not area_id then return nil end

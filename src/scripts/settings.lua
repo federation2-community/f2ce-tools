@@ -1,4 +1,4 @@
--- fed2-tools — settings layer
+-- f2ce-tools — settings layer
 --
 -- Wraps Mux.settings with the f2t_settings_* API used by all components.
 -- Calls are queued when Mux is not yet available and flushed by init.lua's
@@ -129,12 +129,12 @@ function f2t_settings_show_get(component, key)
     end
 end
 
--- ── Core fed2-tools settings (f2t namespace) ──────────────────────────────────
+-- ── Core f2ce-tools settings (f2t namespace) ──────────────────────────────────
 --
 -- The update-check toggles that used to live here (update_check_enabled,
 -- update_check_remind_skip, for the old MPR-based version.lua checker) are now
 -- registered by Muxlet's own update system instead, under this same "f2t"
--- namespace but their own "Fed2-Tools/Update" tab, via Mux.configureHost's
+-- namespace but their own "F2CE-Tools/Update" tab, via Mux.configureHost's
 -- updateSettingsNamespace/updateSettingsTab (see init.lua) — see Muxlet's
 -- update.lua for that logic.
 

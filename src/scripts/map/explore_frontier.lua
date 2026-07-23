@@ -1,4 +1,4 @@
--- fed2-tools map — exploration frontier management (ported from map_explore_frontier.lua)
+-- f2ce-tools map — exploration frontier management (ported from map_explore_frontier.lua)
 
 local DIRECTION_COMMANDS = {
     [1]="n",[2]="ne",[3]="nw",[4]="e",[5]="w",[6]="s",[7]="se",[8]="sw",

@@ -1,4 +1,4 @@
--- fed2-tools — haul command
+-- f2ce-tools — haul command
 --
 -- Automated, rank-adaptive hauling. Inert until `haul start`; resets on
 -- `haul stop` / `haul terminate`.

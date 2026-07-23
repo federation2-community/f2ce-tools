@@ -1,4 +1,4 @@
--- fed2-tools — connection state tracking
+-- f2ce-tools — connection state tracking
 
 F2T_CONNECTED = false
 

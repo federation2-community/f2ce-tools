@@ -1,4 +1,4 @@
--- fed2-tools map — circuit movement state machine (ported from map_circuit_movement.lua)
+-- f2ce-tools map — circuit movement state machine (ported from map_circuit_movement.lua)
 
 F2T_MAP_CIRCUIT_STATE = {
     active = false, circuit_id = nil, area_name = nil, vehicle_room = nil,

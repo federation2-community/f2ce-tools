@@ -1,4 +1,4 @@
--- fed2-tools factory — status table formatter
+-- f2ce-tools factory — status table formatter
 --
 -- Builds the column/footer config and renders it through the shared table
 -- renderer (f2t_render_table).  The renderer in the new project supports the

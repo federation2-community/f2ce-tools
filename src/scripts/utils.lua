@@ -1,11 +1,11 @@
--- fed2-tools — shared utilities
+-- f2ce-tools — shared utilities
 --
 -- Consolidates: debug logging, game tool checks, string helpers, table helpers.
 
 -- ── Version ───────────────────────────────────────────────────────────────────
 -- Read from the installed package itself (mirrors Muxlet's own Mux._version),
 -- not a build-time constant, so it always reflects what's actually installed.
-local _f2tPkgInfo = getPackageInfo("fed2-tools")
+local _f2tPkgInfo = getPackageInfo("f2ce-tools")
 F2T_VERSION = (_f2tPkgInfo and _f2tPkgInfo.version) or "unknown"
 
 -- ── Debug ─────────────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ end
 function f2t_check_tool_requirement(toolName, featureName, displayName)
     if f2t_has_tool(toolName) then return true end
     local name = displayName or toolName
-    cecho(string.format("\n<red>[fed2-tools]<reset> %s requires the <cyan>%s<reset> tool\n",
+    cecho(string.format("\n<red>[f2ce-tools]<reset> %s requires the <cyan>%s<reset> tool\n",
         featureName, name))
     cecho("<dim_grey>See: https://federation2.com/guide/#sec-230.20<reset>\n")
     return false

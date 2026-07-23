@@ -1,4 +1,4 @@
--- fed2-tools — argument parsing utilities (ported from shared/scripts/f2t_arg_parser.lua)
+-- f2ce-tools — argument parsing utilities (ported from shared/scripts/f2t_arg_parser.lua)
 
 function f2t_parse_words(str)
     if not str or str == "" then return {} end

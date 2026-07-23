@@ -1,4 +1,4 @@
--- fed2-tools map — manual room management (ported from map_manual_room.lua)
+-- f2ce-tools map — manual room management (ported from map_manual_room.lua)
 
 function f2t_map_manual_create_room(system, area, num, name)
     if not system or system == "" then cecho("\n<red>[map]<reset> System name required\n"); return nil end

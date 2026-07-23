@@ -1,4 +1,4 @@
--- fed2-tools map — area management (ported from map_area.lua)
+-- f2ce-tools map — area management (ported from map_area.lua)
 
 function f2t_map_get_or_create_area(area_name, area_data)
     if not area_name or area_name == "" then

@@ -1,4 +1,4 @@
--- fed2-tools map — BFS flag finder for exploration (ported from map_explore_bfs.lua)
+-- f2ce-tools map — BFS flag finder for exploration (ported from map_explore_bfs.lua)
 
 function f2t_map_explore_bfs_find_flag(starting_room_id, target_flag, max_depth)
     max_depth = max_depth or 20

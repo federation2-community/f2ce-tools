@@ -221,7 +221,7 @@ local function buildChatDef()
     return {
         name        = "Chat",
         description = "Com/say/tell history with speaker grouping, filters, and timestamps.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
 

@@ -1,4 +1,4 @@
--- fed2-tools map — lock management (ported from map_manual_lock.lua)
+-- f2ce-tools map — lock management (ported from map_manual_lock.lua)
 
 function f2t_map_manual_lock_room(room_id)
     if not room_id or not roomExists(room_id) then

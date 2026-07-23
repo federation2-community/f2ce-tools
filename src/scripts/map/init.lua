@@ -1,4 +1,4 @@
--- fed2-tools map — initialization
+-- f2ce-tools map — initialization
 --
 -- Declares this package as the Mudlet mapper controller and initializes
 -- global map state variables.  Settings are registered in settings.lua.

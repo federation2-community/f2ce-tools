@@ -313,11 +313,12 @@ function f2tChatComhistoryLine()
         return
     end
 
-    if not state.inEntry then return end
-
     -- Fed2 delimits an output block with a blank line, even mid-wrap (same
     -- rule as chat_inbound.lua) — the entry is complete; anything after the
-    -- blank is unrelated output and must not be folded in.
+    -- blank is unrelated output and must not be folded in. This also covers
+    -- the header/first-entry separator and any trailing blank before the
+    -- finish timer fires, so it's checked before the inEntry gate below —
+    -- every blank line during an active capture belongs to our own request.
     if line:match("^%s*$") then
         deleteLine()
         resetFinishTimer()
@@ -325,6 +326,8 @@ function f2tChatComhistoryLine()
         state.current = nil
         return
     end
+
+    if not state.inEntry then return end
 
     -- A live message header just started (chat_inbound.lua's own anchored
     -- trigger fires on it independently) — close this entry out rather than

@@ -1,4 +1,4 @@
--- fed2-tools map — saved destinations (ported from map_destinations.lua)
+-- f2ce-tools map — saved destinations (ported from map_destinations.lua)
 
 -- Safe accessor: ensures the destinations sub-table exists on whatever settings
 -- store is currently active (may be _local_data before Mux is ready, or

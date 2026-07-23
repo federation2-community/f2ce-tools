@@ -1,7 +1,7 @@
--- fed2-tools map — help registration (ported from map_help_init.lua)
+-- f2ce-tools map — help registration (ported from map_help_init.lua)
 
 f2t_register_help("map", {
-    description = "Federation 2 Mapper - Auto-mapping, navigation, and destinations",
+    description = "F2CE Mapper - Auto-mapping, navigation, and destinations",
     usage = {
         {cmd="Map Control:", desc=""},
         {cmd="map on", desc="Enable auto-mapping"},

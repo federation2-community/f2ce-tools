@@ -16,13 +16,13 @@
 
 local MUXLET_PKG = "Muxlet"
 
--- build-injected: exact Muxlet version this fed2-tools build is pinned to
+-- build-injected: exact Muxlet version this f2ce-tools build is pinned to
 local F2T_REQUIRED_MUXLET = nil
 -- build-injected: GitHub release URL (bare tag = prerelease; v-tag = production)
 local MUXLET_URL = nil
 
 -- ── generic_mapper removal ────────────────────────────────────────────────────
--- generic_mapper conflicts with the fed2-tools map system; remove it silently.
+-- generic_mapper conflicts with the f2ce-tools map system; remove it silently.
 if table.contains(getPackages(), "generic_mapper") then
     f2t_debug_log("Removing incompatible package: generic_mapper")
     uninstallPackage("generic_mapper")
@@ -31,7 +31,7 @@ end
 -- ── Install handler ───────────────────────────────────────────────────────────
 -- sysInstall fires during installation only, not on normal session start.
 registerAnonymousEventHandler("sysInstall", function(_, pkg)
-    if pkg ~= "fed2-tools" then return end
+    if pkg ~= "f2ce-tools" then return end
 
     -- Apply preferred mapper defaults only on the very first install so user
     -- customisations are never overwritten on upgrade.
@@ -78,7 +78,7 @@ end
 
 -- Recover if Muxlet ever disappears mid-session for any reason other than our
 -- own devmode fresh-reload flow (muddlet --fresh, see devmode.lua) — that flow
--- reinstalls fed2-tools itself and lets THIS package's own top-level bootstrap
+-- reinstalls f2ce-tools itself and lets THIS package's own top-level bootstrap
 -- below notice Muxlet is absent and reinstall it, so it sets
 -- F2T_FRESH_UNINSTALL_PENDING first to keep this generic watchdog from also
 -- firing and racing it. A handler Muxlet registers on itself can't reliably
@@ -102,7 +102,7 @@ end)
 --   true  → auto-start (Full or BYOW choice from first run)
 --   false → minimal; Muxlet stays idle until user runs mux start
 --
--- fed2-tools suppresses Muxlet's own welcome popup (mux.welcome_shown = true)
+-- f2ce-tools suppresses Muxlet's own welcome popup (mux.welcome_shown = true)
 -- because it provides its own onboarding via f2tShowModeSelect().  It also
 -- prevents Muxlet's auto_start timer from double-starting by owning fullStart().
 
@@ -154,28 +154,28 @@ end
 -- user's choice of Muxlet's blank "default" workspace.
 local function bootHostOpts()
     return {
-        suppressWelcome = true,   -- fed2-tools shows its own onboarding (f2tShowModeSelect)
-        autoStart       = false,  -- fed2-tools exclusively decides when Mux.fullStart() runs
-        quietStart      = true,   -- fed2-tools prints its own startup output
+        suppressWelcome = true,   -- f2ce-tools shows its own onboarding (f2tShowModeSelect)
+        autoStart       = false,  -- f2ce-tools exclusively decides when Mux.fullStart() runs
+        quietStart      = true,   -- f2ce-tools prints its own startup output
         checkForUpdates = false,  -- irrelevant once updateRepo is set below, kept for older Muxlets
 
-        -- Let Muxlet's own update system check fed2-tools' releases instead of
+        -- Let Muxlet's own update system check f2ce-tools' releases instead of
         -- (only) its own, and offer to bump Muxlet first if a newer release
         -- needs it — same two values already computed above for the boot gate.
         -- pinMuxletVersion = true makes that boot gate an exact pin instead of
         -- a floor: if F2T_REQUIRED_MUXLET is ever set OLDER than what's
         -- installed, Mux.bootHost downgrades rather than treating it as fine.
-        updateRepo              = "federation2-community/fed2-tools",
+        updateRepo              = "federation2-community/f2ce-tools",
         requiredMuxletVersion   = F2T_REQUIRED_MUXLET,
         requiredMuxletUrl       = MUXLET_URL,
         pinMuxletVersion        = true,
         -- Keep the "f2t" namespace (so "f2t settings set update_check_enabled
         -- false" etc. keeps working), but give it its own dedicated "Update"
-        -- sub-tab under the existing "Fed2-Tools" top-level tab — the same
+        -- sub-tab under the existing "F2CE-Tools" top-level tab — the same
         -- shape Muxlet's own "Muxlet/Update" tab has, just moved here instead
         -- of living lumped into General.
         updateSettingsNamespace = "f2t",
-        updateSettingsTab       = "Fed2-Tools/Update",
+        updateSettingsTab       = "F2CE-Tools/Update",
         onReady                 = f2tInit,
     }
 end
@@ -204,8 +204,8 @@ if Mux and Mux._ready then
     onMuxletReady()
 elseif not table.contains(getPackages(), MUXLET_PKG) then
     if not MUXLET_URL then
-        cecho("\n<red>[fed2-tools]<reset> Cannot install Muxlet: build is missing MUXLET_URL injection. "
-            .. "Reinstall fed2-tools from its latest GitHub release.\n")
+        cecho("\n<red>[f2ce-tools]<reset> Cannot install Muxlet: build is missing MUXLET_URL injection. "
+            .. "Reinstall f2ce-tools from its latest GitHub release.\n")
     else
         f2t_debug_log("Muxlet install queued: not installed (required=%s)", tostring(F2T_REQUIRED_MUXLET))
         afterLogin(function() installPackage(MUXLET_URL) end)

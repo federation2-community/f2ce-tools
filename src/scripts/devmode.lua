@@ -1,14 +1,14 @@
 -- Dev Mode: local build auto-reload.
 --
--- muddlet --profile <name> writes fed2-tools-rebuild.stamp (unix timestamp)
+-- muddlet --profile <name> writes f2ce-tools-rebuild.stamp (unix timestamp)
 -- to the profile directory after every build. A 30-second timer here watches
--- it; on change, fed2-tools reinstalls itself from the deployed package. New
+-- it; on change, f2ce-tools reinstalls itself from the deployed package. New
 -- code is active immediately; Mux._promptRestartRequired then offers a
 -- profile close/reopen for a fully clean UI, but doesn't force one.
 --
 -- muddlet --fresh also writes a fresh flag file. The watcher then wipes
--- Muxlet_persistent and fed2-tools_persistent, uninstalls Muxlet, and
--- reinstalls fed2-tools, whose bootstrap re-downloads a clean Muxlet,
+-- Muxlet_persistent and f2ce-tools_persistent, uninstalls Muxlet, and
+-- reinstalls f2ce-tools, whose bootstrap re-downloads a clean Muxlet,
 -- simulating a first-time install without closing Mudlet.
 
 -- Stamp value seen at last check. nil = not yet observed this session.
@@ -34,22 +34,22 @@ end
 -- currently executing (from inside the watcher's own callback) frees it
 -- mid-run and crashes Mudlet, so this must run after the call stack unwinds.
 --
--- Reinstalling only reloads fed2-tools' Lua; Muxlet doesn't re-fire
+-- Reinstalling only reloads f2ce-tools' Lua; Muxlet doesn't re-fire
 -- "muxletReady", so the registrar list is cleared and re-run explicitly here.
 local function f2tDevmodeDoReload(pkgPath)
     tempTimer(0, function()
-        if table.contains(getPackages(), "fed2-tools") then
-            uninstallPackage("fed2-tools")
+        if table.contains(getPackages(), "f2ce-tools") then
+            uninstallPackage("f2ce-tools")
         end
         local ok, err = installPackage(pkgPath)
         if ok then
             F2T_CONTENT_REGISTRARS = {}
             if f2tRegisterAllContent then f2tRegisterAllContent() end
-            cecho("\n<green>[fed2-tools]<reset> Reinstalled.\n")
+            cecho("\n<green>[f2ce-tools]<reset> Reinstalled.\n")
             if Mux and Mux._promptRestartRequired then Mux._promptRestartRequired() end
         else
             cecho(string.format(
-                "\n<red>[fed2-tools]<reset> Reinstall failed (%s). Install manually from: %s\n",
+                "\n<red>[f2ce-tools]<reset> Reinstall failed (%s). Install manually from: %s\n",
                 tostring(err or "unknown error"), pkgPath))
         end
     end)
@@ -60,14 +60,14 @@ end
 local function f2tDevmodeFreshReload(pkgPath)
     local home = getMudletHomeDir()
 
-    cecho("\n<yellow>[fed2-tools]<reset> --fresh: deleting Muxlet_persistent...\n")
+    cecho("\n<yellow>[f2ce-tools]<reset> --fresh: deleting Muxlet_persistent...\n")
     wipeFiles(home .. "/Muxlet_persistent")
 
-    cecho("\n<yellow>[fed2-tools]<reset> --fresh: deleting fed2-tools_persistent...\n")
-    wipeFiles(home .. "/fed2-tools_persistent")
+    cecho("\n<yellow>[f2ce-tools]<reset> --fresh: deleting f2ce-tools_persistent...\n")
+    wipeFiles(home .. "/f2ce-tools_persistent")
 
     if table.contains(getPackages(), "Muxlet") then
-        cecho("\n<yellow>[fed2-tools]<reset> --fresh: removing Muxlet from profile...\n")
+        cecho("\n<yellow>[f2ce-tools]<reset> --fresh: removing Muxlet from profile...\n")
         -- init.lua's sysUninstallPackage watchdog stands down for this
         -- uninstall (it's ours); f2tDevmodeDoReload below re-triggers
         -- Muxlet's reinstall. Global so it survives into that handler,
@@ -78,12 +78,12 @@ local function f2tDevmodeFreshReload(pkgPath)
             if name ~= "Muxlet" then return end
             killAnonymousEventHandler(waitId)
             F2T_FRESH_UNINSTALL_PENDING = false
-            cecho("\n<cyan>[fed2-tools]<reset> Reloading fed2-tools...\n")
+            cecho("\n<cyan>[f2ce-tools]<reset> Reloading f2ce-tools...\n")
             f2tDevmodeDoReload(pkgPath)
         end)
         uninstallPackage("Muxlet")
     else
-        cecho("\n<cyan>[fed2-tools]<reset> Reloading fed2-tools...\n")
+        cecho("\n<cyan>[f2ce-tools]<reset> Reloading f2ce-tools...\n")
         f2tDevmodeDoReload(pkgPath)
     end
 end
@@ -100,7 +100,7 @@ local function f2tDevmodeCheck()
     end
 
     local home      = getMudletHomeDir()
-    local stampPath = home .. "/fed2-tools-rebuild.stamp"
+    local stampPath = home .. "/f2ce-tools-rebuild.stamp"
     local file      = io.open(stampPath, "r")
 
     if not file then
@@ -120,24 +120,24 @@ local function f2tDevmodeCheck()
         -- First observation: record stamp but don't reload. Prevents a spurious
         -- reload on every package restart when the stamp file already exists.
         _devLastStamp = stamp
-        cecho("\n<yellow>[fed2-tools]<reset> Dev mode active — monitoring for new local builds\n")
+        cecho("\n<yellow>[f2ce-tools]<reset> Dev mode active — monitoring for new local builds\n")
         tempTimer(30, f2tDevmodeCheck)
         return
     end
 
     -- Stamp changed: a new build was deployed; check for the fresh flag.
     _devLastStamp = stamp
-    local pkgPath   = home .. "/fed2-tools.mpackage"
-    local freshPath = home .. "/fed2-tools-fresh.stamp"
+    local pkgPath   = home .. "/f2ce-tools.mpackage"
+    local freshPath = home .. "/f2ce-tools-fresh.stamp"
     local freshFile = io.open(freshPath, "r")
 
     if freshFile then
         freshFile:close()
         os.remove(freshPath)
-        cecho("\n<yellow>[fed2-tools]<reset> New local build detected (fresh) — wiping and reloading...\n")
+        cecho("\n<yellow>[f2ce-tools]<reset> New local build detected (fresh) — wiping and reloading...\n")
         f2tDevmodeFreshReload(pkgPath)
     else
-        cecho("\n<cyan>[fed2-tools]<reset> New local build detected — reloading...\n")
+        cecho("\n<cyan>[f2ce-tools]<reset> New local build detected — reloading...\n")
         f2tDevmodeDoReload(pkgPath)
     end
     -- No reschedule: the freshly installed package starts its own timer on load.
@@ -147,7 +147,7 @@ end
 -- directory. Production installs never have this file, so the timer never
 -- runs for end-users.
 local function f2tDevmodeStart()
-    local stampPath = getMudletHomeDir() .. "/fed2-tools-rebuild.stamp"
+    local stampPath = getMudletHomeDir() .. "/f2ce-tools-rebuild.stamp"
     local probe = io.open(stampPath, "r")
     if not probe then return end
     probe:close()

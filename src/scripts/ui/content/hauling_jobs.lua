@@ -392,7 +392,7 @@ local function buildHaulingJobsDef()
     return {
         name        = "Hauling Jobs",
         description = "Armstrong Cuthbert job board with route distance and effective pay.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

@@ -1,4 +1,4 @@
--- fed2-tools map — room styling (ported from map_style.lua)
+-- f2ce-tools map — room styling (ported from map_style.lua)
 
 local ENV_MULTI_FLAG     = 257
 local ENV_ORBIT          = 258

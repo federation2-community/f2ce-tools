@@ -74,7 +74,7 @@ end
 -- `<component> settings` or the Muxlet settings UI.
 
 f2t_register_help("f2t", {
-    description = "Federation 2 Tools Package - System commands and component overview",
+    description = "F2CE-Tools Package - System commands and component overview",
     usage = {
         {cmd = "System Commands:", desc = ""},
         {cmd = "f2t", desc = "Show this help"},
@@ -108,7 +108,7 @@ f2t_register_help("f2t", {
 })
 
 f2t_register_help("f2t settings", {
-    description = "Manage fed2-tools system (f2t) settings",
+    description = "Manage f2ce-tools system (f2t) settings",
     usage = {
         {cmd = "f2t settings", desc = "List all system settings"},
         {cmd = "f2t settings get <name>", desc = "Get a specific setting"},
@@ -116,7 +116,7 @@ f2t_register_help("f2t settings", {
         {cmd = "f2t settings clear <name>", desc = "Reset setting to default"},
         {cmd = "", desc = ""},
         {cmd = "Component settings:", desc = "use <component> settings, e.g. 'factory settings'"},
-        {cmd = "", desc = "or open the Muxlet settings UI (grouped under Fed2-Tools)"}
+        {cmd = "", desc = "or open the Muxlet settings UI (grouped under F2CE-Tools)"}
     },
     examples = {
         "f2t settings                            # List system settings",
@@ -139,7 +139,7 @@ f2t_register_help("f2t chat", {
 })
 
 f2t_register_help("f2t debug", {
-    description = "Control debug logging for fed2-tools components",
+    description = "Control debug logging for f2ce-tools components",
     usage = {
         {cmd = "f2t debug", desc = "Show current debug state"},
         {cmd = "f2t debug on", desc = "Enable debug logging (persists)"},
@@ -153,7 +153,7 @@ f2t_register_help("f2t debug", {
 })
 
 f2t_register_help("f2t status", {
-    description = "Show fed2-tools component status",
+    description = "Show f2ce-tools component status",
     usage = {
         {cmd = "f2t status", desc = "Display all component states"}
     },

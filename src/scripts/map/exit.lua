@@ -1,4 +1,4 @@
--- fed2-tools map — exit handling (ported from map_exit.lua)
+-- f2ce-tools map — exit handling (ported from map_exit.lua)
 
 local DIR_EXPANSION_MAP = {
     n="north",s="south",e="east",w="west",

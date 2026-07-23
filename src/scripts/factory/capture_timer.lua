@@ -1,4 +1,4 @@
--- fed2-tools factory — capture completion timer
+-- f2ce-tools factory — capture completion timer
 --
 -- After each captured line the timer is reset.  When 0.5 s elapse with no new
 -- data the current factory block is considered complete and processed; an empty

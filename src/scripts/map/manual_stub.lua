@@ -1,4 +1,4 @@
--- fed2-tools map — stub exit management (ported from map_manual_stub.lua)
+-- f2ce-tools map — stub exit management (ported from map_manual_stub.lua)
 
 local DIRECTION_NUMBERS = {
     [1]="north",[2]="northeast",[3]="northwest",[4]="east",[5]="west",[6]="south",

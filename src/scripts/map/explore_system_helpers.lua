@@ -1,4 +1,4 @@
--- fed2-tools map — system exploration helpers (ported from map_explore_system_helpers.lua)
+-- f2ce-tools map — system exploration helpers (ported from map_explore_system_helpers.lua)
 
 function f2t_map_explore_system_check_room_for_planets(room_id)
     if not F2T_MAP_EXPLORE_STATE.active then return end

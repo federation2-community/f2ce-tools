@@ -1,5 +1,5 @@
 -- f2tBuildMapSettings(parent, gid) creates a gear button in the bottom-right
--- of the Fed2 Map pane; clicking it toggles a flyout menu:
+-- of the F2CE Map pane; clicking it toggles a flyout menu:
 --   Import Map Database - bundled-resource picker (f2tShowMapImportOverlay)
 --   Import from File     - file-dialog import of external map JSON (f2t_map_import)
 --   Export Map           - file-dialog export of current map (f2t_map_export)

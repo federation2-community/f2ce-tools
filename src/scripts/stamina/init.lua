@@ -1,4 +1,4 @@
--- fed2-tools stamina monitor — bootstrap
+-- f2ce-tools stamina monitor — bootstrap
 --
 -- Auto-starts monitoring when stamina_threshold > 0.  The read is deferred to a
 -- short timer inside the muxletReady handler so it runs after init.lua's

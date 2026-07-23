@@ -1,4 +1,4 @@
--- fed2-tools factory — help registration
+-- f2ce-tools factory — help registration
 
 f2t_register_help("factory", {
     description = "Manage your factories: view status, flush production, and configure settings",

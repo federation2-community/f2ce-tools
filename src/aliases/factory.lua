@@ -1,4 +1,4 @@
--- fed2-tools — factory command
+-- f2ce-tools — factory command
 --
 -- Usage: factory|fac <status|flush|settings>
 -- Rank-gated to Industrialist / Manufacturer (the only ranks that own factories)
@@ -7,7 +7,7 @@
 local args = matches[2]
 
 if not f2t_settings_get("factory", "enabled") then
-    cecho("\n<yellow>[factory]<reset> Factory tools are disabled. Enable them in settings (Fed2-Tools/Factory).\n")
+    cecho("\n<yellow>[factory]<reset> Factory tools are disabled. Enable them in settings (F2CE-Tools/Factory).\n")
     return
 end
 

@@ -1,29 +1,29 @@
-# fed2-tools
+# F2CE-Tools
 
 A Mudlet package for [Federation 2 Community Edition](https://federation2.com) — mapping, navigation, automated trading, factory management, planet-owner tools, and quality-of-life automation, with an optional [Muxlet](https://github.com/tmtocloud/Muxlet)-based GUI.
 
-![fed2-tools Muxlet GUI](screenshot.png)
+![F2CE-Tools Muxlet GUI](screenshot.png)
 
 ## Installation
 
 Install however suits you:
 
-- **In Mudlet:** run `mpkg install fed2-tools` in your Federation 2 profile — Mudlet fetches the latest release directly from the [Mudlet Package Repository](https://github.com/Mudlet/mudlet-package-repository).
-- **Manual:** download the latest `fed2-tools.mpackage` from [Releases](../../releases), then in Mudlet open **Package Manager** and install it into your Federation 2 profile.
+- **In Mudlet:** run `mpkg install f2ce-tools` in your F2CE profile — Mudlet fetches the latest release directly from the [Mudlet Package Repository](https://github.com/Mudlet/mudlet-package-repository).
+- **Manual:** download the latest `f2ce-tools.mpackage` from [Releases](../../releases), then in Mudlet open **Package Manager** and install it into your F2CE profile.
 
-fed2-tools installs [Muxlet](https://github.com/tmtocloud/Muxlet) automatically the first time it loads — Muxlet powers the optional GUI panels below, no separate step needed. Everything else (mapping, hauling, factory tools, etc.) works without it.
+F2CE-Tools installs [Muxlet](https://github.com/tmtocloud/Muxlet) automatically the first time it loads — Muxlet powers the optional GUI panels below, no separate step needed. Everything else (mapping, hauling, factory tools, etc.) works without it.
 
 ### Choosing a startup mode
 
-On first load fed2-tools asks how you'd like Muxlet to start. Pick whichever fits how you play — you're not locked in, and every command/alias works the same regardless of mode:
+On first load F2CE-Tools asks how you'd like Muxlet to start. Pick whichever fits how you play — you're not locked in, and every command/alias works the same regardless of mode:
 
-- **Full (recommended)** — loads the ready-made fed2-tools workspace (output pane and map side by side, plus the panels below) automatically every session. Some panels appear only when they're relevant to you: the Company tab only shows at Industrialist rank and above, its Investment sub-tab only at Financier, and the Exchange pane swaps itself to Futures Market depending on your rank and room — all driven by Muxlet's condition/rule engine, no manual toggling needed.
-- **Build Your Own Workspace (BYOW)** — Muxlet starts on a blank canvas with every fed2-tools panel registered and ready to drop into any pane or tab from its **Content Library**. Same building blocks as Full, but you lay them out yourself — and if you want the same rank- or room-based show/hide behavior Full gets for free, you can wire it up with your own Muxlet condition rules.
-- **Minimal** — no changes to your Mudlet layout at all. Run `mux start` any time later (then `mux workspace load fed2-tools` for the full layout) if you change your mind.
+- **Full (recommended)** — loads the ready-made f2ce-tools workspace (output pane and map side by side, plus the panels below) automatically every session. Some panels appear only when they're relevant to you: the Company tab only shows at Industrialist rank and above, its Investment sub-tab only at Financier, and the Exchange pane swaps itself to Futures Market depending on your rank and room — all driven by Muxlet's condition/rule engine, no manual toggling needed.
+- **Build Your Own Workspace (BYOW)** — Muxlet starts on a blank canvas with every F2CE-Tools panel registered and ready to drop into any pane or tab from its **Content Library**. Same building blocks as Full, but you lay them out yourself — and if you want the same rank- or room-based show/hide behavior Full gets for free, you can wire it up with your own Muxlet condition rules.
+- **Minimal** — no changes to your Mudlet layout at all. Run `mux start` any time later (then `mux workspace load f2ce-tools` for the full layout) if you change your mind.
 
 ### Staying up to date
 
-fed2-tools checks for new production releases on startup by default and offers to install them — this applies regardless of which startup mode you picked above. Pre-release/dev builds are never offered unless you opt in. Both are configurable under **Fed2-Tools › Update** in Settings, along with a "Check for updates now" button.
+F2CE-Tools checks for new production releases on startup by default and offers to install them — this applies regardless of which startup mode you picked above. Pre-release/dev builds are never offered unless you opt in. Both are configurable under **F2CE-Tools › Update** in Settings, along with a "Check for updates now" button.
 
 ## Getting Started
 
@@ -57,10 +57,10 @@ Persistent, searchable com/tell/say history that survives reconnects.
 
 ## Muxlet GUI Panels
 
-With Muxlet installed, fed2-tools adds these panels to the Content Library:
+With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 
 - **Galaxy Navigator** — browse every syndicate, cartel, system, and planet; click to travel
-- **Fed2 Map** — the live Mudlet mapper
+- **F2CE Map** — the live Mudlet mapper
 - **Company** — overview, factories, financials, and portfolio (Financier+) as separate panes
 - **Exchange** — live prices (or futures for Traders/Financiers) with a ticker
 - **Futures Market** — contracts on offer and your open positions, with profit scoring
@@ -74,6 +74,6 @@ With Muxlet installed, fed2-tools adds these panels to the Content Library:
 
 ## Acknowledgments
 
-- **Colborn (ping65510)** — original creator of fed2-tools.
-- **Swift ([Ohmi02/Fed2](https://github.com/Ohmi02/Fed2/))** — original idea for the multi-window UI layout (exchange/stats/mapper/chat split panes), later merged into fed2-tools.
+- **Colborn (ping65510)** — original creator of F2CE-Tools.
+- **Swift ([Ohmi02/Fed2](https://github.com/Ohmi02/Fed2/))** — original idea for the multi-window UI layout (exchange/stats/mapper/chat split panes), later merged into F2CE-Tools.
 - **tmtocloud (jackrungh)** — took over maintenance from Colborn, merged in Swift's UI layout, and has since rewritten most of the codebase.

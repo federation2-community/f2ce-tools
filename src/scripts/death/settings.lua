@@ -1,4 +1,4 @@
--- fed2-tools death monitor — settings registration
+-- f2ce-tools death monitor — settings registration
 --
 -- Namespace "death" (own module) so it gets its own settings-UI tab; Muxlet
 -- fixes a namespace's tab path on first registration, so sharing a namespace
@@ -6,7 +6,7 @@
 -- (the toggle widget constrains the value).
 
 f2t_settings_register("death", "enabled", {
-    tab         = "Fed2-Tools/Misc",
+    tab         = "F2CE-Tools/Misc",
     order       = 1,
     label       = "Death recovery",
     description = "Automatic death recovery: capture death location, re-insure, lock the killing room",

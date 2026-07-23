@@ -143,7 +143,7 @@ if not F2T_CHAT.loaded then f2tChatLoad() end
 -- ── Settings ──────────────────────────────────────────────────────────────────
 
 f2t_settings_register("chat", "show_timestamps", {
-    tab         = "Fed2-Tools/Chat",
+    tab         = "F2CE-Tools/Chat",
     label       = "Show timestamps",
     description = "Show [HH:MM] timestamps and day dividers in chat panels",
     default     = false,

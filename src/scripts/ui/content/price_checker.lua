@@ -122,7 +122,7 @@ local instances = {}
 local _commodities = nil
 local function commodityList()
     if _commodities then return _commodities end
-    local filePath = getMudletHomeDir() .. "/fed2-tools/commodities.json"
+    local filePath = getMudletHomeDir() .. "/f2ce-tools/commodities.json"
     local file = io.open(filePath, "r")
     if not file then return {} end
     local raw = file:read("*all")
@@ -670,7 +670,7 @@ local function buildPriceCheckerDef()
     return {
         name        = "Price Checker",
         description = "Cartel price checks and best-profit commodity scanning.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
         apply = function(target)

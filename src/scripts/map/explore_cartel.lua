@@ -1,4 +1,4 @@
--- fed2-tools map — Layer 3 cartel exploration (ported from map_explore_cartel.lua)
+-- f2ce-tools map — Layer 3 cartel exploration (ported from map_explore_cartel.lua)
 --
 -- Captures the system list from "display cartel <name>", then explores each
 -- system (brief mode) via Layer 2. Runs standalone (mode="cartel") or nested

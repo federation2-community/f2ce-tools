@@ -1,4 +1,4 @@
--- fed2-tools map — Layer 2 system exploration (ported from map_explore_system.lua)
+-- f2ce-tools map — Layer 2 system exploration (ported from map_explore_system.lua)
 --
 -- Two phases: explore "{System} Space" (delegates to Layer 1), then brief
 -- exploration of each discovered planet. Runs standalone (mode="system") or

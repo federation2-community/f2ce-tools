@@ -56,7 +56,7 @@ jobs:
             # stays bare so the same rolling per-version release gets updated by every
             # commit, but the *package* version (pkg_version, injected into mfile below)
             # gets the short sha appended — that's what Muxlet's update.lua reads back
-            # via getPackageInfo("fed2-tools").version to identify the exact installed
+            # via getPackageInfo("f2ce-tools").version to identify the exact installed
             # build and decide whether the "v" prefix belongs.
             VERSION=$(jq -r '.version' mfile)
             SHORT_SHA=$(git rev-parse --short HEAD)
@@ -95,7 +95,7 @@ jobs:
           IS_RELEASE="${{ steps.version.outputs.is_release }}"
 
           if [[ "$IS_RELEASE" == "true" ]]; then
-            # A production fed2-tools release always pins to Muxlet's own
+            # A production f2ce-tools release always pins to Muxlet's own
             # production release of this number, regardless of whatever a
             # developer last left in mfile's muxlet_version for local testing —
             # strip any "v" already there first so this can't double up into
@@ -124,8 +124,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fed2-tools-${{ steps.version.outputs.version }}
-          path: build/fed2-tools.mpackage
+          name: f2ce-tools-${{ steps.version.outputs.version }}
+          path: build/f2ce-tools.mpackage
 
       - name: Generate prerelease notes
         if: steps.version.outputs.is_release == 'false'
@@ -158,11 +158,11 @@ jobs:
             **Changes ${{ steps.prerelease_notes.outputs.since }}:**
             ${{ steps.prerelease_notes.outputs.changelog }}
 
-            Install URL: `https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/fed2-tools.mpackage`
+            Install URL: `https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/f2ce-tools.mpackage`
 
             This is a pre-release. The production release will be tagged `v${{ steps.version.outputs.version }}`.
           prerelease: true
-          files: build/fed2-tools.mpackage
+          files: build/f2ce-tools.mpackage
           fail_on_unmatched_files: true
 
       - name: Create tag for dispatch releases
@@ -248,7 +248,7 @@ jobs:
             ${{ steps.release_notes.outputs.summary }}
           draft: false
           prerelease: false
-          files: build/fed2-tools.mpackage
+          files: build/f2ce-tools.mpackage
           fail_on_unmatched_files: true
 
       - name: Submit to Mudlet package repository
@@ -259,10 +259,10 @@ jobs:
           RELEASE_DELTA: ${{ steps.release_notes.outputs.delta }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Shared org fork, not $GITHUB_REPOSITORY_OWNER: any fed2-tools fork's
+          # Shared org fork, not $GITHUB_REPOSITORY_OWNER: any f2ce-tools fork's
           # workflow run submits through the same community-owned MPR fork.
           OWNER="federation2-community"
-          BRANCH="fed2-tools-v${VERSION}"
+          BRANCH="f2ce-tools-v${VERSION}"
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -293,13 +293,13 @@ jobs:
             git fetch origin "$BRANCH"
             git checkout -B "$BRANCH" FETCH_HEAD
 
-            cp "$GITHUB_WORKSPACE/build/fed2-tools.mpackage" "packages/fed2-tools.mpackage"
-            git add "packages/fed2-tools.mpackage"
+            cp "$GITHUB_WORKSPACE/build/f2ce-tools.mpackage" "packages/f2ce-tools.mpackage"
+            git add "packages/f2ce-tools.mpackage"
 
             if git diff --cached --quiet; then
               echo "Package unchanged; nothing to push."
             else
-              git commit -m "Update fed2-tools package (v${VERSION})"
+              git commit -m "Update f2ce-tools package (v${VERSION})"
               git push origin "$BRANCH"
               {
                 printf 'Pushed an updated build (re-run of the v%s release workflow).\n\n' "$VERSION"
@@ -320,14 +320,14 @@ jobs:
             git checkout -b "$BRANCH"
 
             # Copy package using the canonical name (no version suffix in filename)
-            cp "$GITHUB_WORKSPACE/build/fed2-tools.mpackage" "packages/fed2-tools.mpackage"
+            cp "$GITHUB_WORKSPACE/build/f2ce-tools.mpackage" "packages/f2ce-tools.mpackage"
 
-            git add "packages/fed2-tools.mpackage"
-            git commit -m "Update fed2-tools to v${VERSION}"
+            git add "packages/f2ce-tools.mpackage"
+            git commit -m "Update f2ce-tools to v${VERSION}"
             git push origin "$BRANCH"
 
             {
-              printf '## fed2-tools v%s\n\n' "$VERSION"
+              printf '## f2ce-tools v%s\n\n' "$VERSION"
               printf 'Release Notes:\n%s\n\n' "$RELEASE_SUMMARY"
               printf 'Automated submission from [%s](https://github.com/%s) release [v%s](https://github.com/%s/releases/tag/v%s).\n\n' \
                 "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$VERSION" "$GITHUB_REPOSITORY" "$VERSION"
@@ -338,6 +338,6 @@ jobs:
               --repo Mudlet/mudlet-package-repository \
               --head "${OWNER}:${BRANCH}" \
               --base main \
-              --title "Update fed2-tools to v${VERSION}" \
+              --title "Update f2ce-tools to v${VERSION}" \
               --body-file /tmp/pr_body.md
           fi

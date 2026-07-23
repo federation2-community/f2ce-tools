@@ -1,8 +1,8 @@
--- Loads the "fed2-tools" Muxlet workspace.
+-- Loads the "f2ce-tools" Muxlet workspace.
 --
 -- The workspace definition itself is not here: it lives at
 -- resources/full.lua as the literal, unwrapped output of
--- `mux workspace export fed2-tools`. Re-run that export after changing the
+-- `mux workspace export f2ce-tools`. Re-run that export after changing the
 -- layout/rules in-game and overwrite full.lua wholesale with the result --
 -- nothing in this file needs to change.
 --
@@ -17,7 +17,7 @@ local function f2tRegisterWorkspace()
         return
     end
 
-    local path = getMudletHomeDir() .. "/fed2-tools/full.lua"
+    local path = getMudletHomeDir() .. "/f2ce-tools/full.lua"
     local chunk, loadErr = loadfile(path)
     if not chunk then
         if f2t_debug_log then f2t_debug_log("[workspace] failed to load %s: %s", path, tostring(loadErr)) end

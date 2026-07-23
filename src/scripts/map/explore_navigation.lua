@@ -1,4 +1,4 @@
--- fed2-tools map — exploration navigation (ported from map_explore_navigation.lua)
+-- f2ce-tools map — exploration navigation (ported from map_explore_navigation.lua)
 
 function f2t_map_explore_navigate_to_next()
     if not F2T_MAP_EXPLORE_STATE.active then return end

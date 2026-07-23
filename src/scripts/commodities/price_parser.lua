@@ -1,4 +1,4 @@
--- Parse commodity price output from Federation 2
+-- Parse commodity price output from Federation 2 Community Edition
 -- Extracts exchange data from "check price <commodity> cartel" output
 
 -- Parse a single price line

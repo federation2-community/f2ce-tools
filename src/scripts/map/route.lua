@@ -1,4 +1,4 @@
--- fed2-tools map — route calculation (ported from map_route.lua)
+-- f2ce-tools map — route calculation (ported from map_route.lua)
 
 function f2t_map_get_route_info(origin, destination)
     local origin_room_id, origin_err

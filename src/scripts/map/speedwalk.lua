@@ -1,4 +1,4 @@
--- fed2-tools map — speedwalk (ported from map_speedwalk.lua)
+-- f2ce-tools map — speedwalk (ported from map_speedwalk.lua)
 
 F2T_SPEEDWALK_ACTIVE               = false
 F2T_SPEEDWALK_PAUSED               = false

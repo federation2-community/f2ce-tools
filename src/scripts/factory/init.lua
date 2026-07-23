@@ -1,4 +1,4 @@
--- fed2-tools factory — initialization and capture control
+-- f2ce-tools factory — initialization and capture control
 --
 -- Owns the factory state table and the capture/query state machine.  Display
 -- formatting lives in formatter.lua, line parsing in parser.lua, the capture
@@ -10,7 +10,7 @@
 -- and advances to the next.  max_factories is rank-derived (Manufacturer = 15,
 -- Industrialist = 8).
 
--- fed2-tools factory — settings registration
+-- f2ce-tools factory — settings registration
 --
 -- Registered into the Muxlet settings system via the shared settings layer.
 -- The "enabled" toggle makes the whole feature optional and consistent with
@@ -18,7 +18,7 @@
 -- the legacy auto-flush behaviour.
 
 f2t_settings_register("factory", "enabled", {
-    tab         = "Fed2-Tools/Misc",
+    tab         = "F2CE-Tools/Misc",
     order       = 5,
     label       = "Factory commands",
     description = "Enable factory status/flush commands and the pre-reset auto-flush",

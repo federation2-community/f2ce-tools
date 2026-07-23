@@ -1,4 +1,4 @@
--- fed2-tools map — map-specific argument parsing (ported from map_arg_parser.lua)
+-- f2ce-tools map — map-specific argument parsing (ported from map_arg_parser.lua)
 
 function f2t_map_parse_optional_room_id(words, index)
     if not words[index] then return F2T_MAP_CURRENT_ROOM_ID, false end

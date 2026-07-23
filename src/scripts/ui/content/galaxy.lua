@@ -732,7 +732,7 @@ local function buildGalaxyDef()
     return {
         name        = "Galaxy Navigator",
         description = "Browse every syndicate, cartel, system, and planet from 'di systems'; click → to travel.",
-        group       = "Fed2 Tools",
+        group       = "F2CE Tools",
         -- One navigator at a time: Muxlet tracks the active instance itself
         -- (def._activeTargetRef).
         singleton   = true,
@@ -834,7 +834,7 @@ end
 function f2t_galaxy_show_nav()
     local t = currentNavTarget()
     if not t then
-        cecho("\n<red>[fed2-tools]<reset> No Galaxy navigator pane yet — add the "
+        cecho("\n<red>[f2ce-tools]<reset> No Galaxy navigator pane yet — add the "
             .. "<cyan>Galaxy Navigator<reset> content to a pane from the Content Library first.\n")
         return
     end

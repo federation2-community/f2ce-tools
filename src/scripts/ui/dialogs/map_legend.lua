@@ -1,6 +1,6 @@
 -- f2tShowMapLegend() opens a reference card for mapper room colors/symbols,
 -- rendered from f2t_map_get_legend_data() (map/style.lua, the single source
--- of truth for symbols and environment colors). Launched from the Fed2 Map
+-- of truth for symbols and environment colors). Launched from the F2CE Map
 -- gear menu (ui/map_settings.lua).
 --
 -- Uses Mux.registerContent + Mux._applyContent so the dialog integrates
@@ -53,7 +53,7 @@ end
 
 function f2tShowMapLegend()
     if not (Mux and Mux.createDialog and Mux.registerContent and Mux._applyContent) then
-        cecho("\n<yellow>[fed2-tools]<reset> Map legend requires Muxlet.\n")
+        cecho("\n<yellow>[f2ce-tools]<reset> Map legend requires Muxlet.\n")
         return
     end
 

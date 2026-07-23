@@ -1,4 +1,4 @@
--- fed2-tools death monitor — bootstrap
+-- f2ce-tools death monitor — bootstrap
 --
 -- Auto-starts monitoring when death_monitor_enabled is true.  Deferred inside
 -- the muxletReady handler (after the settings flush) so the persisted value is

@@ -1,4 +1,4 @@
--- fed2-tools map — exploration query functions (ported from map_explore_query.lua)
+-- f2ce-tools map — exploration query functions (ported from map_explore_query.lua)
 
 function f2t_map_explore_has_unlocked_stubs(area_id)
     local rooms_in_area = getAreaRooms(area_id)

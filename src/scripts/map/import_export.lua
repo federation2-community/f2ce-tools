@@ -1,7 +1,7 @@
 -- Map import/export. Two code paths, selected on whether a mapper widget is
 -- live (see f2tMapHasLiveMapper in ui/content/map.lua):
 --
---   Native   - a Fed2 Map pane is mounted. Mudlet's own loadJsonMap/
+--   Native   - a F2CE Map pane is mounted. Mudlet's own loadJsonMap/
 --              saveJsonMap run; the visible map keeps every decorative
 --              detail (custom exit lines, env colors) exactly as before.
 --

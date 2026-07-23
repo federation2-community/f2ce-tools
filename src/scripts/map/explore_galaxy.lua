@@ -1,4 +1,4 @@
--- fed2-tools map — Layer 4 galaxy/syndicate exploration (ported from map_explore_galaxy.lua)
+-- f2ce-tools map — Layer 4 galaxy/syndicate exploration (ported from map_explore_galaxy.lua)
 --
 -- Galaxy mode explores every cartel in the galaxy; syndicate mode explores
 -- only the cartels of one syndicate. Both start with a topology sync

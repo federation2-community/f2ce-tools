@@ -1,4 +1,4 @@
--- Main f2t command - handles all fed2-tools system commands
+-- Main f2t command - handles all f2ce-tools system commands
 local args = matches[2]
 
 if not args or args == "" then
@@ -63,7 +63,7 @@ elseif subcommand == "on" then
     end
     f2tSetAutostart(true)
     if not Mux._running then Mux.fullStart() end
-    cecho("\n<green>[f2t]<reset> fed2-tools UI is on.\n")
+    cecho("\n<green>[f2t]<reset> f2ce-tools UI is on.\n")
 
 elseif subcommand == "off" then
     if not (Mux and Mux.fullStop) then
@@ -72,7 +72,7 @@ elseif subcommand == "off" then
     end
     f2tSetAutostart(false)
     if Mux._running then Mux.fullStop() end
-    cecho("\n<yellow>[f2t]<reset> fed2-tools UI is off and won't auto-start next login. "
+    cecho("\n<yellow>[f2t]<reset> f2ce-tools UI is off and won't auto-start next login. "
         .. "Type <green>f2t on<reset> to resume, or <green>f2t mode<reset> to re-pick a startup mode.\n")
 
 elseif subcommand == "mode" then
@@ -83,14 +83,14 @@ elseif subcommand == "mode" then
     end
 
 elseif subcommand == "version" then
-    local info = getPackageInfo("fed2-tools")
+    local info = getPackageInfo("f2ce-tools")
     cecho(string.format(
-        "\n<green>[fed2-tools]<reset> Version: <white>%s<reset>\n", (info and info.version) or "unknown"))
+        "\n<green>[f2ce-tools]<reset> Version: <white>%s<reset>\n", (info and info.version) or "unknown"))
     if Mux and Mux.checkForUpdates then Mux.checkForUpdates(false) end
 
 elseif subcommand == "credits" then
-    cecho("\n<green>[fed2-tools]<reset> Acknowledgments\n\n")
-    cecho("  <cyan>Colborn (ping65510)<reset> — original creator of fed2-tools\n")
+    cecho("\n<green>[f2ce-tools]<reset> Acknowledgments\n\n")
+    cecho("  <cyan>Colborn (ping65510)<reset> — original creator of f2ce-tools\n")
     cecho("  <cyan>Swift (Ohmi02/Fed2)<reset> — original idea for the multi-window UI layout, later merged in\n")
     cecho("  <cyan>tmtocloud (jackrungh)<reset> — took over maintenance, merged in the UI layout,\n")
     cecho("    and rewrote most of the codebase\n")

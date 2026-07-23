@@ -1,4 +1,4 @@
--- fed2-tools map — special navigation (ported from map_special.lua)
+-- f2ce-tools map — special navigation (ported from map_special.lua)
 
 F2T_MAP_PENDING_SPECIAL_EXIT = nil
 F2T_MAP_LAST_DISCOVERY = nil

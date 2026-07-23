@@ -1,4 +1,4 @@
--- fed2-tools map — room creation and management (ported from map_room.lua)
+-- f2ce-tools map — room creation and management (ported from map_room.lua)
 
 function f2t_map_generate_hash(room_data)
     if not room_data then return nil end

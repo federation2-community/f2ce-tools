@@ -1,4 +1,4 @@
--- fed2-tools map — mapper info overlay and toolbar style
+-- f2ce-tools map — mapper info overlay and toolbar style
 --
 -- Registers two map info lines (breadcrumb + room badge) via Mudlet's
 -- registerMapInfo API (Mudlet 4.11+).
