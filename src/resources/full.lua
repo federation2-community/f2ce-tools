@@ -64,6 +64,14 @@ Mux.createDeclarativeCondition({
     id = "RoomIsExchange",
     label = "RoomIsExchange"
 })
+Mux.createDeclarativeCondition({
+    cond = {
+        path = "gmcp.char.vitals.rank",
+        type = "gmcp_exists"
+    },
+    id = "AlwaysConnected",
+    label = "AlwaysConnected"
+})
 
 Mux.registerWorkspace("f2ce-tools", {
     floatingPanes = {
@@ -517,7 +525,7 @@ Mux.registerWorkspace("f2ce-tools", {
                     zoomable = false
                 },
                 b = {
-                    activeTabName = "Company",
+                    activeTabName = "Missions",
                     anchorable = true,
                     bordered = false,
                     closeable = false,
@@ -545,6 +553,15 @@ Mux.registerWorkspace("f2ce-tools", {
                             propertiesButton = false,
                             renamable = false,
                             rules = {
+                                {
+                                    act = "mux.showSelf",
+                                    actElse = "mux.hideSelf",
+                                    cond = {
+                                        ref = "AlwaysConnected"
+                                    },
+                                    enabled = true,
+                                    id = "r24"
+                                },
                                 {
                                     act = "mux.overlay.disconnected.show",
                                     actElse = "mux.overlay.disconnected.hide",
