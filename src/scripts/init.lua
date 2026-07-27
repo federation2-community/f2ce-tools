@@ -217,6 +217,31 @@ end
 
 registerAnonymousEventHandler("muxletReady", onMuxletReady)
 
+-- Mudlet's installPackage(url) can print "installed successfully" while a
+-- concurrent profile save (e.g. f2ce-tools' own just-finished install) is
+-- still silently deferring the real install, so on a brand-new profile it
+-- can never land. Verify it actually shows up in getPackages() and retry
+-- if not, rather than trusting the printed success or muxletReady alone.
+local MUXLET_INSTALL_RETRY_LIMIT = 5
+local muxletInstallAttempts = 0
+
+local function installMuxlet()
+    muxletInstallAttempts = muxletInstallAttempts + 1
+    installPackage(MUXLET_URL)
+    tempTimer(5, function()
+        if table.contains(getPackages(), MUXLET_PKG) then return end
+        if muxletInstallAttempts >= MUXLET_INSTALL_RETRY_LIMIT then
+            cecho(string.format(
+                "\n<red>[f2ce-tools]<reset> Muxlet install did not complete after %d attempts. "
+                .. "Try <cyan>lua installPackage(\"%s\")<reset> manually, or install Muxlet.mpackage from disk.\n",
+                muxletInstallAttempts, MUXLET_URL))
+            return
+        end
+        f2t_debug_log("Muxlet install did not land (attempt %d); retrying", muxletInstallAttempts)
+        installMuxlet()
+    end)
+end
+
 if Mux and Mux._ready then
     onMuxletReady()
 elseif not table.contains(getPackages(), MUXLET_PKG) then
@@ -225,7 +250,7 @@ elseif not table.contains(getPackages(), MUXLET_PKG) then
             .. "Reinstall f2ce-tools from its latest GitHub release.\n")
     else
         f2t_debug_log("Muxlet install queued: not installed (required=%s)", tostring(F2T_REQUIRED_MUXLET))
-        afterLogin(function() installPackage(MUXLET_URL) end)
+        afterLogin(installMuxlet)
     end
 end
 -- Otherwise Muxlet is installed but hasn't finished loading yet this
