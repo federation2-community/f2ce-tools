@@ -10,6 +10,7 @@
 -- (the automation's own capture owns the output then).
 
 local H_BAR  = 26    -- button strip height (px)
+local H_CUR  = 22    -- active-job strip height (px), only shown while a job is accepted
 local H_COL  = 20    -- column header bar height (px)
 local ROW_H  = 20    -- row height (px)
 local SB_W   = 17    -- scrollbar pixel allowance
@@ -65,11 +66,51 @@ local _BTN_WORK_CSS    = actionBtnCss("#3aa0ff", "#5cb8ff")
 local _BTN_COLLECT_CSS = actionBtnCss("#3ecf5e", "#5ce87c")
 local _BTN_DELIVER_CSS = actionBtnCss("#e0b84d", "#f0cc66")
 
+-- Strip showing the job currently under contract, pinned above the list.
+local _CUR_BAR_CSS = [[
+    background-color: rgba(24, 40, 30, 220);
+    border: none;
+    border-bottom: 1px solid rgba(70, 130, 90, 180);
+    border-left: 3px solid #3ecf5e;
+]]
+
 -- Per-pane state, keyed by target._gid
 local instances = {}
 
 -- Job rows captured from the current `work` listing (shared by all instances).
 local jobs = {}
+
+-- The job accepted via the panel, shown pinned above the list until it's
+-- taken by someone else or delivered (shared by all instances).
+local currentJob = nil
+
+-- Forward-declared: defined after refreshAll below, but referenced by the
+-- Job-number column's click callback in buildCols().
+local acceptJob
+
+-- Set right before the Work button sends its command; the ui triggers only
+-- gag the raw listing while this is true, so a manually typed `work` still
+-- prints normally. Cleared once the listing goes quiet for 0.5s (or a manual
+-- click never gets a response at all, after a longer safety window).
+local awaitingWorkCommand = false
+local _awaitWorkTimer = nil
+
+local function clearAwaitingWorkCommand()
+    awaitingWorkCommand = false
+    if _awaitWorkTimer then killTimer(_awaitWorkTimer); _awaitWorkTimer = nil end
+end
+
+local function armAwaitingWorkCommand()
+    awaitingWorkCommand = true
+    if _awaitWorkTimer then killTimer(_awaitWorkTimer) end
+    _awaitWorkTimer = tempTimer(3, clearAwaitingWorkCommand)
+end
+
+local function extendAwaitingWorkCommand()
+    if not awaitingWorkCommand then return end
+    if _awaitWorkTimer then killTimer(_awaitWorkTimer) end
+    _awaitWorkTimer = tempTimer(0.5, clearAwaitingWorkCommand)
+end
 
 local function stripThe(name)
     if not name then return "" end
@@ -89,6 +130,16 @@ local function navigateTo(location)
     end
 end
 
+local function currentJobHtml(job)
+    return string.format(
+        "<div style='padding:2px 8px;%s'>" ..
+            "<span style='color:#3ecf5e;font-weight:bold;'>&#9679; Active Job %s</span>" ..
+            "<span style='color:#c8c8c8;'>&nbsp;&nbsp;%s &#8594; %s&nbsp;&nbsp;</span>" ..
+            "<span style='color:#e0b84d;font-weight:bold;'>%dig</span>" ..
+        "</div>",
+        CELL_FONT, tostring(job.jobNumber), job.originDisplay, job.destDisplay, job.basePay)
+end
+
 local function buildCols()
     return {
         {
@@ -102,7 +153,7 @@ local function buildCols()
                     "<span style='%scolor:#7aa2ff;text-decoration:underline;'>%s</span>",
                     CELL_FONT, v or ""))
                 cell:setToolTip("Accept job " .. tostring(v))
-                cell:setClickCallback(function() send("ac " .. v, false) end)
+                cell:setClickCallback(function() acceptJob(v) end)
             end,
         },
         {
@@ -189,13 +240,44 @@ local function buildCols()
     }
 end
 
+-- Repositions the column header/scrollbox below the active-job strip,
+-- expanding or collapsing that strip's space depending on whether a job
+-- is currently under contract.
+local function layoutInstance(gid)
+    local inst = instances[gid]
+    if not inst then return end
+
+    if currentJob then
+        inst.currentJobBar:echo(currentJobHtml(currentJob))
+        inst.currentJobBar:show()
+    else
+        inst.currentJobBar:hide()
+    end
+    local curH = currentJob and H_CUR or 0
+    inst.currentJobBar:resize(nil, curH)
+
+    local colY = H_BAR + curH
+    inst.colBar:move(nil, colY)
+
+    local scrollTop = colY + H_COL
+    inst.scroll:move(nil, scrollTop)
+    inst.scroll:resize(nil, "100%-" .. scrollTop .. "px")
+    inst.noJobsLbl:move(nil, scrollTop)
+    inst.noJobsLbl:resize(nil, "100%-" .. scrollTop .. "px")
+end
+
 local function refreshInstance(gid)
     local inst = instances[gid]
     if not inst then return end
+    layoutInstance(gid)
     f2tTableSetData(inst.tableId, jobs)
     if inst.noJobsLbl then
         if #jobs == 0 then inst.noJobsLbl:show() else inst.noJobsLbl:hide() end
     end
+end
+
+local function refreshAll()
+    for gid in pairs(instances) do pcall(refreshInstance, gid) end
 end
 
 local _renderTimer = nil
@@ -204,24 +286,58 @@ local function refreshAllDebounced()
     if _renderTimer then killTimer(_renderTimer) end
     _renderTimer = tempTimer(0.15, function()
         _renderTimer = nil
-        for gid in pairs(instances) do pcall(refreshInstance, gid) end
+        refreshAll()
     end)
+end
+
+-- Removes the job from the list, pins it as the active contract, and sends
+-- the accept command. Reverted by f2tHaulingJobsOnJobTaken() if someone else
+-- got to it first.
+acceptJob = function(jobNumber)
+    for i, row in ipairs(jobs) do
+        if tostring(row.jobNumber) == tostring(jobNumber) then
+            currentJob = table.remove(jobs, i)
+            break
+        end
+    end
+    send("ac " .. jobNumber, false)
+    refreshAll()
 end
 
 -- ── Trigger entry points ──────────────────────────────────────────────────────
 
--- True when at least one panel is placed; the ui work triggers use this to
--- decide whether to capture/gag the listing at all.
-function f2tHaulingJobsHasOpenPanels()
-    return next(instances) ~= nil
+-- True only while a listing sent by the Work button is in flight; the ui
+-- work triggers use this to decide whether to capture/gag the raw output,
+-- so a manually typed `work` still prints normally.
+function f2tHaulingJobsAwaitingCommand()
+    return awaitingWorkCommand
+end
+
+-- Called by the ac_job_taken trigger; reverts the optimistic accept if the
+-- pinned job turns out to have been taken by someone else.
+function f2tHaulingJobsOnJobTaken(jobNumber)
+    if currentJob and tostring(currentJob.jobNumber) == tostring(jobNumber) then
+        currentJob = nil
+        refreshAll()
+    end
+end
+
+-- Called by the ac_deliver_success trigger; the contract is complete.
+function f2tHaulingJobsOnJobDelivered()
+    if currentJob then
+        currentJob = nil
+        refreshAll()
+    end
 end
 
 function f2tHaulingJobsHeader()
     jobs = {}
+    extendAwaitingWorkCommand()
     refreshAllDebounced()
 end
 
 function f2tHaulingJobsLine(jobNumber, origin, dest, allowedMoves, payPerTon)
+    extendAwaitingWorkCommand()
     local basePay      = (tonumber(payPerTon) or 0) * 75
     local allowedNum   = tonumber(allowedMoves) or 0
 
@@ -312,8 +428,19 @@ local function buildContent(target)
         btn:echo("<center>" .. b.label .. "</center>")
         btn:setToolTip(b.tip)
         local cmd = b.cmd
-        btn:setClickCallback(function() send(cmd, false) end)
+        btn:setClickCallback(function()
+            if cmd == "work" then armAwaitingWorkCommand() end
+            send(cmd, false)
+        end)
     end
+
+    -- ── Active-job strip ──────────────────────────────────────────────────────
+    -- Hidden/zero-height until a job is accepted; layoutInstance() sizes it.
+    local currentJobBar = Geyser.Label:new({
+        name = wid(), x = 0, y = H_BAR, width = "100%", height = 0,
+    }, target.content)
+    currentJobBar:setStyleSheet(_CUR_BAR_CSS)
+    currentJobBar:hide()
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
@@ -379,6 +506,8 @@ local function buildContent(target)
 
     instances[gid] = {
         tableId      = tableId,
+        colBar       = colBar,
+        currentJobBar = currentJobBar,
         scroll       = scroll,
         contentLabel = contentLabel,
         contentW     = contentW,

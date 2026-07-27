@@ -77,15 +77,16 @@ local function versionSatisfied()
 end
 
 -- Recover if Muxlet ever disappears mid-session for any reason other than our
--- own devmode fresh-reload flow (muddlet --fresh, see devmode.lua) — that flow
--- reinstalls f2ce-tools itself and lets THIS package's own top-level bootstrap
--- below notice Muxlet is absent and reinstall it, so it sets
--- F2T_FRESH_UNINSTALL_PENDING first to keep this generic watchdog from also
+-- own devmode wipe-reload flow (muddlet --wipe, injected into the build by
+-- muddlet itself — see the muddlet repo's devmode.lua) — that flow reinstalls
+-- f2ce-tools itself and lets THIS package's own top-level bootstrap below
+-- notice Muxlet is absent and reinstall it, so it sets
+-- MUDDLET_DEP_UNINSTALL_PENDING first to keep this generic watchdog from also
 -- firing and racing it. A handler Muxlet registers on itself can't reliably
 -- outlive its own uninstall, so this has to live here, not in Muxlet.
 registerAnonymousEventHandler("sysUninstallPackage", function(_, name)
     if name ~= MUXLET_PKG then return end
-    if F2T_FRESH_UNINSTALL_PENDING then return end
+    if MUDDLET_DEP_UNINSTALL_PENDING then return end
     f2t_debug_log("Muxlet uninstalled unexpectedly; queuing reinstall")
     if MUXLET_URL then
         afterLogin(function() installPackage(MUXLET_URL) end)
@@ -106,8 +107,9 @@ end)
 -- because it provides its own onboarding via f2tShowModeSelect().  It also
 -- prevents Muxlet's auto_start timer from double-starting by owning fullStart().
 
--- Loops F2T_CONTENT_REGISTRARS. Also called by devmode.lua after a live
--- reload — Mux.registerContent() overwrites by name, safe to call repeatedly.
+-- Loops F2T_CONTENT_REGISTRARS. Also called via MuddletDevHooks.afterReload
+-- below after a live dev-mode reload — Mux.registerContent() overwrites by
+-- name, safe to call repeatedly.
 function f2tRegisterAllContent()
     for _, registrar in ipairs(F2T_CONTENT_REGISTRARS or {}) do
         local ok, err = pcall(registrar)
@@ -116,6 +118,21 @@ function f2tRegisterAllContent()
         end
     end
 end
+
+-- Extension point the muddlet-injected dev-mode watcher looks for (see the
+-- muddlet repo's devmode.lua) — it never assumes this table exists, so it's
+-- only defined here because f2ce-tools specifically needs both hooks:
+--   ready: defers a poll's blocking io.open() until after login, so it can
+--     never land mid-password-prompt.
+--   afterReload: reinstalling f2ce-tools doesn't refire Muxlet's
+--     "muxletReady", so content registration has to be re-run explicitly.
+MuddletDevHooks = {
+    ready = function() return F2T_LOGGED_IN end,
+    afterReload = function()
+        F2T_CONTENT_REGISTRARS = {}
+        if f2tRegisterAllContent then f2tRegisterAllContent() end
+    end,
+}
 
 -- onReady callback passed to Mux.bootHost; runs once a satisfying (exactly
 -- pinned) Muxlet is loaded and ready. Settings/content register immediately

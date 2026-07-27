@@ -64,36 +64,42 @@ Mux.createDeclarativeCondition({
     id = "RoomIsExchange",
     label = "RoomIsExchange"
 })
+Mux.createDeclarativeCondition({
+    cond = {
+        path = "gmcp.char.ship.cargo",
+        type = "gmcp_exists"
+    },
+    id = "ShipHasCargo",
+    label = "ShipHasCargo"
+})
 
 Mux.registerWorkspace("f2ce-tools", {
     floatingPanes = {
         {
             activeContent = "fed2_local_players",
             anchor = {
-                alongV = 123,
-                priority = 5,
+                alongV = 25.950000000001,
                 v = {
                     myEdge = "left",
-                    ref = "pane_1",
+                    ref = "output",
                     targetEdge = "left"
                 }
             },
             anchorable = true,
             atAnchor = true,
-            bordered = false,
             closeable = false,
             contentState = {},
             contentable = false,
             convertible = false,
             floatH = 86,
-            floatW = 186,
-            floatX = 2048,
-            floatY = 123,
+            floatW = 150,
+            floatX = 515,
+            floatY = 83,
             floating = true,
+            hidden = true,
             id = "pane_6",
             mainConsoleHost = false,
             minimizable = false,
-            movable = false,
             name = "Local Players",
             nameAlign = "center",
             renamable = false,
@@ -106,7 +112,53 @@ Mux.registerWorkspace("f2ce-tools", {
                         ref = "RoomHasPlayers"
                     },
                     enabled = true,
-                    id = "r2"
+                    id = "r13"
+                }
+            },
+            showAnchorElement = false,
+            showTitlebar = false,
+            type = "pane",
+            zoomable = false
+        },
+        {
+            activeContent = "fed2_cargo",
+            anchor = {
+                alongH = 1177,
+                h = {
+                    myEdge = "top",
+                    ref = "output",
+                    targetEdge = "top"
+                }
+            },
+            anchorable = true,
+            atAnchor = true,
+            closeable = false,
+            contentState = {},
+            contentable = false,
+            convertible = false,
+            floatH = 117,
+            floatW = 248,
+            floatX = 1692,
+            floatY = 57,
+            floating = true,
+            hidden = true,
+            id = "pane_9",
+            mainConsoleHost = false,
+            minimizable = false,
+            movable = false,
+            name = "Cargo",
+            nameAlign = "center",
+            renamable = false,
+            resizable = false,
+            rules = {
+                {
+                    act = "mux.showSelf",
+                    actElse = "mux.hideSelf",
+                    cond = {
+                        ref = "ShipHasCargo"
+                    },
+                    enabled = true,
+                    id = "r15"
                 }
             },
             showAnchorElement = false,
@@ -128,13 +180,13 @@ Mux.registerWorkspace("f2ce-tools", {
             atAnchor = true,
             closeable = false,
             contentState = {
-                settingsLocked = true,
+                settingsLocked = false,
                 showHeading = false,
                 showRefreshIcon = true
             },
             contentable = false,
             convertible = false,
-            floatH = 930,
+            floatH = 954,
             floatW = 495,
             floatX = 1550,
             floatY = 81,
@@ -144,7 +196,6 @@ Mux.registerWorkspace("f2ce-tools", {
             mainConsoleHost = false,
             name = "🔭 Galaxy Navigator",
             nameAlign = "center",
-            propertiesButton = false,
             renamable = false,
             resizable = false,
             rules = {
@@ -430,7 +481,6 @@ Mux.registerWorkspace("f2ce-tools", {
                     },
                     b = {
                         activeContent = "mux_console",
-                        addable = false,
                         anchorable = true,
                         bordered = false,
                         closeable = false,
@@ -448,7 +498,6 @@ Mux.registerWorkspace("f2ce-tools", {
                         name = "Federation 2 Community Edition",
                         nameAlign = "center",
                         propertiesButton = false,
-                        renamable = false,
                         showTitlebar = true,
                         splittable = false,
                         swappable = false,
@@ -517,7 +566,7 @@ Mux.registerWorkspace("f2ce-tools", {
                     zoomable = false
                 },
                 b = {
-                    activeTabName = "Company",
+                    activeTabName = "Hauling",
                     anchorable = true,
                     bordered = false,
                     closeable = false,

@@ -117,6 +117,31 @@ F2T_PRICE_CHECKER = F2T_PRICE_CHECKER or {
 -- Per-pane state, keyed by target._gid
 local instances = {}
 
+-- Set right before the Check button sends its command; the ui trigger only
+-- gags the raw price line while this is true, so a manually typed
+-- `c price`/`c premium` still prints normally. Cleared once the line goes
+-- quiet for 0.5s (or a manual click never gets a response, after a longer
+-- safety window).
+local awaitingCheckCommand = false
+local _awaitCheckTimer = nil
+
+local function clearAwaitingCheckCommand()
+    awaitingCheckCommand = false
+    if _awaitCheckTimer then killTimer(_awaitCheckTimer); _awaitCheckTimer = nil end
+end
+
+local function armAwaitingCheckCommand()
+    awaitingCheckCommand = true
+    if _awaitCheckTimer then killTimer(_awaitCheckTimer) end
+    _awaitCheckTimer = tempTimer(3, clearAwaitingCheckCommand)
+end
+
+local function extendAwaitingCheckCommand()
+    if not awaitingCheckCommand then return end
+    if _awaitCheckTimer then killTimer(_awaitCheckTimer) end
+    _awaitCheckTimer = tempTimer(0.5, clearAwaitingCheckCommand)
+end
+
 -- ── Commodity list (from resources/commodities.json) ─────────────────────────
 
 local _commodities = nil
@@ -285,8 +310,11 @@ end
 
 -- ── Trigger entry points ──────────────────────────────────────────────────────
 
-function f2tPriceCheckerHasOpenPanels()
-    return next(instances) ~= nil
+-- True only while a check sent by the Check button is in flight; the ui
+-- trigger uses this (rather than HasOpenPanels) to decide whether to gag
+-- raw price lines, so a manually typed `c price`/`c premium` always prints.
+function f2tPriceCheckerAwaitingCommand()
+    return awaitingCheckCommand
 end
 
 function f2tPriceCheckerIsSearching()
@@ -294,6 +322,7 @@ function f2tPriceCheckerIsSearching()
 end
 
 function f2tPriceCheckerLine(system, planet, action, quantity, price)
+    extendAwaitingCheckCommand()
     local row = {
         system   = system,
         planet   = planet,
@@ -452,6 +481,7 @@ function f2tPriceCheckerCheck()
         "<span style='font-size:9px;color:#8896c0;padding-left:6px;'>Cartel prices: %s</span>",
         F2T_PRICE_CHECKER.selectedCommodity))
 
+    armAwaitingCheckCommand()
     send("c price " .. F2T_PRICE_CHECKER.selectedCommodity:lower() .. " cartel", false)
 end
 

@@ -67,8 +67,8 @@ jobs:
             echo "is_dispatch_release=false" >> $GITHUB_OUTPUT
           fi
 
-          # Always read muxlet_version from mfile for downstream steps.
-          MUXLET_VERSION=$(jq -r '.muxlet_version' mfile)
+          # Always read the Muxlet dependency version from mfile for downstream steps.
+          MUXLET_VERSION=$(jq -r '.dependency.version' mfile)
           echo "muxlet_version=$MUXLET_VERSION" >> $GITHUB_OUTPUT
 
       - name: Validate mfile version matches tag
@@ -97,7 +97,7 @@ jobs:
           if [[ "$IS_RELEASE" == "true" ]]; then
             # A production f2ce-tools release always pins to Muxlet's own
             # production release of this number, regardless of whatever a
-            # developer last left in mfile's muxlet_version for local testing —
+            # developer last left in mfile's dependency.version for local testing —
             # strip any "v" already there first so this can't double up into
             # "vv2.1.0".
             MUXLET_TAG="v${MUXLET_VERSION#v}"

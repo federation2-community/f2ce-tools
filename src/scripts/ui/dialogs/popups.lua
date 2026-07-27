@@ -287,8 +287,8 @@ local function applyModeSelectToPane(target)
         end
     end)
 
-    -- Sizes the dialog to the content actually built above (introH included)
-    -- instead of a hand-maintained constant in f2tShowModeSelect.
+    -- f2tShowModeSelect already created the dialog at this exact height; this is
+    -- just the max-height/scroll clamp safety net for very short screens.
     target:fitContent(L.contentBottom)
 end
 
@@ -323,13 +323,19 @@ function f2tShowModeSelect(force)
         })
     end
 
-    -- height is a placeholder; applyModeSelectToPane's closing fitContent()
-    -- call resizes the dialog to the content it actually built.
+    -- Dialog is created at its real final height up front (matching every other
+    -- f2ce-tools dialog, e.g. map_legend.lua), not a placeholder later resized via
+    -- fitContent — that placeholder-then-resize dance was the one thing setting
+    -- this dialog apart from the others and the source of its centering bug.
+    local L      = computeLayout()
+    local theme  = Mux.activeTheme() or {}
+    local chrome = (theme.titlebarHeight or 22) + 2 * 2 + 8
     local dialog = Mux.createDialog({
         title     = "Welcome to f2ce-tools",
         width     = 540,
-        height    = 300,
+        height    = L.contentBottom + chrome,
         closeable = force == true,
+        singleton = "f2t_mode_select",
     })
     -- Only the "Let's Go" button (above) persists a choice via f2tSetAutostart.
     -- Closing via the X leaves mux_autostart untouched: nil on a first run, so

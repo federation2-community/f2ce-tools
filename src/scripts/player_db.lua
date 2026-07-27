@@ -160,6 +160,10 @@ end
 
 function f2t_player_db_reload()
     f2t_player_db_load()
+    -- Re-seed from the live gmcp table: the disk snapshot just loaded has no
+    -- online status at all, and nothing else will push a fresh gmcp.players
+    -- event on a character switch (mirrors the module-load seed below).
+    f2t_player_db_feed_from_gmcp()
     f2t_debug_log("[player_db] reloaded for char %s", F2T_CHAR_NAME or "?")
     raiseEvent("f2tPlayerDbReloaded")
 end
@@ -226,12 +230,18 @@ end
 
 registerAnonymousEventHandler("gmcp.players", "f2t_player_db_feed_from_gmcp")
 
--- Seed from whatever roster is already sitting in the gmcp table right now (Mudlet
--- keeps the last-received payload there regardless of listener timing). Without this,
--- a package installed/reloaded mid-session (e.g. via "f2t on" after login) misses the
--- server's one-time full roster and the DB silently stays empty until something
--- happens to trigger another push.
-f2t_player_db_feed_from_gmcp()
+-- Load now in case a character is already known (e.g. package reload mid-session).
+-- Must happen BEFORE the gmcp seed below: f2t_player_db_load() replaces
+-- F2T_PLAYER_DB wholesale, so seeding first would just get clobbered by an
+-- empty (or stale) disk snapshot.
+if F2T_CHAR_NAME and F2T_CHAR_NAME ~= "" then
+    f2t_player_db_load()
+end
+
+-- Deferred one tick: this reads rank.lua's f2t_get_rank_level, which loads
+-- after this file, so calling it inline here would error on a fresh install.
+-- tempTimer(0) guarantees the whole package has finished loading first.
+tempTimer(0, f2t_player_db_feed_from_gmcp)
 
 -- Reload the DB whenever the logged-in character changes.
 registerAnonymousEventHandler("f2tCharacterChanged", function()
@@ -248,10 +258,5 @@ end)
 registerAnonymousEventHandler("sysExitEvent", function()
     f2t_player_db_save_forced()
 end)
-
--- Load now in case a character is already known (e.g. package reload mid-session).
-if F2T_CHAR_NAME and F2T_CHAR_NAME ~= "" then
-    f2t_player_db_load()
-end
 
 f2t_debug_log("[player_db] Module initialized")
