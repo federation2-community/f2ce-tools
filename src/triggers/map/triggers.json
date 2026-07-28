@@ -25,7 +25,7 @@
   },
   {
     "name": "di_system_capture_planet",
-    "patterns": [{"pattern": "^([^,]+, .+ system, .+ cartel)$", "type": "regex"}]
+    "patterns": [{"pattern": "^([^,]+, .+ system, .+ cartel(?:, .+ syndicate)?)$", "type": "regex"}]
   },
   {
     "name": "di_system_capture_start",

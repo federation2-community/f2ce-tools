@@ -28,6 +28,17 @@ if table.contains(getPackages(), "generic_mapper") then
     uninstallPackage("generic_mapper")
 end
 
+-- ── fed2-tools removal ────────────────────────────────────────────────────────
+-- f2ce-tools supersedes fed2-tools; the two share alias/trigger/global names and
+-- cannot coexist. Announced rather than silent since it's a package the user
+-- installed deliberately.
+if table.contains(getPackages(), "fed2-tools") then
+    f2t_debug_log("Removing superseded package: fed2-tools")
+    uninstallPackage("fed2-tools")
+    cecho("\n<yellow>[f2ce-tools]<reset> Removed the older <cyan>fed2-tools<reset> package, "
+        .. "which f2ce-tools replaces.\n")
+end
+
 -- ── Install handler ───────────────────────────────────────────────────────────
 -- sysInstall fires during installation only, not on normal session start.
 registerAnonymousEventHandler("sysInstall", function(_, pkg)
