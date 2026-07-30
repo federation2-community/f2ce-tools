@@ -1,9 +1,9 @@
 {
   "package": "f2ce-tools",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "dependency": {
     "package": "Muxlet",
-    "version": "v2.2.7",
+    "version": "v2.2.8",
     "repo": "tmtocloud/Muxlet",
     "initFile": "src/scripts/init.lua",
     "versionVar": "F2T_REQUIRED_MUXLET",
