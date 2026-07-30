@@ -194,7 +194,7 @@ function f2tTableRenderScrollbox(tableId)
     local cw   = sb.contentW
     local rowH = sb.rowH
 
-    if not sb.minHeight and sb.scrollWidget then
+    if sb.scrollWidget then
         local sh = sb.scrollWidget:get_height()
         if sh > 30 then sb.minHeight = sh end
     end
@@ -224,7 +224,7 @@ function f2tTableRenderScrollbox(tableId)
                 "border-bottom:1px solid rgba(255,255,255,0.06);")
             rowLbl.cells = {}
             local x = 0
-            for j, col in ipairs(t.columns) do
+            for j in ipairs(t.columns) do
                 local cell = Geyser.Label:new({
                     name = string.format("f2tsb_%s_r%d_c%d", tableId, i, j),
                     x = x, y = 0, width = colWs[j], height = rowH,

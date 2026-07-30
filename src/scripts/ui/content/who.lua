@@ -74,8 +74,8 @@ local function refreshAll()
     if f2tPlayerCardsRefreshAll then f2tPlayerCardsRefreshAll() end
 end
 
--- Column definitions — produced per-pane so closures reference the correct tableId.
-local function buildCols(tableId)
+-- Column definitions.
+local function buildCols()
     return {
         {
             key           = "rank",
@@ -234,7 +234,7 @@ local function buildContent(target)
 
     -- ── Table system ──────────────────────────────────────────────────────────
     local tableId = "who_" .. gid
-    local cols    = buildCols(tableId)
+    local cols    = buildCols()
     f2tTableCreate(tableId, cols)
     f2tTableSetScrollbox(tableId, contentLabel, contentW, WHO_ROW_H, scroll)
 
@@ -318,11 +318,9 @@ local function buildWhoDef()
                 tostring(inst.scroll and inst.scroll:get_width()),
                 tostring(inst.scroll and inst.scroll:get_height()),
                 tostring(inst.contentW), tostring(newCw))
-            if newCw ~= inst.contentW then
-                inst.contentW = newCw
-                inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
-                f2tTableOnResize(inst.tableId, newCw)
-            end
+            inst.contentW = newCw
+            inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
+            f2tTableOnResize(inst.tableId, newCw)
         end,
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,

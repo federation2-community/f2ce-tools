@@ -2,7 +2,7 @@
 -- Job is no longer available - someone else took it
 local job_number = tonumber(matches[2])
 
--- Revert the Hauling Jobs panel's optimistic accept, if it was tracking this job
+-- Clear the Hauling Jobs panel's pending accept, if it was waiting on this job
 if f2tHaulingJobsOnJobTaken then f2tHaulingJobsOnJobTaken(job_number) end
 
 -- Notify hauling system if active

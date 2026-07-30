@@ -1,11 +1,12 @@
 -- hauling_work_start — patterns declared in triggers.json
 --
--- Header of the `work` job listing.  Feeds the Hauling Jobs panel and gags the
--- raw listing — but only when the Work button sent this command, and never
+-- Header of the `work` job listing. Always feeds the Hauling Jobs panel, so
+-- a manually typed `work` keeps the panel in sync too -- but only gags the
+-- raw listing when the Work button itself sent this command, and never
 -- while the hauling automation is running (its own capture owns the output
--- then). A manually typed `work` is never gagged.
+-- then).
 if F2T_HAULING_STATE and F2T_HAULING_STATE.active then return end
 if f2tHaulingJobsAwaitingCommand and f2tHaulingJobsAwaitingCommand() then
     deleteLine()
-    f2tHaulingJobsHeader()
 end
+if f2tHaulingJobsHeader then f2tHaulingJobsHeader() end

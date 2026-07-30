@@ -80,9 +80,28 @@ local instances = {}
 -- Job rows captured from the current `work` listing (shared by all instances).
 local jobs = {}
 
--- The job accepted via the panel, shown pinned above the list until it's
--- taken by someone else or delivered (shared by all instances).
+-- The confirmed accepted job, shown pinned above the list until it's
+-- delivered (shared by all instances). Only set once the game confirms the
+-- bid was accepted -- see f2tHaulingJobsOnAcceptSuccess().
 local currentJob = nil
+
+-- Job number of an `ac <n>` sent from the panel that hasn't been confirmed
+-- or rejected yet. The accept confirmation text doesn't include the job
+-- number, so this is how the success/failure triggers know which click it
+-- belongs to. Cleared by success, failure, or a 5s failsafe.
+local pendingAcceptJobNumber = nil
+local _pendingAcceptTimer = nil
+
+local function clearPendingAccept()
+    pendingAcceptJobNumber = nil
+    if _pendingAcceptTimer then killTimer(_pendingAcceptTimer); _pendingAcceptTimer = nil end
+end
+
+local function armPendingAccept(jobNumber)
+    pendingAcceptJobNumber = jobNumber
+    if _pendingAcceptTimer then killTimer(_pendingAcceptTimer) end
+    _pendingAcceptTimer = tempTimer(5, clearPendingAccept)
+end
 
 -- Forward-declared: defined after refreshAll below, but referenced by the
 -- Job-number column's click callback in buildCols().
@@ -290,18 +309,14 @@ local function refreshAllDebounced()
     end)
 end
 
--- Removes the job from the list, pins it as the active contract, and sends
--- the accept command. Reverted by f2tHaulingJobsOnJobTaken() if someone else
--- got to it first.
+-- Sends the accept command and marks it pending. The job stays in the list
+-- and currentJob is untouched until the game actually confirms the bid --
+-- see f2tHaulingJobsOnAcceptSuccess()/OnAcceptFailed() below. Bids fail
+-- whenever someone else took the job first, a contract is already
+-- outstanding, or the player's rank can't use Armstrong Cuthbert at all.
 acceptJob = function(jobNumber)
-    for i, row in ipairs(jobs) do
-        if tostring(row.jobNumber) == tostring(jobNumber) then
-            currentJob = table.remove(jobs, i)
-            break
-        end
-    end
+    armPendingAccept(jobNumber)
     send("ac " .. jobNumber, false)
-    refreshAll()
 end
 
 -- ── Trigger entry points ──────────────────────────────────────────────────────
@@ -313,13 +328,55 @@ function f2tHaulingJobsAwaitingCommand()
     return awaitingWorkCommand
 end
 
--- Called by the ac_job_taken trigger; reverts the optimistic accept if the
--- pinned job turns out to have been taken by someone else.
-function f2tHaulingJobsOnJobTaken(jobNumber)
-    if currentJob and tostring(currentJob.jobNumber) == tostring(jobNumber) then
-        currentJob = nil
-        refreshAll()
+-- Called by the accept-success trigger: "Your bid is accepted for N tons of
+-- X from <origin> with delivery to <dest>." Fires for every successful `ac`,
+-- panel-click or manually typed -- the panel always reflects real game
+-- state. If a panel click is pending, matches by job number (exact); if
+-- accepted manually, the confirmation text has no job number, so falls back
+-- to matching the row by origin/dest instead.
+function f2tHaulingJobsOnAcceptSuccess(origin, dest)
+    local jobNumber = pendingAcceptJobNumber
+    clearPendingAccept()
+
+    local job
+    for i, row in ipairs(jobs) do
+        if (jobNumber and tostring(row.jobNumber) == tostring(jobNumber))
+            or (not jobNumber and row.origin == origin and row.dest == dest) then
+            job = table.remove(jobs, i)
+            break
+        end
     end
+    if not job then
+        -- Fallback if the list doesn't have a matching row (e.g. it was
+        -- re-fetched in the meantime): build a minimal entry from the
+        -- confirmation text itself. Job number is unknown in this case.
+        job = {
+            jobNumber     = jobNumber or "?",
+            origin        = origin,
+            dest          = dest,
+            originDisplay = stripThe(origin),
+            destDisplay   = stripThe(dest),
+            basePay       = 0,
+        }
+    end
+    currentJob = job
+    refreshAll()
+end
+
+-- Called whenever a pending `ac <n>` turns out to have failed: someone else
+-- took the job, a contract is already outstanding, or the rank check
+-- rejected it. jobNumber is nil for the generic (non-job-specific) failure
+-- messages; when present, only clears the pending state if it matches.
+function f2tHaulingJobsOnAcceptFailed(jobNumber)
+    if jobNumber and pendingAcceptJobNumber and tostring(pendingAcceptJobNumber) ~= tostring(jobNumber) then
+        return
+    end
+    clearPendingAccept()
+end
+
+-- Called by the ac_job_taken trigger with the specific job number involved.
+function f2tHaulingJobsOnJobTaken(jobNumber)
+    f2tHaulingJobsOnAcceptFailed(jobNumber)
 end
 
 -- Called by the ac_deliver_success trigger; the contract is complete.
