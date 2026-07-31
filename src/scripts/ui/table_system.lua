@@ -162,12 +162,14 @@ end
 function f2tTableOnResize(tableId, newContentW)
     local t = _tables[tableId]
     if not t or not t.scrollbox then return end
+    local rowCount = #t.scrollbox.rows
     if f2t_debug_log then
         f2t_debug_log("[table_system] onResize %s newContentW=%s rows=%d scrollWidget.w=%s scrollWidget.h=%s",
-            tostring(tableId), tostring(newContentW), #t.scrollbox.rows,
+            tostring(tableId), tostring(newContentW), rowCount,
             tostring(t.scrollbox.scrollWidget and t.scrollbox.scrollWidget:get_width()),
             tostring(t.scrollbox.scrollWidget and t.scrollbox.scrollWidget:get_height()))
     end
+    local _t0 = f2t_debug_log and os.clock() or nil
     t.scrollbox.contentW = newContentW
     local colWs = _colWidths(t)
     for _, rowLbl in ipairs(t.scrollbox.rows) do
@@ -183,6 +185,10 @@ function f2tTableOnResize(tableId, newContentW)
         end
     end
     f2tTableRenderScrollbox(tableId)
+    if _t0 then
+        f2t_debug_log("[table_system] onResize %s took %.1fms for %d rows",
+            tostring(tableId), (os.clock() - _t0) * 1000, rowCount)
+    end
 end
 
 function f2tTableRenderScrollbox(tableId)
@@ -194,7 +200,7 @@ function f2tTableRenderScrollbox(tableId)
     local cw   = sb.contentW
     local rowH = sb.rowH
 
-    if sb.scrollWidget then
+    if not sb.minHeight and sb.scrollWidget then
         local sh = sb.scrollWidget:get_height()
         if sh > 30 then sb.minHeight = sh end
     end

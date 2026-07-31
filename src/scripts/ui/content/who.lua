@@ -318,9 +318,11 @@ local function buildWhoDef()
                 tostring(inst.scroll and inst.scroll:get_width()),
                 tostring(inst.scroll and inst.scroll:get_height()),
                 tostring(inst.contentW), tostring(newCw))
-            inst.contentW = newCw
-            inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
-            f2tTableOnResize(inst.tableId, newCw)
+            if newCw ~= inst.contentW then
+                inst.contentW = newCw
+                inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
+                f2tTableOnResize(inst.tableId, newCw)
+            end
         end,
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
