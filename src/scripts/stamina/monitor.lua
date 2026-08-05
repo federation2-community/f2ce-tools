@@ -533,7 +533,7 @@ function f2t_stamina_check_nav_to_food_complete()
 
     -- Treat a nil F2T_SPEEDWALK_ACTIVE as inactive.
     local speedwalk_active = F2T_SPEEDWALK_ACTIVE or false
-    if not speedwalk_active then
+    if not speedwalk_active and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         if result == "completed" then
             f2t_debug_log("[stamina] Arrived at food source")
@@ -551,7 +551,7 @@ function f2t_stamina_check_nav_back_complete()
     end
 
     local speedwalk_active = F2T_SPEEDWALK_ACTIVE or false
-    if not speedwalk_active then
+    if not speedwalk_active and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         if result == "completed" then
             f2t_debug_log("[stamina] Arrived back at original location")

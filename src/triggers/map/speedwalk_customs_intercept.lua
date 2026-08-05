@@ -26,6 +26,12 @@ else
     f2t_debug_log("[map] Standalone navigation, will auto-resume after customs")
 end
 
+if saved_destination and auto_resume then
+    -- Block owners' nav-complete checks from treating the stop below as a
+    -- real user cancel until the recovery navigate is issued (or abandoned).
+    F2T_SPEEDWALK_CUSTOMS_PENDING = true
+end
+
 f2t_map_speedwalk_stop()
 
 if saved_destination and auto_resume then
@@ -41,11 +47,21 @@ if saved_destination and auto_resume then
             if not current_room then
                 cecho("\n<yellow>[map]<reset> Cannot determine current location after customs\n")
                 f2t_debug_log("[map] No current room ID after customs, cannot resume")
+                F2T_SPEEDWALK_CUSTOMS_PENDING = false
+                -- The gmcp.room.info event that would normally prompt the owner's
+                -- nav-complete check already fired and was blocked while pending
+                -- was still true. Re-raise it now so the owner re-evaluates
+                -- (falling back to its "unknown result" handling) instead of
+                -- stalling silently forever.
+                raiseEvent("gmcp.room.info")
                 return
             end
 
             if current_room == saved_destination then
                 f2t_debug_log("[map] Already at destination %d after customs", saved_destination)
+                F2T_SPEEDWALK_LAST_RESULT = "completed"
+                F2T_SPEEDWALK_CUSTOMS_PENDING = false
+                raiseEvent("gmcp.room.info")
                 return
             end
 
@@ -57,6 +73,7 @@ if saved_destination and auto_resume then
                 f2t_debug_log("[map] Ownership restored for post-customs recovery: %s", saved_owner)
             end
 
+            F2T_SPEEDWALK_CUSTOMS_PENDING = false
             f2t_map_navigate(tostring(saved_destination))
         end)
     end)

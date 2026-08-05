@@ -14,10 +14,11 @@ F2T_MAP_EXPLORE_STATE = F2T_MAP_EXPLORE_STATE or {
     planet_list={},current_planet_index=0,
     expected_planets=nil,expected_planets_found=nil,expected_planets_remaining=nil,planets_without_exchange=nil,
     system_stats={planets_explored=0,exchanges_found=0,planets_skipped=0},
-    cartel_name=nil,system_list={},current_system_index=0,cartel_target_system=nil,
+    cartel_name=nil,system_list={},current_system_index=0,
     cartel_stats={total_systems=0,systems_explored=0,total_planets=0,total_exchanges=0,total_planets_skipped=0},
-    galaxy_cartel_list={},galaxy_current_cartel_index=0,galaxy_target_cartel=nil,
+    galaxy_cartel_list={},galaxy_current_cartel_index=0,
     galaxy_stats={total_cartels=0,cartels_explored=0,cartels_skipped=0,total_systems=0,total_planets=0},
+    travel_kind=nil,travel_target=nil,travel_on_arrived=nil,travel_on_failed=nil,
 }
 
 F2T_EXPLORE_BRIEF_OWNER = false
@@ -54,11 +55,56 @@ function f2t_map_explore_init_area(area_id, mode_fields)
     return #F2T_MAP_EXPLORE_STATE.frontier_stack
 end
 
+-- Walk to a mapped planet before starting Layer 1 exploration there. This is
+-- a plain getPath() walk, not a jump chain - any topology-modeled system
+-- already has "jump <system>" special exits on its link room (see
+-- topology.lua's f2t_map_topology_rebuild_exits), so ordinary pathfinding
+-- already crosses legal jumps on its own. The blind jump-chain builder is
+-- only needed to reach territory with no rooms mapped yet at all, which a
+-- single named planet can't be (f2t_map_lookup_planet already requires the
+-- planet's area to exist).
+function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags)
+    local nav_result = f2t_map_navigate(planet_name)
+    if nav_result == nil then
+        cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
+        return false
+    end
+    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+        return f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
+    end
+
+    local handler_id
+    handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
+        if F2T_SPEEDWALK_ACTIVE then return end
+        killAnonymousEventHandler(handler_id)
+        local area = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
+        local arrived_planet = area and getRoomAreaName(area)
+        if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
+            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
+            return
+        end
+        f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
+    end)
+    return true
+end
+
 function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
     if not planet_mode or (planet_mode ~= "full" and planet_mode ~= "brief") then
         cecho(string.format("\n<red>[map-explore]<reset> Error: Invalid planet mode '%s'\n", tostring(planet_mode)))
         return false
     end
+
+    -- A named target we aren't already standing on has to be reached first -
+    -- otherwise this would silently explore wherever we happen to be instead.
+    if planet_name and planet_name ~= "" then
+        local room = F2T_MAP_CURRENT_ROOM_ID
+        local area = room and getRoomArea(room)
+        local current_planet = area and getRoomAreaName(area)
+        if not current_planet or current_planet:lower() ~= planet_name:lower() then
+            return f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags)
+        end
+    end
+
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     if not current_room then cecho("\n<red>[map-explore]<reset> Error: Not in a mapped room\n"); return false end
     local current_area = getRoomArea(current_room)
@@ -69,24 +115,17 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
 
     local brief_fields = {}
     if planet_mode == "brief" then
-        local brief_flags = {"shuttlepad"}
+        local brief_flags
         if override_flags then
+            brief_flags = {"shuttlepad"}
             for _, flag in ipairs(override_flags) do
                 if flag ~= "shuttlepad" then table.insert(brief_flags, flag) end
             end
         else
-            local additional_flags_str = f2t_settings_get("map", "brief_additional_flags") or "exchange"
-            for flag in string.gmatch(additional_flags_str, "[^,]+") do
-                local trimmed = flag:match("^%s*(.-)%s*$")
-                if trimmed ~= "" and trimmed ~= "shuttlepad" then table.insert(brief_flags, trimmed) end
-            end
+            brief_flags = f2t_map_explore_default_required_flags()
         end
         local system_name = getAreaUserData(current_area, "fed2_system") or ""
-        if string.lower(system_name) ~= "sol" then
-            for i = #brief_flags, 1, -1 do
-                if brief_flags[i] == "courier" then table.remove(brief_flags, i) end
-            end
-        end
+        brief_flags = f2t_map_explore_strip_courier_outside_sol(brief_flags, system_name)
         local brief_flags_set = {}
         for _, flag in ipairs(brief_flags) do brief_flags_set[flag] = true end
         local brief_flags_found = {}
@@ -118,6 +157,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         F2T_MAP_EXPLORE_STATE.planned_exit = nil
         for k, v in pairs(brief_fields) do F2T_MAP_EXPLORE_STATE[k] = v end
     else
+        f2t_map_explore_register_safety_hooks()
         local mode_fields = {mode="planet", planet_mode=planet_mode, on_complete_callback=on_complete_callback}
         for k, v in pairs(brief_fields) do mode_fields[k] = v end
         f2t_map_explore_init_area(current_area, mode_fields)
@@ -174,7 +214,7 @@ function f2t_map_explore_brief_check_room_flags(room_id)
                 if effective_remaining > 0 then
                     local area_id = F2T_MAP_EXPLORE_STATE.starting_area_id
                     local system_name = area_id and getAreaUserData(area_id, "fed2_system") or ""
-                    if string.lower(system_name) ~= "sol" then
+                    if not f2t_map_explore_is_sol(system_name) then
                         local non_courier = 0
                         for rf, _ in pairs(F2T_MAP_EXPLORE_STATE.brief_flags_set) do
                             if not flags_found[rf] and rf ~= "courier" then non_courier = non_courier + 1 end
@@ -232,6 +272,107 @@ function f2t_map_explore_brief_call_callback()
     end
 end
 
+-- Nav-owner + stamina-monitor safety hooks shared by every standalone explore
+-- entry point (system/cartel/galaxy/syndicate all register the same pair;
+-- nested layers skip this since the parent that started the sweep already holds it).
+function f2t_map_explore_register_safety_hooks()
+    f2t_map_set_nav_owner("map-explore", function(reason)
+        if reason == "customs" then
+            F2T_MAP_EXPLORE_STATE.paused = true
+            F2T_MAP_EXPLORE_STATE.paused_reason = reason
+        end
+        return {auto_resume = true}
+    end)
+
+    if f2t_stamina_register_client then
+        f2t_stamina_register_client({
+            pause_callback  = f2t_map_explore_pause,
+            resume_callback = f2t_map_explore_resume,
+            check_active = function()
+                return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
+            end,
+        })
+    end
+end
+
+-- Shared travel-to-container primitive: reach an unmapped system or cartel
+-- hub via a blind jump chain built from the topology model, or a plain walk
+-- when we're already in the target's home system/cartel. Used standalone or
+-- nested under any layer's sweep. on_arrived()/on_failed() are stored on
+-- state and fired once the gmcp.room.info dispatcher (below) confirms
+-- arrival or a failure; on_failed is optional (a no-op if omitted).
+
+--- @param kind string "system" or "cartel"
+--- @param target string Target system or cartel name
+function f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
+    F2T_MAP_EXPLORE_STATE.travel_kind = kind
+    F2T_MAP_EXPLORE_STATE.travel_target = target
+    F2T_MAP_EXPLORE_STATE.travel_on_arrived = on_arrived
+    F2T_MAP_EXPLORE_STATE.travel_on_failed = on_failed
+    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_arriving"
+end
+
+function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
+    local current_room = F2T_MAP_CURRENT_ROOM_ID
+    if current_room and f2t_map_room_has_flag(current_room, "link") then
+        f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
+        f2t_map_explore_travel_jump()
+        return
+    end
+
+    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
+    local link_destination = current_system and (current_system .. " Space link") or "link"
+    cecho(string.format("  <dim_grey>Navigating to link to jump to %s<reset>\n", target))
+    f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
+    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_jumping"
+    local nav_result = f2t_map_navigate(link_destination)
+    if nav_result == nil then
+        cecho(string.format("  <red>Error:<reset> Cannot navigate to a link room to reach %s\n", target))
+        f2t_map_explore_travel_finish(false)
+    end
+    -- true/false (already there / speedwalk or retry-pending): wait for the
+    -- room-change dispatcher to drive the next step.
+end
+
+-- Issue the blind jump chain toward the stored travel target from the link
+-- room we're standing in. Falls back to a single direct jump when the model
+-- can't build a chain (it may still be legal, just not modeled yet).
+function f2t_map_explore_travel_jump()
+    local target = F2T_MAP_EXPLORE_STATE.travel_target
+    local current_system = f2t_get_current_system()
+    local chain = current_system and f2t_map_topology_jump_chain(current_system, target)
+    if not chain or #chain == 0 then
+        chain = {string.format("jump %s", target)}
+    end
+    cecho(string.format("  <dim_grey>Jumping: %s<reset>\n", table.concat(chain, "; ")))
+    speedWalkDir = chain
+    speedWalkPath = {}
+    doSpeedWalk()
+    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_arriving"
+end
+
+-- Fire the stored callback for the outcome and clear travel state either way.
+function f2t_map_explore_travel_finish(arrived)
+    local on_arrived = F2T_MAP_EXPLORE_STATE.travel_on_arrived
+    local on_failed = F2T_MAP_EXPLORE_STATE.travel_on_failed
+    local target = F2T_MAP_EXPLORE_STATE.travel_target
+    F2T_MAP_EXPLORE_STATE.travel_kind = nil
+    F2T_MAP_EXPLORE_STATE.travel_target = nil
+    F2T_MAP_EXPLORE_STATE.travel_on_arrived = nil
+    F2T_MAP_EXPLORE_STATE.travel_on_failed = nil
+    F2T_MAP_EXPLORE_STATE.phase = nil
+
+    if not arrived then
+        if on_failed then on_failed() end
+        return
+    end
+
+    cecho(string.format("  <green>Arrived at %s!<reset>\n", target))
+    tempTimer(0.5, function()
+        if F2T_MAP_EXPLORE_STATE.active and on_arrived then on_arrived() end
+    end)
+end
+
 function f2t_map_explore_start(mode, name)
     mode = mode or "brief"
     if mode ~= "full" and mode ~= "brief" then
@@ -251,24 +392,9 @@ function f2t_map_explore_start(mode, name)
     local current_area = getRoomArea(current_room)
     if not current_area then cecho("\n<red>[map-explore]<reset> Error: Room has no area\n"); return false end
 
-    f2t_map_set_nav_owner("map-explore", function(reason)
-        if reason == "customs" then
-            F2T_MAP_EXPLORE_STATE.paused = true
-            F2T_MAP_EXPLORE_STATE.paused_reason = reason
-        end
-        return {auto_resume = true}
-    end)
-
-    -- Stamina monitor integration (no-op if not available)
-    if f2t_stamina_register_client then
-        f2t_stamina_register_client({
-            pause_callback  = f2t_map_explore_pause,
-            resume_callback = f2t_map_explore_resume,
-            check_active = function()
-                return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
-            end,
-        })
-    end
+    -- Each underlying _start function registers its own safety hooks when run
+    -- standalone (on_complete_callback nil), so a mode-dispatcher like this
+    -- one that only ever delegates doesn't need to register here too.
 
     if name and name ~= "" then
         local is_planet = f2t_map_lookup_planet(name)
@@ -301,30 +427,6 @@ function f2t_map_explore_start(mode, name)
     return f2t_map_explore_planet_start(mode, planet)
 end
 
-function f2t_map_explore_is_system_fully_mapped(system_name)
-    local space_area_name = f2t_map_get_system_space_area_actual(system_name)
-    if not space_area_name then return false end
-    local space_area_id = f2t_map_get_area_id(space_area_name)
-    if not space_area_id then return false end
-    local rooms_in_area = getAreaRooms(space_area_id)
-    if not rooms_in_area then return false end
-    local planets_found = {}
-    for _, room_id in pairs(rooms_in_area) do
-        local planet_name = getRoomUserData(room_id, "fed2_planet")
-        if planet_name and planet_name ~= "" then planets_found[planet_name] = true end
-    end
-    if next(planets_found) == nil then return false end
-    for planet_name, _ in pairs(planets_found) do
-        local planet_area_id = f2t_map_get_area_id(planet_name)
-        if not planet_area_id then return false end
-        local sp = f2t_map_find_all_rooms_with_flag(planet_area_id, "shuttlepad")
-        if not sp or #sp == 0 then return false end
-        local ex = f2t_map_find_all_rooms_with_flag(planet_area_id, "exchange")
-        if not ex or #ex == 0 then return false end
-    end
-    return true
-end
-
 function f2t_map_explore_unlock_temp_exits()
     if not F2T_MAP_EXPLORE_STATE.temp_locked_exits then return end
     for room_id, directions in pairs(F2T_MAP_EXPLORE_STATE.temp_locked_exits) do
@@ -346,8 +448,9 @@ local function CLEAR_STATE()
         cartel_name=nil,planet_list={},current_planet_index=0,system_list={},current_system_index=0,
         system_stats={planets_explored=0,exchanges_found=0,planets_skipped=0},
         cartel_stats={total_systems=0,systems_explored=0,total_planets=0,total_exchanges=0,total_planets_skipped=0},
-        galaxy_cartel_list={},galaxy_current_cartel_index=0,galaxy_target_cartel=nil,
+        galaxy_cartel_list={},galaxy_current_cartel_index=0,
         galaxy_stats={total_cartels=0,cartels_explored=0,cartels_skipped=0,total_systems=0,total_planets=0},
+        travel_kind=nil,travel_target=nil,travel_on_arrived=nil,travel_on_failed=nil,
     }
 end
 
@@ -470,6 +573,12 @@ function f2t_map_explore_show_statistics()
         cecho(string.format("    Total planets: <white>%d<reset>\n", cartel_stats.total_planets))
     elseif mode == "galaxy" then
         local galaxy_stats = F2T_MAP_EXPLORE_STATE.galaxy_stats
+        local syndicate_filter = F2T_MAP_EXPLORE_STATE.galaxy_syndicate_filter
+        if syndicate_filter then
+            cecho(string.format("    Scope: <white>%s<reset> syndicate\n", syndicate_filter))
+        else
+            cecho("    Scope: <white>entire galaxy<reset>\n")
+        end
         cecho(string.format("    Cartels explored: <white>%d/%d<reset>\n",
             galaxy_stats.cartels_explored, galaxy_stats.total_cartels))
     end
@@ -606,54 +715,31 @@ function f2t_map_explore_on_room_change()
         end
     end
 
-    -- Galaxy phase transitions
-    if F2T_MAP_EXPLORE_STATE.mode == "galaxy" then
-        if F2T_MAP_EXPLORE_STATE.phase == "jumping_to_cartel" then
-            f2t_map_explore_jump_to_cartel(F2T_MAP_EXPLORE_STATE.galaxy_target_cartel); return
-        elseif F2T_MAP_EXPLORE_STATE.phase == "arriving_in_cartel" then
-            local target_cartel  = F2T_MAP_EXPLORE_STATE.galaxy_target_cartel
+    -- Shared travel-to-container phase transitions (system or cartel target,
+    -- used standalone or nested under any layer's sweep).
+    if F2T_MAP_EXPLORE_STATE.phase == "explore_travel_jumping" then
+        f2t_map_explore_travel_jump(); return
+    elseif F2T_MAP_EXPLORE_STATE.phase == "explore_travel_arriving" then
+        local kind = F2T_MAP_EXPLORE_STATE.travel_kind
+        local target = F2T_MAP_EXPLORE_STATE.travel_target
+        local arrived
+        if kind == "cartel" then
             local current_cartel = f2t_map_get_current_cartel()
-            if not current_cartel or current_cartel:lower() ~= target_cartel:lower() then
-                cecho(string.format("  <red>Error:<reset> Jump failed (expected %s, got %s)\n",
-                    target_cartel, current_cartel or "unknown"))
-                F2T_MAP_EXPLORE_STATE.phase = nil
-                f2t_map_explore_galaxy_next_cartel(); return
-            end
-            cecho(string.format("  <green>Arrived in %s!<reset>\n", target_cartel))
-            F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored =
-                F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored + 1
-            F2T_MAP_EXPLORE_STATE.phase = nil
-            F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = nil
-            tempTimer(0.5, function()
-                if F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_galaxy_start_cartel_mode(target_cartel) end
-            end)
-            return
+            arrived = current_cartel ~= nil and current_cartel:lower() == target:lower()
+        else
+            arrived = getRoomUserData(current_room, "fed2_system") == target
         end
+        if not arrived then
+            cecho(string.format("  <red>Error:<reset> Jump failed, could not reach %s\n", target))
+        end
+        f2t_map_explore_travel_finish(arrived)
+        return
     end
 
     -- System/Cartel phase transitions
     if F2T_MAP_EXPLORE_STATE.mode == "system" or F2T_MAP_EXPLORE_STATE.mode == "cartel" or
        F2T_MAP_EXPLORE_STATE.mode == "galaxy" then
-        if F2T_MAP_EXPLORE_STATE.phase == "jumping_to_system" then
-            f2t_map_explore_jump_to_system(F2T_MAP_EXPLORE_STATE.cartel_target_system); return
-        elseif F2T_MAP_EXPLORE_STATE.phase == "arriving_in_system" then
-            local target_system  = F2T_MAP_EXPLORE_STATE.cartel_target_system
-            local current_system = getRoomUserData(current_room, "fed2_system")
-            if current_system ~= target_system then
-                cecho(string.format("  <red>Error:<reset> Jump failed\n"))
-                F2T_MAP_EXPLORE_STATE.phase = nil
-                f2t_map_explore_cartel_next_system(); return
-            end
-            cecho(string.format("  <green>Arrived in %s!<reset>\n", target_system))
-            F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
-                F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
-            F2T_MAP_EXPLORE_STATE.phase = nil
-            F2T_MAP_EXPLORE_STATE.cartel_target_system = nil
-            tempTimer(0.5, function()
-                if F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_cartel_start_system_mode(target_system) end
-            end)
-            return
-        elseif F2T_MAP_EXPLORE_STATE.phase == "navigating_to_orbit" then
+        if F2T_MAP_EXPLORE_STATE.phase == "navigating_to_orbit" then
             F2T_MAP_EXPLORE_STATE.phase = "at_orbit"
             tempTimer(0.5, function()
                 if F2T_MAP_EXPLORE_STATE.active and F2T_MAP_EXPLORE_STATE.phase == "at_orbit" then

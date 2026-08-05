@@ -45,6 +45,15 @@
     ]
   },
   {
+    "name": "price_output_blank",
+    "patterns": [
+      {
+        "pattern": "^$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
     "name": "price_output_continuation",
     "patterns": [
       {

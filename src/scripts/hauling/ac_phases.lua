@@ -545,7 +545,7 @@ function f2t_hauling_check_nav_to_ac_source_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         -- Capture result immediately to prevent race conditions with next speedwalk
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/ac] Speedwalk stopped with result: %s", result or "unknown")
@@ -624,7 +624,7 @@ function f2t_hauling_check_nav_to_ac_dest_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         -- Capture result immediately to prevent race conditions with next speedwalk
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/ac] Speedwalk stopped with result: %s", result or "unknown")

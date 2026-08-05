@@ -7,7 +7,12 @@
 
 function f2t_map_explore_system_start(system_name, system_mode, on_complete_callback)
     if not system_name or system_name == "" then
-        cecho("\n<red>[map-explore]<reset> Error: No system specified\n")
+        -- Default to the system we are standing in, if detectable.
+        system_name = f2t_get_current_system()
+    end
+    if not system_name or system_name == "" then
+        cecho("\n<red>[map-explore]<reset> Error: No system specified and couldn't detect current system\n")
+        cecho("<dim_grey>Usage: map explore system <system><reset>\n")
         return false
     end
 
@@ -81,23 +86,54 @@ function f2t_map_explore_system_start_with_planets(system_name, system_mode, exp
     end
 
     local space_area_name = f2t_map_get_system_space_area_actual(system_name)
-    if not space_area_name then
-        cecho(string.format("\n<yellow>[map-explore]<reset> System '%s' space not mapped yet\n", system_name))
-        cecho(string.format("<dim_grey>Visit at least one room in '%s Space' first<reset>\n", system_name))
-        return false
-    end
-    local space_area_id = f2t_map_get_area_id(space_area_name)
-    if not space_area_id then
-        cecho(string.format("\n<red>[map-explore]<reset> Error: Could not find area ID for '%s'\n", space_area_name))
-        return false
-    end
-
+    local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_area = current_room and getRoomArea(current_room)
-    if current_area ~= space_area_id then
-        cecho(string.format("\n<yellow>[map-explore]<reset> Not in %s, please navigate there first\n", space_area_name))
-        cecho(string.format("<dim_grey>Use: nav %s<reset>\n", system_name))
-        return false
+
+    -- Not there yet: travel first, then retry with the same (already-captured)
+    -- expected-planet data rather than repeating the DI system capture.
+    if not space_area_id or current_area ~= space_area_id then
+        -- The travel dispatcher (explore.lua's gmcp.room.info handler) only
+        -- runs while F2T_MAP_EXPLORE_STATE.active is true; a nested call
+        -- already has that (and its own safety hooks) from the parent sweep,
+        -- but a standalone call hasn't started yet, so ensure both here too.
+        local started_standalone = not F2T_MAP_EXPLORE_STATE.active
+        if started_standalone then
+            F2T_MAP_EXPLORE_STATE.active = true
+            F2T_MAP_EXPLORE_STATE.mode = "system"
+            f2t_map_explore_register_safety_hooks()
+        end
+
+        local function retry()
+            f2t_map_explore_system_start_with_planets(system_name, system_mode,
+                expected_planet_names, planets_without_exchange, on_complete_callback)
+        end
+        local function give_up()
+            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", system_name))
+            -- Only tear down if we set active ourselves; a nested call must
+            -- leave the parent sweep's state alone so it can move on.
+            if started_standalone then
+                f2t_map_clear_nav_owner()
+                if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+                f2t_map_explore_brief_mode_restore()
+                F2T_MAP_EXPLORE_STATE.active = false
+                F2T_MAP_EXPLORE_STATE.mode = nil
+            end
+        end
+
+        if space_area_id then
+            cecho(string.format("\n<green>[map-explore]<reset> Navigating to %s...\n", space_area_name))
+            f2t_map_explore_await_arrival("system", system_name, retry, give_up)
+            local nav_result = f2t_map_navigate(system_name)
+            if nav_result == nil then
+                cecho(string.format("\n<red>[map-explore]<reset> Cannot navigate to %s\n", space_area_name))
+                f2t_map_explore_travel_finish(false)
+            end
+        else
+            cecho(string.format("\n<green>[map-explore]<reset> %s not yet mapped, traveling there...\n", system_name))
+            f2t_map_explore_travel_to("system", system_name, retry, give_up)
+        end
+        return true
     end
 
     if system_mode == "full" then
@@ -143,6 +179,7 @@ function f2t_map_explore_system_start_with_planets(system_name, system_mode, exp
         F2T_MAP_EXPLORE_STATE.visited_rooms = {[current_room] = true}
         F2T_MAP_EXPLORE_STATE.frontier_stack = {}
     else
+        f2t_map_explore_register_safety_hooks()
         f2t_map_explore_init_area(space_area_id, {
             mode = "system",
             system_name = system_name,
@@ -223,18 +260,9 @@ function f2t_map_explore_system_space_complete()
     table.sort(planets, function(a, b) return a.name < b.name end)
 
     -- Skip planets that already have all required brief flags mapped.
-    local additional_flags_str = f2t_settings_get("map", "brief_additional_flags") or "exchange"
-    local required_flags = {"shuttlepad"}
-    for flag in string.gmatch(additional_flags_str, "[^,]+") do
-        local trimmed = flag:match("^%s*(.-)%s*$")
-        if trimmed ~= "" and trimmed ~= "shuttlepad" then table.insert(required_flags, trimmed) end
-    end
     local system_name = F2T_MAP_EXPLORE_STATE.system_name or ""
-    if system_name:lower() ~= "sol" then
-        for i = #required_flags, 1, -1 do
-            if required_flags[i] == "courier" then table.remove(required_flags, i) end
-        end
-    end
+    local required_flags = f2t_map_explore_strip_courier_outside_sol(
+        f2t_map_explore_default_required_flags(), system_name)
 
     local planets_to_explore = {}
     local already_explored = 0

@@ -15,8 +15,14 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
         cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
         return false
     end
+
     if not cartel_name or cartel_name == "" then
-        cecho("\n<red>[map-explore]<reset> Error: No cartel specified\n")
+        -- Default to the cartel we are standing in, if detectable.
+        cartel_name = f2t_map_get_current_cartel()
+    end
+    if not cartel_name or cartel_name == "" then
+        cecho("\n<red>[map-explore]<reset> Error: No cartel specified and couldn't detect current cartel\n")
+        cecho("<dim_grey>Usage: map explore cartel <cartel><reset>\n")
         return false
     end
 
@@ -36,22 +42,7 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
         }
         F2T_MAP_EXPLORE_STATE.cartel_complete_callback = on_complete_callback
     else
-        f2t_map_set_nav_owner("map-explore", function(reason)
-            if reason == "customs" then
-                F2T_MAP_EXPLORE_STATE.paused = true
-                F2T_MAP_EXPLORE_STATE.paused_reason = reason
-            end
-            return {auto_resume = true}
-        end)
-        if f2t_stamina_register_client then
-            f2t_stamina_register_client({
-                pause_callback  = f2t_map_explore_pause,
-                resume_callback = f2t_map_explore_resume,
-                check_active = function()
-                    return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
-                end,
-            })
-        end
+        f2t_map_explore_register_safety_hooks()
 
         F2T_MAP_EXPLORE_STATE.active = true
         F2T_MAP_EXPLORE_STATE.mode = "cartel"
@@ -168,62 +159,37 @@ function f2t_map_explore_cartel_next_system()
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_system = current_room and getRoomUserData(current_room, "fed2_system")
 
+    local function on_system_reached()
+        F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
+            F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
+        f2t_map_explore_cartel_start_system_mode(system_name)
+    end
+    local function on_system_unreachable()
+        cecho(string.format("  <red>Error:<reset> Could not reach %s, skipping\n", system_name))
+        f2t_map_explore_cartel_next_system()
+    end
+
     if current_system == system_name then
         local space_area_name = f2t_map_get_system_space_area_actual(system_name)
         local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
         if space_area_id and getRoomArea(current_room) == space_area_id then
-            F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
-                F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
-            f2t_map_explore_cartel_start_system_mode(system_name)
+            on_system_reached()
         else
-            -- In the right system but on a planet: get to its space link first.
+            -- In the right system but on a planet: get to its space link first
+            -- (a plain walk, not a jump - reuse the same arrival verification).
             cecho(string.format("  <dim_grey>Navigating to %s space...<reset>\n", system_name))
-            F2T_MAP_EXPLORE_STATE.cartel_target_system = system_name
-            F2T_MAP_EXPLORE_STATE.phase = "arriving_in_system"
-            if not f2t_map_navigate(system_name .. " Space link") then
+            f2t_map_explore_await_arrival("system", system_name, on_system_reached, on_system_unreachable)
+            local nav_result = f2t_map_navigate(system_name .. " Space link")
+            if nav_result == nil then
                 cecho(string.format("  <red>Error:<reset> Cannot navigate to %s space link, skipping\n", system_name))
-                F2T_MAP_EXPLORE_STATE.phase = nil
-                F2T_MAP_EXPLORE_STATE.cartel_target_system = nil
-                f2t_map_explore_cartel_next_system()
+                f2t_map_explore_travel_finish(false)
             end
         end
         return
     end
 
-    -- Different system: navigate to the current system's link, then jump.
-    -- The topology jump chain handles cross-cartel/cross-syndicate legality.
-    cecho(string.format("  <dim_grey>Navigating to link and jumping to %s<reset>\n", system_name))
-    F2T_MAP_EXPLORE_STATE.cartel_target_system = system_name
-
-    local link_destination = current_system and (current_system .. " Space link") or "link"
-    if not f2t_map_navigate(link_destination) then
-        cecho("  <red>Error:<reset> Cannot navigate to link, skipping system\n")
-        F2T_MAP_EXPLORE_STATE.cartel_target_system = nil
-        f2t_map_explore_cartel_next_system()
-        return
-    end
-
-    if current_room and f2t_map_room_has_flag(current_room, "link") then
-        f2t_map_explore_jump_to_system(system_name)
-    else
-        F2T_MAP_EXPLORE_STATE.phase = "jumping_to_system"
-    end
-end
-
--- Issue the blind jump chain toward a target system from the link room we
--- are standing in. Falls back to a single direct jump when the model can't
--- build a chain (it may still be legal, e.g. same cartel not yet modeled).
-function f2t_map_explore_jump_to_system(target_system)
-    local current_system = f2t_get_current_system()
-    local chain = current_system and f2t_map_topology_jump_chain(current_system, target_system)
-    if not chain or #chain == 0 then
-        chain = {string.format("jump %s", target_system)}
-    end
-    cecho(string.format("  <dim_grey>Jumping: %s<reset>\n", table.concat(chain, "; ")))
-    speedWalkDir = chain
-    speedWalkPath = {}
-    doSpeedWalk()
-    F2T_MAP_EXPLORE_STATE.phase = "arriving_in_system"
+    -- Different system: jump-chain travel handles cross-cartel/cross-syndicate legality.
+    f2t_map_explore_travel_to("system", system_name, on_system_reached, on_system_unreachable)
 end
 
 function f2t_map_explore_cartel_start_system_mode(system_name)

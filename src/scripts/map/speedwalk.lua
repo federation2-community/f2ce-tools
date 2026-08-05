@@ -18,6 +18,10 @@ F2T_SPEEDWALK_FAILED_EXIT_DIR      = nil
 F2T_SPEEDWALK_OWNER                = nil
 F2T_SPEEDWALK_ON_INTERRUPT         = nil
 F2T_SPEEDWALK_BRIEF_SWITCHED       = false
+-- True between a customs interception stopping the old route and the
+-- recovery navigate being issued. Owners' nav-complete checks must not
+-- treat the "stopped" result during this window as a real user stop.
+F2T_SPEEDWALK_CUSTOMS_PENDING      = false
 
 function f2t_map_set_nav_owner(owner, on_interrupt)
     F2T_SPEEDWALK_OWNER        = owner
@@ -294,44 +298,53 @@ function f2t_map_speedwalk_recompute_path(silent)
     return true
 end
 
+-- Shared "give up now" path for both the retry-budget exhaustion below and
+-- triggers that recognize a failure as permanent (e.g. a rank/credits gate
+-- that no route recompute could ever get around) and want to skip straight
+-- to stopping instead of burning through retries first.
+function f2t_map_speedwalk_fail(reason)
+    if not F2T_SPEEDWALK_ACTIVE then return end
+    cecho(string.format("\n<red>[map]<reset> %s\n", reason))
+    F2T_SPEEDWALK_LAST_RESULT     = "failed"
+    F2T_SPEEDWALK_FAILED_EXIT_ROOM = F2T_MAP_CURRENT_ROOM_ID
+    F2T_SPEEDWALK_FAILED_EXIT_DIR  = F2T_SPEEDWALK_LAST_COMMAND
+    f2t_map_speedwalk_restore_mode()
+    cecho("\n<yellow>[map]<reset> Speedwalk stopped\n")
+    if F2T_MAP_CIRCUIT_STATE and F2T_MAP_CIRCUIT_STATE.active then
+        f2t_map_circuit_delete_triggers()
+        F2T_MAP_CIRCUIT_STATE = {active = false}
+    end
+    F2T_SPEEDWALK_ACTIVE               = false
+    F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_DIR                  = {}
+    F2T_SPEEDWALK_PATH                 = {}
+    F2T_SPEEDWALK_CURRENT_STEP         = 0
+    F2T_SPEEDWALK_WAITING_FOR_ARRIVAL  = false
+    F2T_SPEEDWALK_DESTINATION_ROOM_ID  = nil
+    F2T_SPEEDWALK_LAST_COMMAND         = nil
+    F2T_SPEEDWALK_EXPECTED_ROOM_ID     = nil
+    F2T_SPEEDWALK_WAITING_FOR_MOVE     = false
+    F2T_SPEEDWALK_ROOM_BEFORE_MOVE     = nil
+    if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
+        killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
+        F2T_SPEEDWALK_MOVE_TIMEOUT_ID = nil
+    end
+    F2T_SPEEDWALK_CONSECUTIVE_FAILURES = 0
+    f2t_map_clear_nav_owner()
+    tempTimer(0, function()
+        if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
+            f2t_map_explore_on_room_change()
+        end
+    end)
+end
+
 function f2t_map_speedwalk_handle_move_failure()
     if not F2T_SPEEDWALK_ACTIVE then return end
     F2T_SPEEDWALK_CONSECUTIVE_FAILURES = F2T_SPEEDWALK_CONSECUTIVE_FAILURES + 1
     local max_retries = f2t_settings_get("map", "speedwalk_max_retries")
     if F2T_SPEEDWALK_CONSECUTIVE_FAILURES >= max_retries then
-        cecho(string.format("\n<red>[map]<reset> Path appears blocked after %d attempts, stopping speedwalk\n",
+        f2t_map_speedwalk_fail(string.format("Path appears blocked after %d attempts, stopping speedwalk",
             max_retries))
-        F2T_SPEEDWALK_LAST_RESULT     = "failed"
-        F2T_SPEEDWALK_FAILED_EXIT_ROOM = F2T_MAP_CURRENT_ROOM_ID
-        F2T_SPEEDWALK_FAILED_EXIT_DIR  = F2T_SPEEDWALK_LAST_COMMAND
-        f2t_map_speedwalk_restore_mode()
-        cecho("\n<yellow>[map]<reset> Speedwalk stopped\n")
-        if F2T_MAP_CIRCUIT_STATE and F2T_MAP_CIRCUIT_STATE.active then
-            f2t_map_circuit_delete_triggers()
-            F2T_MAP_CIRCUIT_STATE = {active = false}
-        end
-        F2T_SPEEDWALK_ACTIVE               = false
-        F2T_SPEEDWALK_PAUSED               = false
-        F2T_SPEEDWALK_DIR                  = {}
-        F2T_SPEEDWALK_PATH                 = {}
-        F2T_SPEEDWALK_CURRENT_STEP         = 0
-        F2T_SPEEDWALK_WAITING_FOR_ARRIVAL  = false
-        F2T_SPEEDWALK_DESTINATION_ROOM_ID  = nil
-        F2T_SPEEDWALK_LAST_COMMAND         = nil
-        F2T_SPEEDWALK_EXPECTED_ROOM_ID     = nil
-        F2T_SPEEDWALK_WAITING_FOR_MOVE     = false
-        F2T_SPEEDWALK_ROOM_BEFORE_MOVE     = nil
-        if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
-            killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
-            F2T_SPEEDWALK_MOVE_TIMEOUT_ID = nil
-        end
-        F2T_SPEEDWALK_CONSECUTIVE_FAILURES = 0
-        f2t_map_clear_nav_owner()
-        tempTimer(0, function()
-            if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
-                f2t_map_explore_on_room_change()
-            end
-        end)
         return
     end
     cecho(string.format("\n<yellow>[map]<reset> Movement erred, recomputing path... (attempt %d/%d)\n",

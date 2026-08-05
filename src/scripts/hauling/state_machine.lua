@@ -105,6 +105,28 @@ function f2t_hauling_start(requested_mode)
         return
     end
 
+    -- Exchange and PO modes both price-check commodities remotely (analyzing phase,
+    -- PO sell search) and require the Remote Price Check Service tool. Check up
+    -- front rather than letting the sequence silently stall in "analyzing" the
+    -- first time a price-check call is gated deep inside the phase logic.
+    if mode == "exchange" or mode == "po" then
+        if not f2t_check_tool_requirement("remote-access-cert", mode_name, "Remote Price Check Service") then
+            f2t_hauling_do_stop()
+            return
+        end
+
+        -- The base service doesn't work inside Sol; only the upgrade tier does.
+        if f2t_map_get_current_cartel() == "Sol" and not f2t_has_tool("price-check-upgrade") then
+            cecho(string.format(
+                "\n<red>[hauling]<reset> %s requires the <cyan>Remote Price Check Service Upgrade<reset> tool\n",
+                mode_name))
+            cecho("<dim_grey>The base service doesn't work inside Sol; you need the upgrade tier too.<reset>\n")
+            cecho("<dim_grey>See: https://federation2.com/guide/#sec-230.20<reset>\n")
+            f2t_hauling_do_stop()
+            return
+        end
+    end
+
     -- PO mode: validate ship capacity
     if mode == "po" then
         local hold = gmcp.char and gmcp.char.ship and gmcp.char.ship.hold

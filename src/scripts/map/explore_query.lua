@@ -34,6 +34,36 @@ function f2t_map_explore_planet_has_flags(area_id, required_flags)
     return true
 end
 
+function f2t_map_explore_is_sol(system_name)
+    return string.lower(system_name or "") == "sol"
+end
+
+-- Base required brief-mode planet flags from the 'brief_additional_flags'
+-- setting (shuttlepad is always required and only ever added once).
+function f2t_map_explore_default_required_flags()
+    local flags = {"shuttlepad"}
+    local additional_flags_str = f2t_settings_get("map", "brief_additional_flags") or "exchange"
+    for flag in string.gmatch(additional_flags_str, "[^,]+") do
+        local trimmed = flag:match("^%s*(.-)%s*$")
+        if trimmed ~= "" and trimmed ~= "shuttlepad" then
+            table.insert(flags, trimmed)
+        end
+    end
+    return flags
+end
+
+-- Sol is the only system where the courier office is a separate room from
+-- the shuttlepad; everywhere else the shuttlepad room doubles as the
+-- courier office and isn't reliably tagged with the courier flag too, so
+-- courier is only ever enforced within Sol.
+function f2t_map_explore_strip_courier_outside_sol(flags, system_name)
+    if f2t_map_explore_is_sol(system_name) then return flags end
+    for i = #flags, 1, -1 do
+        if flags[i] == "courier" then table.remove(flags, i) end
+    end
+    return flags
+end
+
 function f2t_map_explore_is_system_fully_mapped(system_name)
     local space_area_name = f2t_map_get_system_space_area_actual(system_name)
     if not space_area_name then return false end
@@ -54,14 +84,8 @@ function f2t_map_explore_is_system_fully_mapped(system_name)
     end
     if #orbit_rooms == 0 then return false end
 
-    local required_flags = {"shuttlepad"}
-    local additional_flags_str = f2t_settings_get("map", "brief_additional_flags") or "exchange"
-    for flag in string.gmatch(additional_flags_str, "[^,]+") do
-        local trimmed = flag:match("^%s*(.-)%s*$")
-        if trimmed ~= "" and trimmed ~= "shuttlepad" then
-            table.insert(required_flags, trimmed)
-        end
-    end
+    local required_flags = f2t_map_explore_strip_courier_outside_sol(
+        f2t_map_explore_default_required_flags(), system_name)
 
     for _, planet in ipairs(orbit_rooms) do
         if not f2t_map_explore_planet_has_flags(planet.area_id, required_flags) then return false end

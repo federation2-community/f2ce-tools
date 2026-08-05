@@ -20,15 +20,12 @@ function f2t_map_explore_navigate_to_next()
             local planet_name = F2T_MAP_EXPLORE_STATE.brief_planet_name or "Unknown"
             local area_id = F2T_MAP_EXPLORE_STATE.starting_area_id
             local system_name = area_id and getAreaUserData(area_id, "fed2_system") or ""
-            local is_sol = (string.lower(system_name) == "sol")
+            local is_sol = f2t_map_explore_is_sol(system_name)
             local missing_flags = {}
             for flag, _ in pairs(F2T_MAP_EXPLORE_STATE.brief_flags_set or {}) do
-                if not F2T_MAP_EXPLORE_STATE.brief_flags_found[flag] then
-                    if flag == "courier" and not is_sol then
-                        -- skip
-                    else
-                        table.insert(missing_flags, flag)
-                    end
+                local courier_exempt = flag == "courier" and not is_sol
+                if not F2T_MAP_EXPLORE_STATE.brief_flags_found[flag] and not courier_exempt then
+                    table.insert(missing_flags, flag)
                 end
             end
             table.sort(missing_flags)

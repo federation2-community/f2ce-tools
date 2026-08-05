@@ -7,7 +7,7 @@
 -- uses topology jump chains, legal under syndicate beacon rules.
 
 function f2t_map_explore_galaxy_start()
-    return f2t_map_explore_galaxy_begin(nil)
+    return f2t_map_explore_galaxy_start_with_filter(nil)
 end
 
 function f2t_map_explore_syndicate_start(syndicate_name)
@@ -24,10 +24,10 @@ function f2t_map_explore_syndicate_start(syndicate_name)
         syndicate_name = syndicate
     end
     syndicate_name = syndicate_name:gsub("^%l", string.upper)
-    return f2t_map_explore_galaxy_begin(syndicate_name)
+    return f2t_map_explore_galaxy_start_with_filter(syndicate_name)
 end
 
-function f2t_map_explore_galaxy_begin(syndicate_filter)
+function f2t_map_explore_galaxy_start_with_filter(syndicate_filter)
     if F2T_MAP_EXPLORE_STATE.active then
         cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
         return false
@@ -41,29 +41,13 @@ function f2t_map_explore_galaxy_begin(syndicate_filter)
     end
     cecho("  <dim_grey>Syncing galaxy topology...<reset>\n")
 
-    f2t_map_set_nav_owner("map-explore", function(reason)
-        if reason == "customs" then
-            F2T_MAP_EXPLORE_STATE.paused = true
-            F2T_MAP_EXPLORE_STATE.paused_reason = reason
-        end
-        return {auto_resume = true}
-    end)
-    if f2t_stamina_register_client then
-        f2t_stamina_register_client({
-            pause_callback  = f2t_map_explore_pause,
-            resume_callback = f2t_map_explore_resume,
-            check_active = function()
-                return F2T_MAP_EXPLORE_STATE.active and not F2T_MAP_EXPLORE_STATE.paused
-            end,
-        })
-    end
+    f2t_map_explore_register_safety_hooks()
 
     F2T_MAP_EXPLORE_STATE.active = true
     F2T_MAP_EXPLORE_STATE.mode = "galaxy"
     F2T_MAP_EXPLORE_STATE.starting_room_id = F2T_MAP_CURRENT_ROOM_ID
     F2T_MAP_EXPLORE_STATE.galaxy_cartel_list = {}
     F2T_MAP_EXPLORE_STATE.galaxy_current_cartel_index = 0
-    F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = nil
     F2T_MAP_EXPLORE_STATE.galaxy_syndicate_filter = syndicate_filter
     F2T_MAP_EXPLORE_STATE.galaxy_stats = {
         total_cartels = 0, cartels_explored = 0, cartels_skipped = 0,
@@ -145,49 +129,24 @@ function f2t_map_explore_galaxy_next_cartel()
     cecho(string.format("\n<green>[map-explore]<reset> Cartel %d/%d: <white>%s<reset>\n",
         index, #cartels, cartel_name))
 
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_cartel = f2t_map_get_current_cartel()
 
-    if current_cartel and current_cartel:lower() == cartel_name:lower() then
+    local function on_cartel_reached()
         F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored =
             F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored + 1
         f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
+    end
+
+    if current_cartel and current_cartel:lower() == cartel_name:lower() then
+        on_cartel_reached()
         return
     end
 
-    F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = cartel_name
-
-    -- Any link room works as a jump chain start; use the current system's.
-    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
-    if current_room and f2t_map_room_has_flag(current_room, "link") then
-        f2t_map_explore_jump_to_cartel(cartel_name)
-        return
-    end
-
-    local link_destination = current_system and (current_system .. " Space link") or "link"
-    cecho(string.format("  <dim_grey>Navigating to link to jump to %s<reset>\n", cartel_name))
-    if not f2t_map_navigate(link_destination) then
-        cecho(string.format("  <red>Error:<reset> Cannot navigate to a link room, skipping %s\n", cartel_name))
-        F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = nil
+    -- Different cartel: jump-chain travel handles cross-syndicate legality.
+    f2t_map_explore_travel_to("cartel", cartel_name, on_cartel_reached, function()
+        cecho(string.format("  <red>Error:<reset> Could not reach %s, skipping\n", cartel_name))
         f2t_map_explore_galaxy_next_cartel()
-        return
-    end
-    F2T_MAP_EXPLORE_STATE.phase = "jumping_to_cartel"
-end
-
--- Issue the blind jump chain toward a target cartel's hub system from the
--- link room we are standing in.
-function f2t_map_explore_jump_to_cartel(target_cartel)
-    local current_system = f2t_get_current_system()
-    local chain = current_system and f2t_map_topology_jump_chain(current_system, target_cartel)
-    if not chain or #chain == 0 then
-        chain = {string.format("jump %s", target_cartel)}
-    end
-    cecho(string.format("  <dim_grey>Jumping: %s<reset>\n", table.concat(chain, "; ")))
-    speedWalkDir = chain
-    speedWalkPath = {}
-    doSpeedWalk()
-    F2T_MAP_EXPLORE_STATE.phase = "arriving_in_cartel"
+    end)
 end
 
 function f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
@@ -219,7 +178,6 @@ function f2t_map_explore_galaxy_abort()
     F2T_MAP_EXPLORE_STATE.mode = nil
     F2T_MAP_EXPLORE_STATE.galaxy_cartel_list = {}
     F2T_MAP_EXPLORE_STATE.galaxy_current_cartel_index = 0
-    F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = nil
     F2T_MAP_EXPLORE_STATE.galaxy_syndicate_filter = nil
 end
 

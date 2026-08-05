@@ -168,20 +168,20 @@ elseif subcommand == "explore" then
         local target = words[2] and f2t_parse_rest(words, 2) or nil
         f2t_map_explore_start(mode, target)
 
+    elseif first == "system" then
+        -- f2t_map_explore_system_start defaults to the current system itself
+        -- when no name is given, same as the cartel/planet/syndicate forms.
+        f2t_map_explore_system_start(f2t_parse_rest(words, 2), "brief")
+
+    elseif first == "planet" then
+        -- f2t_map_explore_planet_start defaults to the current planet itself
+        -- when no name is given, same as the system/cartel/syndicate forms.
+        f2t_map_explore_planet_start("brief", f2t_parse_rest(words, 2))
+
     elseif first == "cartel" then
-        local cartel_name = f2t_parse_rest(words, 2)
-
-        if not cartel_name or cartel_name == "" then
-            cartel_name = f2t_map_get_current_cartel()
-        end
-
-        if not cartel_name or cartel_name == "" then
-            cecho("\n<red>[map]<reset> Error: No cartel specified and couldn't detect current cartel\n")
-            cecho("\n<dim_grey>Usage: map explore cartel <cartel><reset>\n")
-            return
-        end
-
-        f2t_map_explore_cartel_start(cartel_name)
+        -- f2t_map_explore_cartel_start defaults to the current cartel itself
+        -- when no name is given, same as the system/planet/syndicate forms.
+        f2t_map_explore_cartel_start(f2t_parse_rest(words, 2))
 
     elseif first == "galaxy" then
         f2t_map_explore_galaxy_start()

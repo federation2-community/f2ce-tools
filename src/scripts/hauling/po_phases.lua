@@ -238,7 +238,7 @@ function f2t_hauling_phase_po_navigate_to_buy()
 
     local nav_result = f2t_map_navigate(destination)
 
-    if nav_result == false then
+    if nav_result == nil then
         cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
         f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
         F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
@@ -379,7 +379,7 @@ function f2t_hauling_phase_po_bundled_buy_navigate()
 
     local nav_result = f2t_map_navigate(dest)
 
-    if nav_result == false then
+    if nav_result == nil then
         cecho(string.format("\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
             job.bundled_buy_planet))
         f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
@@ -443,7 +443,7 @@ function f2t_hauling_phase_po_navigate_to_sell()
 
     local nav_result = f2t_map_navigate(destination)
 
-    if nav_result == false then
+    if nav_result == nil then
         cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
         f2t_debug_log("[hauling/po] Navigation to sell location failed, skipping job")
         -- We have cargo but can't sell - skip to next job
@@ -678,7 +678,7 @@ function f2t_hauling_check_po_nav_complete()
     end
 
     -- Check if speedwalk completed
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/po] Navigation completed in phase %s with result: %s",
             phase, result or "unknown")

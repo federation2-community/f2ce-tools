@@ -483,7 +483,7 @@ function f2t_hauling_check_nav_to_akaturi_pickup_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/akaturi] Speedwalk stopped with result: %s", result or "unknown")
 
@@ -524,7 +524,7 @@ function f2t_hauling_check_nav_to_akaturi_delivery_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/akaturi] Speedwalk stopped with result: %s", result or "unknown")
 
@@ -565,7 +565,7 @@ function f2t_hauling_check_nav_to_ac_for_akaturi_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/akaturi] Speedwalk to AC room stopped with result: %s", result or "unknown")
 
@@ -614,7 +614,7 @@ function f2t_hauling_check_nav_to_planet_for_pickup_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/akaturi] Speedwalk to planet stopped with result: %s", result or "unknown")
 
@@ -654,7 +654,7 @@ function f2t_hauling_check_nav_to_planet_for_delivery_complete()
     end
 
     -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE then
+    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
         local result = F2T_SPEEDWALK_LAST_RESULT
         f2t_debug_log("[hauling/akaturi] Speedwalk to planet stopped with result: %s", result or "unknown")
 
