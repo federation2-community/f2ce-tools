@@ -55,15 +55,20 @@ function f2tCheckMapImport()
     -- lands in the full UI with no dialogs. A returning web user on an
     -- "upgrade" reason still gets the overlay below — they can choose.
     if f2t_is_web() and reason == "firstrun" then
-        local path = getMudletHomeDir() .. "/f2ce-tools/galaxy_brief.json"
-        local ok, result = f2t_map_import_file(path)
-        if ok then
-            f2t_debug_log("[map-import] web first-run — silently imported %s (%d rooms)", path, result)
-        else
-            f2t_debug_log("[map-import] web first-run — silent import failed: %s", tostring(result))
-        end
-        f2t_settings_set("map", "show_import_prompt", false)
-        markVersionApplied()
+        -- Defer off the synchronous apply() call (mirrors the overlay path's
+        -- tempTimer stagger) so the UI paints before the potentially large
+        -- galaxy_brief.json import runs — avoids a first-login freeze on web.
+        tempTimer(0.2, function()
+            local path = getMudletHomeDir() .. "/f2ce-tools/galaxy_brief.json"
+            local ok, result = f2t_map_import_file(path)
+            if ok then
+                f2t_debug_log("[map-import] web first-run — silently imported %s (%d rooms)", path, result)
+            else
+                f2t_debug_log("[map-import] web first-run — silent import failed: %s", tostring(result))
+            end
+            f2t_settings_set("map", "show_import_prompt", false)
+            markVersionApplied()
+        end)
         return
     end
 
