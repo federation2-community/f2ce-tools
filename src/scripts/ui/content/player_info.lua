@@ -19,7 +19,7 @@ local H_LABEL_CSS = [[
     border-right: 1px solid #3a3a4a;
     padding: 4px 8px;
     font-family: "Consolas","Monaco",monospace;
-]]
+]] .. (f2t_is_web() and "font-size: 9px;" or "")
 
 local BUTTON_CSS = string.format([[
     QLabel{
@@ -196,7 +196,8 @@ local function buildContent(target)
     -- Transparent text sub-label CSS (lets the cell's gradient show through).
     local CELL_TEXT_CSS =
         "background: transparent; border: none; color: #c8c8d0;" ..
-        ' padding: 4px 6px; font-family: "Consolas","Monaco",monospace;'
+        ' padding: 4px 6px; font-family: "Consolas","Monaco",monospace;' ..
+        (f2t_is_web() and " font-size: 9px;" or "")
 
     -- Six cells laid out manually (NOT an HBox): the fuel cell is a FIXED width
     -- sized to its readout + button, and the other five split the remaining width
