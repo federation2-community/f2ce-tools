@@ -170,7 +170,11 @@ function f2tInit()
             -- land straight in Full mode, same choice a desktop first-run
             -- user would make from the dialog.
             if f2t_is_web() then
+                -- Mirror the mode-select "Full" choice (ui/dialogs/popups.lua):
+                -- set the default workspace BEFORE fullStart() so the f2ce-tools
+                -- layout loads instead of Muxlet's blank default workspace.
                 f2t_settings_set("f2t", "mux_autostart", true)
+                Mux.configureHost({ defaultWorkspace = "f2ce-tools" })
                 Mux.fullStart()
             elseif f2tShowModeSelect then
                 f2tShowModeSelect()
