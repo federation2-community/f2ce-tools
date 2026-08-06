@@ -10,12 +10,21 @@ F2T_VERSION = (_f2tPkgInfo and _f2tPkgInfo.version) or "unknown"
 
 -- ── Web client detection ──────────────────────────────────────────────────────
 
--- True only in the dedicated Mudlet Web client. See design spec: getMudletInfo()
--- there self-describes as a "web-based MUD client"; getOS()/getMudletVersion()
--- mirror the desktop values and cannot distinguish web.
+-- True only in the dedicated Mudlet Web client (the "mudix" browser runtime).
+-- It registers a private global namespace (__mudix_* / __mws_*) that desktop
+-- Mudlet never has, so their presence identifies the web client. We check
+-- several so a future upstream rename of any one degrades gracefully (worst
+-- case: web falls back to the desktop prompts, no crash). Referencing an
+-- undefined global is nil in Lua, so this is safe on desktop.
+--
+-- NOTE: do NOT use getMudletInfo() here — in Mudlet Web it only ECHOES a
+-- diagnostic block and returns nil (it does not return a string).
 function f2t_is_web()
-    local info = (getMudletInfo and getMudletInfo()) or ""
-    return string.find(string.lower(info), "web%-based mud client") ~= nil
+    local markers = { "__mudix_is_connected", "__mudix_pump", "__mudix_now", "__mws_w" }
+    for _, name in ipairs(markers) do
+        if _G[name] ~= nil then return true end
+    end
+    return false
 end
 
 -- ── Debug ─────────────────────────────────────────────────────────────────────
