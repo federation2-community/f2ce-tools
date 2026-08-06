@@ -166,7 +166,15 @@ function f2tInit()
         local autostart = d and d["f2t"] and d["f2t"]["mux_autostart"]
 
         if autostart == nil then
-            if f2tShowModeSelect then f2tShowModeSelect() end
+            -- Dedicated Mudlet Web client: skip the mode-select dialog and
+            -- land straight in Full mode, same choice a desktop first-run
+            -- user would make from the dialog.
+            if f2t_is_web() then
+                f2t_settings_set("f2t", "mux_autostart", true)
+                Mux.fullStart()
+            elseif f2tShowModeSelect then
+                f2tShowModeSelect()
+            end
         elseif autostart == true then
             Mux.fullStart()
         end
