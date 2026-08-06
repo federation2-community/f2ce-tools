@@ -133,10 +133,10 @@ jobs:
         run: |
           PREV_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
           if [[ -n "$PREV_TAG" ]]; then
-            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:'- %s' | head -50)
+            CHANGELOG=$(.github/scripts/format_changelog.sh 50 "${PREV_TAG}..HEAD")
             SINCE="since ${PREV_TAG}"
           else
-            CHANGELOG=$(git log --pretty=format:'- %s' -50)
+            CHANGELOG=$(.github/scripts/format_changelog.sh 50)
             SINCE="(all commits)"
           fi
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
@@ -189,9 +189,9 @@ jobs:
             # Auto-generate from git log since the last production tag
             PREV_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
             if [[ -n "$PREV_TAG" ]]; then
-              DELTA=$(git log "${PREV_TAG}..HEAD" --pretty=format:'- %s' | head -30)
+              DELTA=$(.github/scripts/format_changelog.sh 30 "${PREV_TAG}..HEAD")
             else
-              DELTA=$(git log --pretty=format:'- %s' -30)
+              DELTA=$(.github/scripts/format_changelog.sh 30)
             fi
           else
             # Tag push: read the annotated tag message

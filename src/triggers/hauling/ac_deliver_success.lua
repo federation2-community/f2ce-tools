@@ -2,9 +2,6 @@
 -- Confirm cargo delivery - payment amount already captured by fee_start trigger
 -- This trigger confirms the transaction completed successfully
 
--- Clear the Hauling Jobs panel's active-job strip, regardless of automation state
-if f2tHaulingJobsOnJobDelivered then f2tHaulingJobsOnJobDelivered() end
-
 -- Only process if hauling is active and in delivering phase
 if not (F2T_HAULING_STATE and F2T_HAULING_STATE.active and
         F2T_HAULING_STATE.current_phase == "ac_delivering") then

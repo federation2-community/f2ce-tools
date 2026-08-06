@@ -1,13 +1,13 @@
--- Sortable table of AC courier jobs captured from `work` output, with
--- computed route distance and effective pay (20% bonus when the route beats
--- the allowed GTU, 50% penalty when it exceeds it). Job numbers accept the
--- job; origin and destination navigate. A button strip triggers
--- work/collect/deliver.
+-- Sortable table of AC courier jobs, with computed route distance and
+-- effective pay (20% bonus when the route beats the allowed GTU, 50%
+-- penalty when it exceeds it). Job numbers accept the job; origin and
+-- destination navigate. A button strip triggers collect/deliver.
 --
--- Data flow: the ui triggers (triggers/ui/hauling_work_*.lua) call
--- f2tHaulingJobsHeader()/f2tHaulingJobsLine() and gag the raw listing, but
--- only while at least one panel is open and hauling automation isn't running
--- (the automation's own capture owns the output then).
+-- Data flow: fully live via GMCP, no trigger scraping. gmcp.jobs.board is
+-- the job listing, gmcp.char.job is the player's current contract (absent
+-- when there isn't one; moves.cur/moves.max update live as the player
+-- travels). Both feed this module directly through anonymous event
+-- handlers registered once at load time.
 
 local H_BAR  = 26    -- button strip height (px)
 local H_CUR  = 22    -- active-job strip height (px), only shown while a job is accepted
@@ -42,7 +42,7 @@ local _COL_HDR_CSS = [[
 ]]
 
 -- Accent-colored action buttons: a left accent bar plus a tinted hover state,
--- distinct per action so Work/Collect/Deliver read apart at a glance.
+-- distinct per action so Collect/Deliver read apart at a glance.
 local function actionBtnCss(accent, accentHover)
     return string.format([[
         QLabel {
@@ -62,7 +62,6 @@ local function actionBtnCss(accent, accentHover)
     ]], accent, accentHover)
 end
 
-local _BTN_WORK_CSS    = actionBtnCss("#3aa0ff", "#5cb8ff")
 local _BTN_COLLECT_CSS = actionBtnCss("#3ecf5e", "#5ce87c")
 local _BTN_DELIVER_CSS = actionBtnCss("#e0b84d", "#f0cc66")
 
@@ -74,62 +73,25 @@ local _CUR_BAR_CSS = [[
     border-left: 3px solid #3ecf5e;
 ]]
 
+-- Column layout shared between the table header/rows and the active-job
+-- strip, so the pinned strip visually lines up with the columns below it.
+local CUR_COLS = {
+    { key = "status", pct = 10 },
+    { key = "origin", pct = 22 },
+    { key = "dest",   pct = 22 },
+    { key = "moves",  pct = 16 },
+    { key = "pay",    pct = 30 },
+}
+
 -- Per-pane state, keyed by target._gid
 local instances = {}
 
--- Job rows captured from the current `work` listing (shared by all instances).
+-- Job rows from gmcp.jobs.board (shared by all instances).
 local jobs = {}
 
--- The confirmed accepted job, shown pinned above the list until it's
--- delivered (shared by all instances). Only set once the game confirms the
--- bid was accepted -- see f2tHaulingJobsOnAcceptSuccess().
+-- The player's current contract from gmcp.char.job, or nil when there isn't
+-- one (shared by all instances).
 local currentJob = nil
-
--- Job number of an `ac <n>` sent from the panel that hasn't been confirmed
--- or rejected yet. The accept confirmation text doesn't include the job
--- number, so this is how the success/failure triggers know which click it
--- belongs to. Cleared by success, failure, or a 5s failsafe.
-local pendingAcceptJobNumber = nil
-local _pendingAcceptTimer = nil
-
-local function clearPendingAccept()
-    pendingAcceptJobNumber = nil
-    if _pendingAcceptTimer then killTimer(_pendingAcceptTimer); _pendingAcceptTimer = nil end
-end
-
-local function armPendingAccept(jobNumber)
-    pendingAcceptJobNumber = jobNumber
-    if _pendingAcceptTimer then killTimer(_pendingAcceptTimer) end
-    _pendingAcceptTimer = tempTimer(5, clearPendingAccept)
-end
-
--- Forward-declared: defined after refreshAll below, but referenced by the
--- Job-number column's click callback in buildCols().
-local acceptJob
-
--- Set right before the Work button sends its command; the ui triggers only
--- gag the raw listing while this is true, so a manually typed `work` still
--- prints normally. Cleared once the listing goes quiet for 0.5s (or a manual
--- click never gets a response at all, after a longer safety window).
-local awaitingWorkCommand = false
-local _awaitWorkTimer = nil
-
-local function clearAwaitingWorkCommand()
-    awaitingWorkCommand = false
-    if _awaitWorkTimer then killTimer(_awaitWorkTimer); _awaitWorkTimer = nil end
-end
-
-local function armAwaitingWorkCommand()
-    awaitingWorkCommand = true
-    if _awaitWorkTimer then killTimer(_awaitWorkTimer) end
-    _awaitWorkTimer = tempTimer(3, clearAwaitingWorkCommand)
-end
-
-local function extendAwaitingWorkCommand()
-    if not awaitingWorkCommand then return end
-    if _awaitWorkTimer then killTimer(_awaitWorkTimer) end
-    _awaitWorkTimer = tempTimer(0.5, clearAwaitingWorkCommand)
-end
 
 local function stripThe(name)
     if not name then return "" end
@@ -149,14 +111,59 @@ local function navigateTo(location)
     end
 end
 
-local function currentJobHtml(job)
-    return string.format(
-        "<div style='padding:2px 8px;%s'>" ..
-            "<span style='color:#3ecf5e;font-weight:bold;'>&#9679; Active Job %s</span>" ..
-            "<span style='color:#c8c8c8;'>&nbsp;&nbsp;%s &#8594; %s&nbsp;&nbsp;</span>" ..
-            "<span style='color:#e0b84d;font-weight:bold;'>%dig</span>" ..
-        "</div>",
-        CELL_FONT, tostring(job.jobNumber), job.originDisplay, job.destDisplay, job.basePay)
+local function acceptJob(jobNumber)
+    send("ac " .. jobNumber, false)
+end
+
+-- Computes route distance and bonus/penalty pay for one gmcp.jobs.board entry.
+local function buildJobRow(entry)
+    local origin      = entry.source
+    local dest        = entry.destination
+    local allowedNum  = tonumber(entry.gtu) or 0
+    local basePay     = tonumber(entry.totalValue) or 0
+
+    -- The cartel-bounded BFS is fast but depends on areas being tagged with
+    -- fed2_cartel (from the galaxy/cartel scraper); on a map that hasn't been
+    -- scraped yet it fails for every job, silently collapsing the GTU/Pay
+    -- color signal to plain white for every row. Fall back to the slower
+    -- whole-galaxy pathfinder so distance (and therefore the colors) still
+    -- resolve even when cartel tagging is missing or the route genuinely
+    -- crosses a cartel boundary.
+    local distance
+    if f2t_map_get_cartel_route_info then
+        local info = f2t_map_get_cartel_route_info(origin, dest)
+        if info and info.success then distance = info.space_moves end
+    end
+    if not distance and f2t_map_get_route_info then
+        local info = f2t_map_get_route_info(origin, dest)
+        if info and info.success then distance = info.space_moves end
+    end
+
+    local effectivePay, payType
+    if not distance then
+        effectivePay, payType = basePay, "unknown"
+    elseif distance < allowedNum then
+        effectivePay, payType = math.floor(basePay * 1.20), "bonus"
+    elseif distance > allowedNum then
+        effectivePay, payType = math.floor(basePay * 0.50), "penalty"
+    else
+        effectivePay, payType = basePay, "normal"
+    end
+
+    return {
+        jobNumber     = entry.id,
+        origin        = origin,
+        dest          = dest,
+        originDisplay = stripThe(origin),
+        destDisplay   = stripThe(dest),
+        allowedMoves  = allowedNum,
+        basePay       = basePay,
+        distance      = distance,
+        effectivePay  = effectivePay,
+        payType       = payType,
+        pay           = basePay,
+        moves         = allowedNum,
+    }
 end
 
 local function buildCols()
@@ -167,7 +174,7 @@ local function buildCols()
             sortable      = true,
             sort_value    = function(row) return tonumber(row.jobNumber) or 0 end,
             scrollbox_pct = 10,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format(
                     "<span style='%scolor:#7aa2ff;text-decoration:underline;'>%s</span>",
                     CELL_FONT, v or ""))
@@ -259,6 +266,40 @@ local function buildCols()
     }
 end
 
+-- Fills the active-job strip's per-column cells from currentJob (or blanks
+-- them when there isn't one -- layoutInstance() hides the strip in that case).
+local function renderCurrentJobBar(inst)
+    local c = inst.curCells
+    if not c then return end
+    if not currentJob then
+        for _, spec in ipairs(CUR_COLS) do c[spec.key]:echo("") end
+        return
+    end
+
+    c.status:echo(string.format(
+        "<span style='%scolor:#3ecf5e;font-weight:bold;'>&#9679; Active</span>", CELL_FONT))
+
+    c.origin:echo(string.format("<span style='%scolor:#00cccc;'>%s</span>", CELL_FONT, currentJob.originDisplay))
+    c.origin:setToolTip("Go to " .. currentJob.origin)
+    c.origin:setClickCallback(function() navigateTo(currentJob.origin) end)
+
+    c.dest:echo(string.format("<span style='%scolor:#00cccc;'>%s</span>", CELL_FONT, currentJob.destDisplay))
+    c.dest:setToolTip("Go to " .. currentJob.dest)
+    c.dest:setClickCallback(function() navigateTo(currentJob.dest) end)
+
+    local movesColor = (currentJob.curMoves > currentJob.maxMoves) and "#ff5555" or "#c8c8c8"
+    c.moves:echo(string.format(
+        "<span style='%scolor:%s;'><b>%d</b>/<b>%d</b></span>",
+        CELL_FONT, movesColor, currentJob.curMoves, currentJob.maxMoves))
+    c.moves:setToolTip("Moves used / allowed for this contract")
+
+    local status = currentJob.collected and "in transit" or "awaiting pickup"
+    c.pay:echo(string.format(
+        "<span style='%scolor:#e0b84d;font-weight:bold;'>%dig</span>" ..
+        "<span style='%scolor:#888888;font-size:8px;'>&nbsp;(%s)</span>",
+        CELL_FONT, currentJob.basePay, CELL_FONT, status))
+end
+
 -- Repositions the column header/scrollbox below the active-job strip,
 -- expanding or collapsing that strip's space depending on whether a job
 -- is currently under contract.
@@ -267,11 +308,11 @@ local function layoutInstance(gid)
     if not inst then return end
 
     if currentJob then
-        inst.currentJobBar:echo(currentJobHtml(currentJob))
         inst.currentJobBar:show()
     else
         inst.currentJobBar:hide()
     end
+    renderCurrentJobBar(inst)
     local curH = currentJob and H_CUR or 0
     inst.currentJobBar:resize(nil, curH)
 
@@ -301,7 +342,7 @@ end
 
 local _renderTimer = nil
 local function refreshAllDebounced()
-    -- Job lines arrive in a burst; draw once after the listing settles.
+    -- gmcp.jobs.board can fire multiple times in a burst; draw once things settle.
     if _renderTimer then killTimer(_renderTimer) end
     _renderTimer = tempTimer(0.15, function()
         _renderTimer = nil
@@ -309,139 +350,58 @@ local function refreshAllDebounced()
     end)
 end
 
--- Sends the accept command and marks it pending. The job stays in the list
--- and currentJob is untouched until the game actually confirms the bid --
--- see f2tHaulingJobsOnAcceptSuccess()/OnAcceptFailed() below. Bids fail
--- whenever someone else took the job first, a contract is already
--- outstanding, or the player's rank can't use Armstrong Cuthbert at all.
-acceptJob = function(jobNumber)
-    armPendingAccept(jobNumber)
-    send("ac " .. jobNumber, false)
+-- ── GMCP feed ──────────────────────────────────────────────────────────────
+
+local function onGmcpJobsBoard()
+    local board = gmcp and gmcp.jobs and gmcp.jobs.board
+    if type(board) ~= "table" then board = {} end
+    local rows = {}
+    for _, entry in ipairs(board) do
+        rows[#rows + 1] = buildJobRow(entry)
+    end
+    jobs = rows
+    refreshAllDebounced()
 end
 
--- ── Trigger entry points ──────────────────────────────────────────────────────
-
--- True only while a listing sent by the Work button is in flight; the ui
--- work triggers use this to decide whether to capture/gag the raw output,
--- so a manually typed `work` still prints normally.
-function f2tHaulingJobsAwaitingCommand()
-    return awaitingWorkCommand
+-- gmcp.char.job carries a stray {offer=<userdata>} placeholder when there's
+-- no real contract; only source/destination being real strings means an
+-- actual job is active.
+local function jobIsActive(job)
+    return type(job) == "table" and type(job.source) == "string" and type(job.destination) == "string"
 end
 
--- Called by the accept-success trigger: "Your bid is accepted for N tons of
--- X from <origin> with delivery to <dest>." Fires for every successful `ac`,
--- panel-click or manually typed -- the panel always reflects real game
--- state. If a panel click is pending, matches by job number (exact); if
--- accepted manually, the confirmation text has no job number, so falls back
--- to matching the row by origin/dest instead.
-function f2tHaulingJobsOnAcceptSuccess(origin, dest)
-    local jobNumber = pendingAcceptJobNumber
-    clearPendingAccept()
-
-    local job
-    for i, row in ipairs(jobs) do
-        if (jobNumber and tostring(row.jobNumber) == tostring(jobNumber))
-            or (not jobNumber and row.origin == origin and row.dest == dest) then
-            job = table.remove(jobs, i)
-            break
+local function onGmcpCharJob()
+    local job = gmcp and gmcp.char and gmcp.char.job
+    if not jobIsActive(job) then
+        if currentJob then
+            currentJob = nil
+            refreshAll()
         end
+        return
     end
-    if not job then
-        -- Fallback if the list doesn't have a matching row (e.g. it was
-        -- re-fetched in the meantime): build a minimal entry from the
-        -- confirmation text itself. Job number is unknown in this case.
-        job = {
-            jobNumber     = jobNumber or "?",
-            origin        = origin,
-            dest          = dest,
-            originDisplay = stripThe(origin),
-            destDisplay   = stripThe(dest),
-            basePay       = 0,
-        }
-    end
-    currentJob = job
+    currentJob = {
+        origin        = job.source,
+        dest          = job.destination,
+        originDisplay = stripThe(job.source),
+        destDisplay   = stripThe(job.destination),
+        curMoves      = tonumber(job.moves and job.moves.cur) or 0,
+        maxMoves      = tonumber(job.moves and job.moves.max) or 0,
+        basePay       = tonumber(job.totalValue) or 0,
+        commodity     = job.commodity,
+        quantity      = tonumber(job.quantity) or 0,
+        collected     = job.collected and true or false,
+    }
     refreshAll()
 end
 
--- Called whenever a pending `ac <n>` turns out to have failed: someone else
--- took the job, a contract is already outstanding, or the rank check
--- rejected it. jobNumber is nil for the generic (non-job-specific) failure
--- messages; when present, only clears the pending state if it matches.
-function f2tHaulingJobsOnAcceptFailed(jobNumber)
-    if jobNumber and pendingAcceptJobNumber and tostring(pendingAcceptJobNumber) ~= tostring(jobNumber) then
-        return
-    end
-    clearPendingAccept()
-end
-
--- Called by the ac_job_taken trigger with the specific job number involved.
-function f2tHaulingJobsOnJobTaken(jobNumber)
-    f2tHaulingJobsOnAcceptFailed(jobNumber)
-end
-
--- Called by the ac_deliver_success trigger; the contract is complete.
-function f2tHaulingJobsOnJobDelivered()
-    if currentJob then
-        currentJob = nil
-        refreshAll()
-    end
-end
-
-function f2tHaulingJobsHeader()
-    jobs = {}
-    extendAwaitingWorkCommand()
-    refreshAllDebounced()
-end
-
-function f2tHaulingJobsLine(jobNumber, origin, dest, allowedMoves, payPerTon)
-    extendAwaitingWorkCommand()
-    local basePay      = (tonumber(payPerTon) or 0) * 75
-    local allowedNum   = tonumber(allowedMoves) or 0
-
-    -- The cartel-bounded BFS is fast but depends on areas being tagged with
-    -- fed2_cartel (from the galaxy/cartel scraper); on a map that hasn't been
-    -- scraped yet it fails for every job, silently collapsing the GTU/Pay
-    -- color signal to plain white for every row. Fall back to the slower
-    -- whole-galaxy pathfinder so distance (and therefore the colors) still
-    -- resolve even when cartel tagging is missing or the route genuinely
-    -- crosses a cartel boundary.
-    local distance
-    if f2t_map_get_cartel_route_info then
-        local info = f2t_map_get_cartel_route_info(origin, dest)
-        if info and info.success then distance = info.space_moves end
-    end
-    if not distance and f2t_map_get_route_info then
-        local info = f2t_map_get_route_info(origin, dest)
-        if info and info.success then distance = info.space_moves end
-    end
-
-    local effectivePay, payType
-    if not distance then
-        effectivePay, payType = basePay, "unknown"
-    elseif distance < allowedNum then
-        effectivePay, payType = math.floor(basePay * 1.20), "bonus"
-    elseif distance > allowedNum then
-        effectivePay, payType = math.floor(basePay * 0.50), "penalty"
-    else
-        effectivePay, payType = basePay, "normal"
-    end
-
-    jobs[#jobs + 1] = {
-        jobNumber     = jobNumber,
-        origin        = origin,
-        dest          = dest,
-        originDisplay = stripThe(origin),
-        destDisplay   = stripThe(dest),
-        allowedMoves  = allowedNum,
-        basePay       = basePay,
-        distance      = distance,
-        effectivePay  = effectivePay,
-        payType       = payType,
-        pay           = basePay,
-        moves         = allowedNum,
-    }
-    refreshAllDebounced()
-end
+-- Registered once at module load, same as every other always-on GMCP-fed
+-- content module (missions/company/futures/etc.) -- never torn down.
+-- Both "gmcp.jobs.board" and "gmcp.jobs" are registered since it's not
+-- certain from the wire which level of the tree the server's update event
+-- fires on; a redundant call is harmless, it just rebuilds `jobs` again.
+registerAnonymousEventHandler("gmcp.jobs.board", onGmcpJobsBoard)
+registerAnonymousEventHandler("gmcp.jobs", onGmcpJobsBoard)
+registerAnonymousEventHandler("gmcp.char.job", onGmcpCharJob)
 
 -- ── Content build ─────────────────────────────────────────────────────────────
 
@@ -472,7 +432,6 @@ local function buildContent(target)
     bar:setStyleSheet(_HDR_BAR_CSS)
 
     local buttons = {
-        { label = "🚚 Work",    cmd = "work",    tip = "List available AC jobs",            css = _BTN_WORK_CSS },
         { label = "📦 Collect", cmd = "collect", tip = "Collect cargo for the accepted job", css = _BTN_COLLECT_CSS },
         { label = "✅ Deliver", cmd = "deliver", tip = "Deliver cargo at the destination",   css = _BTN_DELIVER_CSS },
     }
@@ -485,19 +444,29 @@ local function buildContent(target)
         btn:echo("<center>" .. b.label .. "</center>")
         btn:setToolTip(b.tip)
         local cmd = b.cmd
-        btn:setClickCallback(function()
-            if cmd == "work" then armAwaitingWorkCommand() end
-            send(cmd, false)
-        end)
+        btn:setClickCallback(function() send(cmd, false) end)
     end
 
     -- ── Active-job strip ──────────────────────────────────────────────────────
-    -- Hidden/zero-height until a job is accepted; layoutInstance() sizes it.
+    -- Hidden/zero-height until gmcp.char.job has a job; layoutInstance() sizes it.
     local currentJobBar = Geyser.Label:new({
         name = wid(), x = 0, y = H_BAR, width = "100%", height = 0,
     }, target.content)
     currentJobBar:setStyleSheet(_CUR_BAR_CSS)
     currentJobBar:hide()
+
+    local curCells = {}
+    local curXPct = 0
+    for _, spec in ipairs(CUR_COLS) do
+        local lbl = Geyser.Label:new({
+            name  = wid(),
+            x = curXPct .. "%", y = 0,
+            width = spec.pct .. "%", height = "100%",
+        }, currentJobBar)
+        lbl:setStyleSheet("background-color: transparent; border: none;")
+        curCells[spec.key] = lbl
+        curXPct = curXPct + spec.pct
+    end
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
@@ -530,7 +499,7 @@ local function buildContent(target)
         name = wid(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
     }, target.content)
     noJobsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
-    noJobsLbl:echo(emptyStateHtml("No jobs listed — click Work to check the board."))
+    noJobsLbl:echo(emptyStateHtml("No AC jobs currently listed."))
     noJobsLbl:hide()
 
     -- ── Table system ──────────────────────────────────────────────────────────
@@ -562,13 +531,14 @@ local function buildContent(target)
     f2tTableSetColHdrs(tableId, colHdrs)
 
     instances[gid] = {
-        tableId      = tableId,
-        colBar       = colBar,
+        tableId       = tableId,
+        colBar        = colBar,
         currentJobBar = currentJobBar,
-        scroll       = scroll,
-        contentLabel = contentLabel,
-        contentW     = contentW,
-        noJobsLbl    = noJobsLbl,
+        curCells      = curCells,
+        scroll        = scroll,
+        contentLabel  = contentLabel,
+        contentW      = contentW,
+        noJobsLbl     = noJobsLbl,
     }
 
     refreshInstance(gid)

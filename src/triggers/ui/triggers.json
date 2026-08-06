@@ -8,26 +8,6 @@
     "patterns": [{"pattern": "^$", "type": "regex"}]
   },
   {
-    "name": "hauling_work_start",
-    "patterns": [{"pattern": "Work available from Armstrong Cuthbert:", "type": "exact"}]
-  },
-  {
-    "name": "hauling_work_line",
-    "patterns": [{"pattern": "^\\s+(\\d+)\\.\\s+From\\s+(.+?)\\s+to\\s+(.+?)\\s+-\\s+\\d+\\s+tons\\s+of\\s+\\S+\\s+-\\s+(\\d+)gtu\\s+(\\d+)ig", "type": "regex"}]
-  },
-  {
-    "name": "hauling_ac_accept_success",
-    "patterns": [{"pattern": "^Your bid is accepted for (\\d+) tons of (.+?) from (.+?) with delivery to (.+?)\\.$", "type": "regex"}]
-  },
-  {
-    "name": "hauling_ac_already_has_contract",
-    "patterns": [{"pattern": "You already have an uncompleted contract!", "type": "exact"}]
-  },
-  {
-    "name": "hauling_ac_no_service",
-    "patterns": [{"pattern": "Armstrong Cuthbert Inc has no haulage work for you at the moment.", "type": "exact"}]
-  },
-  {
     "name": "price_checker_line",
     "patterns": [{"pattern": "^([\\w\\s]+): ([\\w\\s]+) is (buying|selling) (\\d+) tons at (\\d+)ig/ton$", "type": "regex"}]
   },

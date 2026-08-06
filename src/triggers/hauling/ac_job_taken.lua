@@ -2,9 +2,6 @@
 -- Job is no longer available - someone else took it
 local job_number = tonumber(matches[2])
 
--- Clear the Hauling Jobs panel's pending accept, if it was waiting on this job
-if f2tHaulingJobsOnJobTaken then f2tHaulingJobsOnJobTaken(job_number) end
-
 -- Notify hauling system if active
 if F2T_HAULING_STATE and F2T_HAULING_STATE.active and F2T_HAULING_STATE.ac_job then
     if F2T_HAULING_STATE.ac_job.number == job_number then
