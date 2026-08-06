@@ -1,6 +1,6 @@
 {
   "package": "f2ce-tools",
-  "version": "3.2.2",
+  "version": "3.2.4",
   "dependency": {
     "package": "Muxlet",
     "version": "v2.2.8",
@@ -9,7 +9,10 @@
     "versionVar": "F2T_REQUIRED_MUXLET",
     "urlVar": "MUXLET_URL"
   },
-  "devServer": { "host": "play.federation2.com", "port": "30003" },
+  "devServer": {
+    "host": "play.federation2.com",
+    "port": "30003"
+  },
   "devProfile": "f2ce-dev",
   "devUsername": "jackrungh",
   "author": "tmtocloud",

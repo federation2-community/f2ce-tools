@@ -19,15 +19,15 @@ local H_LABEL_CSS = [[
     border-right: 1px solid #3a3a4a;
     padding: 4px 8px;
     font-family: "Consolas","Monaco",monospace;
-]]
+]] .. (f2t_is_web() and "font-size: 9px;" or "")
 
-local BUTTON_CSS = [[
+local BUTTON_CSS = string.format([[
     QLabel{
         background-color: rgba(40, 40, 45, 200);
         border: 1px solid rgba(100, 100, 110, 180);
         border-radius: 3px;
         color: rgba(200, 200, 210, 255);
-        font-size: 11px; font-weight: bold;
+        font-size: %s; font-weight: bold;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover{
@@ -35,7 +35,7 @@ local BUTTON_CSS = [[
         border-color: rgba(120, 180, 255, 200);
         color: white;
     }
-]]
+]], f2t_ui_px(11))
 
 
 -- Fuel cell is a fixed width sized to its readout + Buy Fuel button (see layout
@@ -196,7 +196,8 @@ local function buildContent(target)
     -- Transparent text sub-label CSS (lets the cell's gradient show through).
     local CELL_TEXT_CSS =
         "background: transparent; border: none; color: #c8c8d0;" ..
-        ' padding: 4px 6px; font-family: "Consolas","Monaco",monospace;'
+        ' padding: 4px 6px; font-family: "Consolas","Monaco",monospace;' ..
+        (f2t_is_web() and " font-size: 9px;" or "")
 
     -- Six cells laid out manually (NOT an HBox): the fuel cell is a FIXED width
     -- sized to its readout + button, and the other five split the remaining width

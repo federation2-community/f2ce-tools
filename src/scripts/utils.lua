@@ -8,6 +8,31 @@
 local _f2tPkgInfo = getPackageInfo("f2ce-tools")
 F2T_VERSION = (_f2tPkgInfo and _f2tPkgInfo.version) or "unknown"
 
+-- ── Web client detection ──────────────────────────────────────────────────────
+
+-- True only in the dedicated Mudlet Web client (the "mudix" browser runtime).
+-- It registers a private global namespace (__mudix_* / __mws_*) that desktop
+-- Mudlet never has, so their presence identifies the web client. We check
+-- several so a future upstream rename of any one degrades gracefully (worst
+-- case: web falls back to the desktop prompts, no crash). Referencing an
+-- undefined global is nil in Lua, so this is safe on desktop.
+--
+-- NOTE: do NOT use getMudletInfo() here — in Mudlet Web it only ECHOES a
+-- diagnostic block and returns nil (it does not return a string).
+function f2t_is_web()
+    local markers = { "__mudix_is_connected", "__mudix_pump", "__mudix_now", "__mws_w" }
+    for _, name in ipairs(markers) do
+        if _G[name] ~= nil then return true end
+    end
+    return false
+end
+
+-- GUI font scaling: Mudlet Web renders panel text larger than desktop, so shrink
+-- it ~15% on web only. Desktop is unchanged. Helpers return a CSS size token.
+F2T_UI_FONT_SCALE = f2t_is_web() and 0.85 or 1.0
+function f2t_ui_pt(pt) return string.format("%gpt", pt * F2T_UI_FONT_SCALE) end
+function f2t_ui_px(px) return string.format("%gpx", math.floor(px * F2T_UI_FONT_SCALE + 0.5)) end
+
 -- ── Debug ─────────────────────────────────────────────────────────────────────
 
 F2T_DEBUG = false

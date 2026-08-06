@@ -15,7 +15,7 @@ local RC_DEFAULT = "#c8c8c8"
 local RC_OFFLINE = "#888888"
 local RC_STAFF   = "#6b8e23"   -- Plutocrat with a staff role
 
-local CELL_FONT = "font-size:12pt;font-family:Consolas,Monaco,monospace;"
+local CELL_FONT = "font-size:"..f2t_ui_pt(12)..";font-family:Consolas,Monaco,monospace;"
 
 local _COL_HDR_CSS = [[
     QLabel {

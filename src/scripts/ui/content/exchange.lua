@@ -32,7 +32,7 @@ local BUY_COL_W  = 12    -- visible chars for the ticker's fixed-width buy colum
 local LAYOUT_TOP  = H_HDR + H_COL
 local TICK_TOTAL  = TICK_HDR_H + TICK_H
 
-local CELL_FONT = "font-size:10pt;font-family:Consolas,Monaco,monospace;"
+local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
 local C_W  = "#d8d8d8"
 local C_GR = "#888888"
 local C_G  = "#44cc44"

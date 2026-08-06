@@ -21,7 +21,7 @@ local SB_W  = 17    -- scrollbar pixel allowance
 local H_FIN = 210   -- financials stats block height (px): stats + analysis, sized to fit without scrolling
 local DEPOT_PCT = 26 -- depot console share of the factories panel (%)
 
-local CELL_FONT = "font-size:10pt;font-family:Consolas,Monaco,monospace;"
+local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
 
 -- Shared "nothing here" look for empty tables (no factories, no depots, ...)
 -- so every empty state in this content reads the same way.
