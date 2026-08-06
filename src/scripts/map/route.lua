@@ -93,14 +93,24 @@ function f2t_map_get_cartel_route_info(origin, destination)
         local current = queue[head]
         head = head + 1
         if current == dest_room_id then break end
-        for _, neighbors in ipairs({getRoomExits(current) or {}, getSpecialExits(current) or {}}) do
-            for _, destId in pairs(neighbors) do
-                if destId and destId > 0 and cartelRooms[destId] and not visited[destId] then
-                    visited[destId] = true
-                    parent[destId]  = current
-                    queue[#queue + 1] = destId
-                end
+
+        local function visit(destId)
+            if type(destId) == "number" and destId > 0 and cartelRooms[destId] and not visited[destId] then
+                visited[destId] = true
+                parent[destId]  = current
+                queue[#queue + 1] = destId
             end
+        end
+
+        -- getRoomExits() is {[direction] = destRoomId} -- room ids are values.
+        for _, destId in pairs(getRoomExits(current) or {}) do
+            visit(destId)
+        end
+        -- getSpecialExits() is {[destRoomId] = {command = true, ...}} -- the
+        -- opposite shape: room ids are keys, not values (see special.lua's
+        -- identical "for dest_room_id, commands in pairs(...)" usage).
+        for destId, _ in pairs(getSpecialExits(current) or {}) do
+            visit(destId)
         end
     end
 

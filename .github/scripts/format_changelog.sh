@@ -1,11 +1,11 @@
 #!/bin/bash
-# Formats commit history as markdown bullets. A commit's first non-blank
-# message line becomes the top-level bullet (used verbatim if it already
-# starts with "- ", since a commit's whole message can be a single run of
-# hyphenated lines with no separate subject/body split). Any further "- "
-# prefixed lines become indented sub-bullets under it, so multi-line
-# hyphenated commit messages render as nested lists instead of being
-# dropped or double-bulleted.
+# Formats commit history as markdown bullets. A single-line commit message
+# becomes one bullet. A commit whose first message line already starts with
+# "- " has no real subject of its own (it's just a run of hyphenated lines) —
+# every such line is a peer, not a child of the first, so those get an empty
+# parent bullet with all of them nested underneath as sub-bullets. A commit
+# with a genuine subject line followed by "- " prefixed body lines keeps the
+# subject as the parent bullet and nests the body lines under it.
 #
 # Usage: format_changelog.sh <max_commits> [git-log-args...]
 set -euo pipefail
@@ -17,15 +17,26 @@ shift
   [[ -z "$sha" ]] && continue
   mapfile -t lines < <(git log -1 --pretty=format:'%B' "$sha" | grep -v '^$')
   first="${lines[0]:-}"
-  if [[ "$first" == "- "* ]]; then
-    echo "$first"
+  if [[ ${#lines[@]} -eq 1 ]]; then
+    if [[ "$first" == "- "* ]]; then
+      echo "$first"
+    else
+      echo "- $first"
+    fi
+  elif [[ "$first" == "- "* ]]; then
+    echo "-"
+    for line in "${lines[@]}"; do
+      if [[ "$line" == "- "* ]]; then
+        echo "  $line"
+      fi
+    done
   else
     echo "- $first"
+    for ((i = 1; i < ${#lines[@]}; i++)); do
+      line="${lines[$i]}"
+      if [[ "$line" == "- "* ]]; then
+        echo "  $line"
+      fi
+    done
   fi
-  for ((i = 1; i < ${#lines[@]}; i++)); do
-    line="${lines[$i]}"
-    if [[ "$line" == "- "* ]]; then
-      echo "  $line"
-    fi
-  done
 done
