@@ -8,6 +8,16 @@
 local _f2tPkgInfo = getPackageInfo("f2ce-tools")
 F2T_VERSION = (_f2tPkgInfo and _f2tPkgInfo.version) or "unknown"
 
+-- ── Web client detection ──────────────────────────────────────────────────────
+
+-- True only in the dedicated Mudlet Web client. See design spec: getMudletInfo()
+-- there self-describes as a "web-based MUD client"; getOS()/getMudletVersion()
+-- mirror the desktop values and cannot distinguish web.
+function f2t_is_web()
+    local info = (getMudletInfo and getMudletInfo()) or ""
+    return string.find(string.lower(info), "web%-based mud client") ~= nil
+end
+
 -- ── Debug ─────────────────────────────────────────────────────────────────────
 
 F2T_DEBUG = false
