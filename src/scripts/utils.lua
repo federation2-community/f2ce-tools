@@ -27,6 +27,12 @@ function f2t_is_web()
     return false
 end
 
+-- GUI font scaling: Mudlet Web renders panel text larger than desktop, so shrink
+-- it ~15% on web only. Desktop is unchanged. Helpers return a CSS size token.
+F2T_UI_FONT_SCALE = f2t_is_web() and 0.85 or 1.0
+function f2t_ui_pt(pt) return string.format("%gpt", pt * F2T_UI_FONT_SCALE) end
+function f2t_ui_px(px) return string.format("%gpx", math.floor(px * F2T_UI_FONT_SCALE + 0.5)) end
+
 -- ── Debug ─────────────────────────────────────────────────────────────────────
 
 F2T_DEBUG = false

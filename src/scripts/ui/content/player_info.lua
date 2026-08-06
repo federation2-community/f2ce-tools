@@ -21,13 +21,13 @@ local H_LABEL_CSS = [[
     font-family: "Consolas","Monaco",monospace;
 ]]
 
-local BUTTON_CSS = [[
+local BUTTON_CSS = string.format([[
     QLabel{
         background-color: rgba(40, 40, 45, 200);
         border: 1px solid rgba(100, 100, 110, 180);
         border-radius: 3px;
         color: rgba(200, 200, 210, 255);
-        font-size: 11px; font-weight: bold;
+        font-size: %s; font-weight: bold;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover{
@@ -35,7 +35,7 @@ local BUTTON_CSS = [[
         border-color: rgba(120, 180, 255, 200);
         color: white;
     }
-]]
+]], f2t_ui_px(11))
 
 
 -- Fuel cell is a fixed width sized to its readout + Buy Fuel button (see layout

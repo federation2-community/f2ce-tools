@@ -10,7 +10,7 @@ local H_COL  = 20    -- column header bar height (px)
 local ROW_H  = 20    -- row height (px)
 local SB_W   = 17    -- scrollbar pixel allowance
 
-local CELL_FONT = "font-size:11pt;font-family:Consolas,Monaco,monospace;"
+local CELL_FONT = "font-size:"..f2t_ui_pt(11)..";font-family:Consolas,Monaco,monospace;"
 
 local _COL_HDR_CSS = [[
     QLabel {

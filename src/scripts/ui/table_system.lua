@@ -12,26 +12,26 @@
 
 local _tables = {}
 
-local _HDR_CSS = [[
+local _HDR_CSS = string.format([[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-size: %s; font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
     QLabel::hover { color: white; }
-]]
-local _HDR_ACTIVE_CSS = [[
+]], f2t_ui_pt(10))
+local _HDR_ACTIVE_CSS = string.format([[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(120,230,120,240);
-        font-size: 10pt; font-weight: bold;
+        font-size: %s; font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
     QLabel::hover { color: rgba(180,255,180,255); }
-]]
+]], f2t_ui_pt(10))
 local _CELL_CSS = [[
     QLabel {
         background-color: transparent; border: none;
