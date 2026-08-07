@@ -3,8 +3,10 @@
 -- not just the one being tried. Unlike a stale-topology refusal, no route
 -- recompute will ever get around this until the credits are earned, so fail
 -- the movement immediately instead of burning through the retry budget.
+--
+-- The pattern matches a substring on just the first line of the message
+-- rather than the full sentence: the game wraps this message onto a second
+-- line (after "at least 50"), so an anchored full-line pattern never matches.
 if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE then
-    local required = tonumber(matches[2]) or 50
-    f2t_map_speedwalk_fail(string.format(
-        "Sol requires at least %d hauler credits before you can leave", required))
+    f2t_map_speedwalk_fail("Sol requires at least 50 hauler credits before you can leave")
 end

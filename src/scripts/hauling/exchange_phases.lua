@@ -57,7 +57,7 @@ local function explore_then_retry(target_system, retry_fn)
         if success then retry_fn() else pause_on_nav_failure() end
     end
 
-    local started = f2t_map_explore_system_start(target_system, "brief", function()
+    local started = f2t_map_explore_system_start("brief", target_system, function()
         finish_once(true)
     end)
 
@@ -169,8 +169,13 @@ function f2t_hauling_next_commodity()
                 local current_location = gmcp.room and gmcp.room.info and gmcp.room.info.num
                 if current_location then
                     F2T_HAULING_STATE.cycle_pause_return_location = current_location
-                    cecho(string.format("\n<green>[hauling]<reset> All commodities traded, going to safe room for <yellow>%d seconds<reset>...\n", cycle_pause))
-                    f2t_debug_log("[hauling] Navigating to safe room for cycle pause (%d seconds), will return to room: %s", cycle_pause, current_location)
+                    local safe_room_msg =
+                        "\n<green>[hauling]<reset> All commodities traded, going to safe room for " ..
+                        "<yellow>%d seconds<reset>...\n"
+                    cecho(string.format(safe_room_msg, cycle_pause))
+                    f2t_debug_log(
+                        "[hauling] Navigating to safe room for cycle pause (%d seconds), will return to room: %s",
+                        cycle_pause, current_location)
 
                     f2t_map_navigate(safe_room)
 
@@ -182,7 +187,9 @@ function f2t_hauling_next_commodity()
                                 f2t_hauling_transition("analyzing")
                                 return
                             end
-                            cecho(string.format("\n<green>[hauling]<reset> Pausing at safe room for <yellow>%d seconds<reset>...\n", cycle_pause))
+                            local pausing_msg =
+                                "\n<green>[hauling]<reset> Pausing at safe room for <yellow>%d seconds<reset>...\n"
+                            cecho(string.format(pausing_msg, cycle_pause))
                             F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
                             F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
                                 F2T_HAULING_STATE.cycle_pause_timer_id = nil
@@ -192,7 +199,10 @@ function f2t_hauling_next_commodity()
                                     local return_to = F2T_HAULING_STATE.cycle_pause_return_location
                                     if return_to then
                                         if not F2T_HAULING_STATE.pause_requested then
-                                            cecho(string.format("\n<green>[hauling]<reset> Returning to previous location: <cyan>%s<reset>\n", return_to))
+                                            local returning_msg =
+                                                "\n<green>[hauling]<reset> Returning to previous location: " ..
+                                                "<cyan>%s<reset>\n"
+                                            cecho(string.format(returning_msg, return_to))
                                         end
                                         f2t_debug_log("[hauling] Returning to room: %s", return_to)
                                         f2t_map_navigate(return_to)
@@ -202,14 +212,17 @@ function f2t_hauling_next_commodity()
                                             if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
                                                 and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
                                                 if not F2T_HAULING_STATE.pause_requested then
-                                                    cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                                    local msg = "\n<green>[hauling]<reset> " ..
+                                                        "Pause complete, refreshing market data...\n"
+                                                    cecho(msg)
                                                 end
                                                 f2t_hauling_transition("analyzing")
                                             end
                                         end)
                                     else
                                         if not F2T_HAULING_STATE.pause_requested then
-                                            cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                                            cecho(
+                                                "\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
                                         end
                                         f2t_hauling_transition("analyzing")
                                     end
@@ -220,7 +233,10 @@ function f2t_hauling_next_commodity()
                     end)
                 else
                     -- Can't determine current location, pause in place.
-                    cecho(string.format("\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> before refreshing...\n", cycle_pause))
+                    local pause_in_place_msg =
+                        "\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> " ..
+                        "before refreshing...\n"
+                    cecho(string.format(pause_in_place_msg, cycle_pause))
                     F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
                     F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
                         F2T_HAULING_STATE.cycle_pause_timer_id = nil
@@ -236,7 +252,10 @@ function f2t_hauling_next_commodity()
                 end
             else
                 -- No safe room, pause in place.
-                cecho(string.format("\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> before refreshing...\n", cycle_pause))
+                local pause_in_place_msg2 =
+                    "\n<green>[hauling]<reset> All commodities traded, pausing for <yellow>%d seconds<reset> " ..
+                    "before refreshing...\n"
+                cecho(string.format(pause_in_place_msg2, cycle_pause))
                 F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
                 F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
                     F2T_HAULING_STATE.cycle_pause_timer_id = nil
@@ -276,7 +295,8 @@ function f2t_hauling_next_commodity()
         F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue,
         commodity_data.commodity, commodity_data.expected_profit)
 
-    cecho(string.format("\n<green>[hauling]<reset> Trading <cyan>%s<reset> (expected profit: <green>%d ig/ton<reset>)\n",
+    cecho(string.format(
+        "\n<green>[hauling]<reset> Trading <cyan>%s<reset> (expected profit: <green>%d ig/ton<reset>)\n",
         commodity_data.commodity, commodity_data.expected_profit))
 
     f2t_hauling_get_commodity_details(commodity_data.commodity)
@@ -286,9 +306,10 @@ end
 function f2t_hauling_get_commodity_details(commodity)
     f2t_debug_log("[hauling] Getting details for: %s", commodity)
 
-    f2t_price_check_commodity(commodity, function(commodity_name, parsed_data, analysis)
+    f2t_price_check_commodity(commodity, function(commodity_name, _parsed_data, analysis)
         f2t_debug_log("[hauling] Received commodity details callback for: %s", commodity_name)
-        f2t_debug_log("[hauling] State - active: %s, paused: %s", tostring(F2T_HAULING_STATE.active), tostring(F2T_HAULING_STATE.paused))
+        f2t_debug_log("[hauling] State - active: %s, paused: %s",
+            tostring(F2T_HAULING_STATE.active), tostring(F2T_HAULING_STATE.paused))
 
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             f2t_debug_log("[hauling] Callback aborted - hauling not active or paused")
@@ -318,7 +339,10 @@ function f2t_hauling_get_commodity_details(commodity)
                     expected_margin_pct, F2T_HAULING_STATE.margin_threshold_pct)
 
                 if expected_margin_pct < F2T_HAULING_STATE.margin_threshold_pct then
-                    cecho(string.format("\n<yellow>[hauling]<reset> Current market margin for <cyan>%s<reset> too low (%.1f%% < %.0f%%) - moving to next commodity\n",
+                    local margin_low_msg =
+                        "\n<yellow>[hauling]<reset> Current market margin for <cyan>%s<reset> too low " ..
+                        "(%.1f%% < %.0f%%) - moving to next commodity\n"
+                    cecho(string.format(margin_low_msg,
                         commodity, expected_margin_pct, F2T_HAULING_STATE.margin_threshold_pct))
                     f2t_debug_log("[hauling] Removing commodity from queue due to low current market margin")
 
@@ -368,12 +392,14 @@ function f2t_hauling_remove_current_commodity()
     local cargo = gmcp.char.ship.cargo
     if cargo and #cargo > 0 then
         local commodity = F2T_HAULING_STATE.current_commodity
-        cecho(string.format("\n<yellow>[hauling]<reset> Abandoning <cyan>%s<reset>, finding exchange to dump remaining cargo\n", commodity))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Abandoning <cyan>%s<reset>, finding exchange to dump remaining cargo\n",
+            commodity))
         f2t_debug_log("[hauling] Need to dump %d lots of %s before switching commodity", #cargo, commodity)
 
         F2T_HAULING_STATE.dump_attempts = 0
 
-        f2t_price_check_commodity(commodity, function(commodity_name, parsed_data, analysis)
+        f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
@@ -385,7 +411,8 @@ function f2t_hauling_remove_current_commodity()
                     dump_location.system, dump_location.planet, dump_location.price)
 
                 local destination = string.format("%s exchange", dump_location.planet)
-                cecho(string.format("\n<yellow>[hauling]<reset> Navigating to dump location: <cyan>%s exchange<reset>\n",
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Navigating to dump location: <cyan>%s exchange<reset>\n",
                     dump_location.planet))
 
                 local nav_result = f2t_map_navigate(destination)
@@ -408,7 +435,8 @@ function f2t_hauling_remove_current_commodity()
                 end
             else
                 -- No exchanges buying this commodity - jettison and move on.
-                cecho(string.format("\n<yellow>[hauling]<reset> No exchanges buying %s, jettisoning remaining cargo\n", commodity))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> No exchanges buying %s, jettisoning remaining cargo\n", commodity))
                 f2t_hauling_jettison_cargo(function()
                     f2t_hauling_finish_remove_commodity()
                 end)
@@ -433,7 +461,7 @@ function f2t_hauling_phase_dump_cargo()
     cecho(string.format("\n<yellow>[hauling]<reset> Dumping all <cyan>%s<reset> cargo at any price...\n", commodity))
     f2t_debug_log("[hauling] Dumping commodity: %s", commodity)
 
-    f2t_bulk_sell_start(nil, nil, function(sold_commodity, lots_sold, status, error_msg)
+    f2t_bulk_sell_start(nil, nil, function(_sold_commodity, lots_sold, status, _error_msg)
         f2t_debug_log("[hauling] Dump sell complete: sold %d lots, status: %s", lots_sold, status)
 
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -443,7 +471,8 @@ function f2t_hauling_phase_dump_cargo()
         local cargo = gmcp.char.ship.cargo
         if cargo and #cargo > 0 then
             f2t_debug_log("[hauling] %d lots remain after dump, finding next exchange", #cargo)
-            cecho(string.format("\n<yellow>[hauling]<reset> %d lots remain, finding next exchange to dump...\n", #cargo))
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> %d lots remain, finding next exchange to dump...\n", #cargo))
 
             f2t_hauling_find_next_dump_location()
         else
@@ -472,7 +501,8 @@ function f2t_hauling_find_next_dump_location()
         F2T_HAULING_STATE.dump_attempts, commodity, MAX_DUMP_ATTEMPTS)
 
     if F2T_HAULING_STATE.dump_attempts > MAX_DUMP_ATTEMPTS then
-        cecho(string.format("\n<yellow>[hauling]<reset> Attempted %d exchanges, jettisoning remaining <cyan>%s<reset>...\n",
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Attempted %d exchanges, jettisoning remaining <cyan>%s<reset>...\n",
             MAX_DUMP_ATTEMPTS, commodity))
         f2t_debug_log("[hauling] Max dump attempts exceeded, jettisoning cargo")
 
@@ -482,7 +512,7 @@ function f2t_hauling_find_next_dump_location()
         return
     end
 
-    f2t_price_check_commodity(commodity, function(commodity_name, parsed_data, analysis)
+    f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -515,7 +545,8 @@ function f2t_hauling_find_next_dump_location()
                 f2t_hauling_find_next_dump_location()
             end
         else
-            cecho(string.format("\n<yellow>[hauling]<reset> No more exchanges buying <cyan>%s<reset>, jettisoning...\n", commodity))
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> No more exchanges buying <cyan>%s<reset>, jettisoning...\n", commodity))
             f2t_debug_log("[hauling] No more exchanges available, jettisoning cargo")
 
             f2t_hauling_jettison_cargo(function()
@@ -595,20 +626,24 @@ function f2t_hauling_phase_buy()
         if F2T_HAULING_STATE.cargo_clear_attempts > 2 then
             cecho(string.format("\n<red>[hauling]<reset> Failed to clear cargo after %d attempts, stopping\n",
                 F2T_HAULING_STATE.cargo_clear_attempts - 1))
-            f2t_debug_log("[hauling] Cargo clear attempts exhausted (%d), stopping", F2T_HAULING_STATE.cargo_clear_attempts - 1)
+            f2t_debug_log("[hauling] Cargo clear attempts exhausted (%d), stopping",
+                F2T_HAULING_STATE.cargo_clear_attempts - 1)
             f2t_hauling_do_stop()
             return
         end
-        cecho(string.format("\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
             #existing_cargo))
-        f2t_debug_log("[hauling] Cargo hold has %d lots, selling before buying (attempt %d)", #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
-        f2t_bulk_sell_start(nil, nil, function(commodity_sold, lots_sold, status, error_msg)
+        f2t_debug_log("[hauling] Cargo hold has %d lots, selling before buying (attempt %d)",
+            #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
+        f2t_bulk_sell_start(nil, nil, function(_commodity_sold, _lots_sold, _status, _error_msg)
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
             local still_has_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
             if still_has_cargo and #still_has_cargo > 0 then
-                cecho(string.format("\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
                 f2t_debug_log("[hauling] Jettisoning %d unsellable lots", #still_has_cargo)
                 f2t_hauling_jettison_cargo(function()
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -666,8 +701,10 @@ function f2t_hauling_phase_buy()
         f2t_debug_log("[hauling] Tracking buy: %d lots at %d ig/ton = %d ig total cost",
             lots_bought, F2T_HAULING_STATE.actual_cost, total_cost)
 
-        cecho(string.format("\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset> at <yellow>%d ig/ton<reset> (cost: %d ig)\n",
-            lots_bought, commodity, F2T_HAULING_STATE.actual_cost, total_cost))
+        local bought_msg =
+            "\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset> at <yellow>%d ig/ton<reset> " ..
+            "(cost: %d ig)\n"
+        cecho(string.format(bought_msg, lots_bought, commodity, F2T_HAULING_STATE.actual_cost, total_cost))
 
         f2t_hauling_transition("navigating_to_sell")
     end)
@@ -758,10 +795,13 @@ function f2t_hauling_phase_sell()
 
         if selling_at_loss or margin_too_low then
             if selling_at_loss then
-                cecho(string.format("\n<red>[hauling]<reset> Exchange buying at/below our cost for <cyan>%s<reset> (%d <= %d ig/ton) - LOSS!\n",
-                    commodity, exchange_buy_price, F2T_HAULING_STATE.actual_cost))
+                local loss_msg =
+                    "\n<red>[hauling]<reset> Exchange buying at/below our cost for <cyan>%s<reset> " ..
+                    "(%d <= %d ig/ton) - LOSS!\n"
+                cecho(string.format(loss_msg, commodity, exchange_buy_price, F2T_HAULING_STATE.actual_cost))
             else
-                cecho(string.format("\n<yellow>[hauling]<reset> Profit margin too low for <cyan>%s<reset> (%.1f%% < %.0f%%)\n",
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Profit margin too low for <cyan>%s<reset> (%.1f%% < %.0f%%)\n",
                     commodity, profit_margin_pct, F2T_HAULING_STATE.margin_threshold_pct))
             end
             cecho("\n<yellow>[hauling]<reset> Abandoning commodity and dumping remaining cargo\n")
@@ -773,8 +813,10 @@ function f2t_hauling_phase_sell()
             return
         end
 
-        cecho(string.format("\n<green>[hauling]<reset> Sold %d lots of <cyan>%s<reset> at <yellow>%d ig/ton<reset> (realized margin: %.1f%%, revenue: %d ig)\n",
-            lots_sold, commodity, exchange_buy_price, profit_margin_pct, total_revenue))
+        local sold_msg =
+            "\n<green>[hauling]<reset> Sold %d lots of <cyan>%s<reset> at <yellow>%d ig/ton<reset> " ..
+            "(realized margin: %.1f%%, revenue: %d ig)\n"
+        cecho(string.format(sold_msg, lots_sold, commodity, exchange_buy_price, profit_margin_pct, total_revenue))
 
         local cargo = gmcp.char.ship.cargo
         if cargo and #cargo > 0 then
@@ -814,7 +856,9 @@ function f2t_hauling_complete_commodity_cycle()
 
     if f2t_is_rank_exactly("Merchant") and f2t_merchant_has_enough_points() then
         local points = f2t_merchant_get_points() or 0
-        cecho(string.format("\n<yellow>[hauling]<reset> <green>You have %d merchant points - ready to advance to Trader rank!<reset>\n", points))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> <green>You have %d merchant points - ready to advance to Trader rank!<reset>\n",
+            points))
         cecho("\n<dim_grey>Continue hauling or promote to Trader when ready<reset>\n")
     end
 
@@ -863,7 +907,8 @@ function f2t_hauling_check_nav_to_buy_complete()
             -- the best option); AC mode instead fetches a new job since many exist.
             local buy_loc = F2T_HAULING_STATE.buy_location
             local location_str = buy_loc and string.format("%s:%s", buy_loc.system, buy_loc.planet) or "buy location"
-            cecho(string.format("\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
+            cecho(string.format(
+                "\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
             f2t_debug_log("[hauling] Navigation to buy failed after retries, stopping")
             f2t_hauling_stop()
 
@@ -900,8 +945,10 @@ function f2t_hauling_check_nav_to_sell_complete()
 
         elseif result == "failed" then
             local sell_loc = F2T_HAULING_STATE.sell_location
-            local location_str = sell_loc and string.format("%s:%s", sell_loc.system, sell_loc.planet) or "sell location"
-            cecho(string.format("\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
+            local location_str = sell_loc and string.format("%s:%s", sell_loc.system, sell_loc.planet)
+                or "sell location"
+            cecho(string.format(
+                "\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
             f2t_debug_log("[hauling] Navigation to sell failed after retries, stopping")
             f2t_hauling_stop()
 
@@ -924,7 +971,7 @@ function f2t_hauling_find_next_sell_location()
 
     F2T_HAULING_STATE.sell_attempts = F2T_HAULING_STATE.sell_attempts + 1
 
-    f2t_price_check_commodity(F2T_HAULING_STATE.current_commodity, function(commodity_name, parsed_data, analysis)
+    f2t_price_check_commodity(F2T_HAULING_STATE.current_commodity, function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -940,7 +987,8 @@ function f2t_hauling_find_next_sell_location()
                 next_sell.system, next_sell.planet, next_sell.price, profit_margin_pct)
 
             if profit_margin_pct < F2T_HAULING_STATE.margin_threshold_pct then
-                cecho(string.format("\n<yellow>[hauling]<reset> Best remaining location has insufficient margin (%.1f%% < %.0f%%)\n",
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Best remaining location has insufficient margin (%.1f%% < %.0f%%)\n",
                     profit_margin_pct, F2T_HAULING_STATE.margin_threshold_pct))
                 cecho("\n<yellow>[hauling]<reset> Abandoning commodity and dumping remaining cargo\n")
 

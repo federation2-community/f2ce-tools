@@ -12,7 +12,9 @@ function f2t_hauling_start(requested_mode)
     -- Check if cargo hold is empty
     local cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
     if cargo and #cargo > 0 then
-        cecho(string.format("\n<red>[hauling]<reset> Cargo hold must be empty to start hauling (%d lots currently loaded)\n", #cargo))
+        cecho(string.format(
+            "\n<red>[hauling]<reset> Cargo hold must be empty to start hauling (%d lots currently loaded)\n",
+            #cargo))
         cecho("\n<dim_grey>Use 'bs' to sell all cargo first<reset>\n")
         return
     end
@@ -24,6 +26,7 @@ function f2t_hauling_start(requested_mode)
     F2T_HAULING_STATE.pause_requested = false
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.cycle_count = 0
+    raiseEvent("f2tHaulingStatusChanged")
 
     -- Set navigation ownership for hauling
     -- Callback handles customs interrupt by requesting auto-resume
@@ -99,8 +102,10 @@ function f2t_hauling_start(requested_mode)
         return
     end
     if mode == "po" and not (f2t_price_get_all_data and f2t_po_capture_exchange) then
-        cecho("\n<red>[hauling]<reset> " .. mode_name .. " requires the commodities and po modules, which are not installed.\n")
-        cecho("<dim_grey>Install the commodities and po components to enable PO hauling, or use 'haul start exchange'.<reset>\n")
+        cecho("\n<red>[hauling]<reset> " .. mode_name .. " requires the commodities and po modules, " ..
+            "which are not installed.\n")
+        cecho("<dim_grey>Install the commodities and po components to enable PO hauling, " ..
+            "or use 'haul start exchange'.<reset>\n")
         f2t_hauling_do_stop()
         return
     end
@@ -138,7 +143,9 @@ function f2t_hauling_start(requested_mode)
 
         local ship_lots = math.floor(hold.max / 75)
         if ship_lots < 7 then
-            cecho(string.format("\n<red>[hauling]<reset> Ship too small for PO hauling (need at least 525 tons / 7 lots, have %d tons / %d lots)\n",
+            cecho(string.format(
+                "\n<red>[hauling]<reset> Ship too small for PO hauling " ..
+                "(need at least 525 tons / 7 lots, have %d tons / %d lots)\n",
                 hold.max, ship_lots))
             f2t_hauling_do_stop()
             return
@@ -164,6 +171,10 @@ function f2t_hauling_start(requested_mode)
     elseif mode == "po" then
         F2T_HAULING_STATE.handler_id = f2t_po_register_handlers()
     end
+
+    -- Hold brief for the whole session rather than letting every leg of every
+    -- speedwalk toggle brief/full on its own.
+    f2t_map_brief_hold_acquire("hauling")
 
     -- Get starting phase for this mode and transition
     local starting_phase = f2t_hauling_get_starting_phase(mode)
@@ -203,7 +214,8 @@ function f2t_hauling_stop()
                 cecho(string.format("\n<green>[hauling]<reset> Stopping after delivering cargo (%s to %s)...\n",
                     job.commodity, job.destination))
             else
-                cecho(string.format("\n<green>[hauling]<reset> Stopping after completing job %d (%s from %s to %s)...\n",
+                cecho(string.format(
+                    "\n<green>[hauling]<reset> Stopping after completing job %d (%s from %s to %s)...\n",
                     job.id, job.commodity, job.source, job.destination))
             end
 
@@ -228,7 +240,8 @@ function f2t_hauling_stop()
                 cecho(string.format("\n<green>[hauling]<reset> Stopping after delivering %s to %s...\n",
                     contract.item or "package", contract.delivery_planet or "destination"))
             else
-                cecho(string.format("\n<green>[hauling]<reset> Stopping after completing contract (pickup from %s)...\n",
+                cecho(string.format(
+                    "\n<green>[hauling]<reset> Stopping after completing contract (pickup from %s)...\n",
                     contract.pickup_planet or "unknown"))
             end
 
@@ -244,7 +257,8 @@ function f2t_hauling_stop()
         local po_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
         if po_cargo and #po_cargo > 0 then
             F2T_HAULING_STATE.stopping = true
-            cecho(string.format("\n<green>[hauling]<reset> Stopping after selling cargo (%d lots in hold)...\n", #po_cargo))
+            cecho(string.format(
+                "\n<green>[hauling]<reset> Stopping after selling cargo (%d lots in hold)...\n", #po_cargo))
             cecho("\n<dim_grey>Use 'haul terminate' to stop immediately<reset>\n")
             f2t_debug_log("[hauling/po] Graceful stop requested, will finish selling %d lots", #po_cargo)
             return
@@ -263,7 +277,8 @@ function f2t_hauling_stop()
     if cargo and #cargo > 0 then
         -- Set stopping flag and let current cycle complete
         F2T_HAULING_STATE.stopping = true
-        cecho(string.format("\n<green>[hauling]<reset> Stopping after current cycle completes (%d lots in hold)...\n", #cargo))
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Stopping after current cycle completes (%d lots in hold)...\n", #cargo))
         cecho("\n<dim_grey>Use 'haul terminate' to stop immediately<reset>\n")
         f2t_debug_log("[hauling] Graceful stop requested, will finish selling %d lots", #cargo)
     else
@@ -304,6 +319,10 @@ function f2t_hauling_do_stop()
     if f2t_map_clear_nav_owner then
         f2t_map_clear_nav_owner()
     end
+
+    -- Released before the safe room run so that walk handles its own mode
+    -- switching like any other standalone speedwalk.
+    f2t_map_brief_hold_release("hauling")
 
     -- Check if we should navigate to safe room
     local use_safe_room = f2t_settings_get("hauling", "use_safe_room")
@@ -471,10 +490,13 @@ function f2t_hauling_finish_stop()
 
     -- NOTE: DO NOT reset total_cycles, session_profit, or commodity_history
     -- These are preserved so 'haul status' can show last session statistics
+
+    raiseEvent("f2tHaulingStatusChanged")
 end
 
 -- Pause hauling
---- @param immediate boolean|nil If true, pause immediately (used by system-initiated pauses e.g. Akaturi room finding). If false/nil, defer pause to next phase boundary.
+--- @param immediate boolean|nil If true, pause immediately (used by system-initiated pauses e.g.
+--- Akaturi room finding). If false/nil, defer pause to next phase boundary.
 function f2t_hauling_pause(immediate)
     if not F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling not active\n")
@@ -517,6 +539,8 @@ function f2t_hauling_pause(immediate)
             f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
             f2t_map_speedwalk_stop()
         end
+
+        f2t_map_brief_hold_release("hauling")
     else
         -- Deferred pause (user): let current operation complete, pause at next phase boundary
         if F2T_HAULING_STATE.pause_requested then
@@ -526,12 +550,15 @@ function f2t_hauling_pause(immediate)
 
         F2T_HAULING_STATE.pause_requested = true
 
-        cecho(string.format("\n<green>[hauling]<reset> Will pause after current operation... (phase: <cyan>%s<reset>)\n",
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Will pause after current operation... (phase: <cyan>%s<reset>)\n",
             F2T_HAULING_STATE.current_phase or "unknown"))
         cecho("\n<dim_grey>Use 'haul terminate' for immediate stop<reset>\n")
 
         f2t_debug_log("[hauling] Deferred pause requested at phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
     end
+
+    raiseEvent("f2tHaulingStatusChanged")
 end
 
 -- Resume hauling
@@ -546,6 +573,7 @@ function f2t_hauling_resume()
         F2T_HAULING_STATE.pause_requested = false
         cecho("\n<green>[hauling]<reset> Pause request cancelled\n")
         f2t_debug_log("[hauling] Deferred pause request cancelled")
+        raiseEvent("f2tHaulingStatusChanged")
         return
     end
 
@@ -556,6 +584,8 @@ function f2t_hauling_resume()
 
     F2T_HAULING_STATE.paused = false
     F2T_HAULING_STATE.pause_requested = false
+    f2t_map_brief_hold_acquire("hauling")
+    raiseEvent("f2tHaulingStatusChanged")
 
     cecho(string.format("\n<green>[hauling]<reset> Resuming from phase: <cyan>%s<reset>\n",
         F2T_HAULING_STATE.current_phase or "unknown"))
@@ -775,6 +805,7 @@ function f2t_hauling_transition(new_phase)
         F2T_HAULING_STATE.pause_requested = false
         F2T_HAULING_STATE.paused = true
         F2T_HAULING_STATE.current_phase = new_phase  -- Store NEXT phase for clean resume
+        f2t_map_brief_hold_release("hauling")
         cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n", new_phase))
         f2t_debug_log("[hauling] Deferred pause activated at phase: %s", new_phase)
         return
@@ -883,7 +914,8 @@ function f2t_hauling_transition(new_phase)
         if remaining > 0 then
             -- Re-create timer for remaining duration
             f2t_debug_log("[hauling] Resuming cycle_pausing with %d seconds remaining", remaining)
-            cecho(string.format("\n<green>[hauling]<reset> Resuming pause, <yellow>%d seconds<reset> remaining...\n", remaining))
+            cecho(string.format(
+                "\n<green>[hauling]<reset> Resuming pause, <yellow>%d seconds<reset> remaining...\n", remaining))
 
             if F2T_HAULING_STATE.cycle_pause_timer_id then
                 killTimer(F2T_HAULING_STATE.cycle_pause_timer_id)
@@ -940,7 +972,7 @@ function f2t_hauling_jettison_cargo(callback)
     for commodity, lots in pairs(commodities) do
         f2t_debug_log("[hauling] Jettisoning %d lots of %s", lots, commodity)
         cecho(string.format("\n<yellow>[hauling]<reset> Jettisoning %d lots of <cyan>%s<reset>\n", lots, commodity))
-        for i = 1, lots do
+        for _ = 1, lots do
             send(string.format("jettison %s", commodity), false)
         end
     end

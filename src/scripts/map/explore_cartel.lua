@@ -193,7 +193,7 @@ function f2t_map_explore_cartel_next_system()
 end
 
 function f2t_map_explore_cartel_start_system_mode(system_name)
-    local success = f2t_map_explore_system_start(system_name, "brief", function()
+    local success = f2t_map_explore_system_start("brief", system_name, function()
         f2t_map_explore_cartel_next_system()
     end)
     if not success then

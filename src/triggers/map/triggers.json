@@ -42,8 +42,8 @@
   {
     "name": "jump_sol_credits_required",
     "patterns": [{
-      "pattern": "^A message from link control informs you that the link is only open to commanders with at least (\\d+) hauler credits and higher ranks\\.$",
-      "type": "regex"
+      "pattern": "A message from link control informs you that the link is only open to commanders",
+      "type": "substring"
     }]
   },
   {

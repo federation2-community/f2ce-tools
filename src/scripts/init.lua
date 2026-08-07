@@ -199,6 +199,16 @@ local function bootHostOpts()
         quietStart      = true,   -- f2ce-tools prints its own startup output
         checkForUpdates = false,  -- irrelevant once updateRepo is set below, kept for older Muxlets
 
+        -- Fed2 negotiates GMCP during the telnet handshake, long before the
+        -- Login:/Password: prompts, so Muxlet's default "GMCP means ready" marks
+        -- the game connected while it is still unusable and tears the Connecting
+        -- overlay down in the same event burst that raised it. Take ownership
+        -- instead: char.lua flips to "connected" once gmcp.char.vitals names the
+        -- character, so the overlay spans the whole login sequence. The fallback
+        -- is generous because that signal waits on a human typing a password.
+        connectedOnGmcp       = false,
+        connectedAfterSeconds = 180,
+
         -- Let Muxlet's own update system check f2ce-tools' releases instead of
         -- (only) its own, and offer to bump Muxlet first if a newer release
         -- needs it — same two values already computed above for the boot gate.

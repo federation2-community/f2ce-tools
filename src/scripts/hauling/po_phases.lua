@@ -42,7 +42,8 @@ local function po_cycle_pause_and_rescan(message)
                 end
             end)
         else
-            cecho(string.format("\n<green>[hauling]<reset> %s, pausing for <yellow>%d seconds<reset> before re-scanning...\n",
+            cecho(string.format(
+                "\n<green>[hauling]<reset> %s, pausing for <yellow>%d seconds<reset> before re-scanning...\n",
                 message, cycle_pause))
             F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
                 F2T_HAULING_STATE.cycle_pause_timer_id = nil
@@ -66,7 +67,7 @@ end
 function f2t_hauling_phase_po_scan_system()
     f2t_debug_log("[hauling/po] Phase: po_scanning_system")
 
-    f2t_po_hauling_scan_system(function(planet_names, planets_without_exchange)
+    f2t_po_hauling_scan_system(function(planet_names, _planets_without_exchange)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -94,7 +95,7 @@ function f2t_hauling_phase_po_scan_exchanges()
 
     local planet_names = F2T_HAULING_STATE.po_scan_planets
 
-    f2t_po_hauling_scan_exchanges(planet_names, function(owned_planets, planet_exchange_data)
+    f2t_po_hauling_scan_exchanges(planet_names, function(owned_planets, _planet_exchange_data)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -269,22 +270,26 @@ function f2t_hauling_phase_po_buy()
         if F2T_HAULING_STATE.cargo_clear_attempts > 2 then
             cecho(string.format("\n<red>[hauling]<reset> Failed to clear cargo after %d attempts, stopping\n",
                 F2T_HAULING_STATE.cargo_clear_attempts - 1))
-            f2t_debug_log("[hauling/po] Cargo clear attempts exhausted (%d), stopping", F2T_HAULING_STATE.cargo_clear_attempts - 1)
+            f2t_debug_log("[hauling/po] Cargo clear attempts exhausted (%d), stopping",
+                F2T_HAULING_STATE.cargo_clear_attempts - 1)
             f2t_hauling_do_stop()
             return
         end
-        cecho(string.format("\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Cargo hold not empty (%d lots remaining), selling before buying\n",
             #existing_cargo))
-        f2t_debug_log("[hauling/po] Cargo hold has %d lots, selling before buying (attempt %d)", #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
+        f2t_debug_log("[hauling/po] Cargo hold has %d lots, selling before buying (attempt %d)",
+            #existing_cargo, F2T_HAULING_STATE.cargo_clear_attempts)
         -- Sell leftover cargo first, then retry this buy
-        f2t_bulk_sell_start(nil, nil, function(commodity_sold, lots_sold, status, error_msg)
+        f2t_bulk_sell_start(nil, nil, function(_commodity_sold, _lots_sold, _status, _error_msg)
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
             -- Check again after selling
             local still_has_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
             if still_has_cargo and #still_has_cargo > 0 then
-                cecho(string.format("\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
                 f2t_debug_log("[hauling/po] Jettisoning %d unsellable lots", #still_has_cargo)
                 f2t_hauling_jettison_cargo(function()
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -332,17 +337,19 @@ function f2t_hauling_phase_po_buy()
         if job.bundled_commodity and job.bundled_buy_planet == job.buy_planet then
             -- Same source, buy second commodity here
             local bundled_lots = job.bundled_lots or lots
-            f2t_debug_log("[hauling/po] Bundled buy: same source, buying %s (%d lots)", job.bundled_commodity, bundled_lots)
+            f2t_debug_log("[hauling/po] Bundled buy: same source, buying %s (%d lots)",
+                job.bundled_commodity, bundled_lots)
             cecho(string.format("\n<green>[hauling]<reset> Buying bundled %d lots of <cyan>%s<reset>...\n",
                 bundled_lots, job.bundled_commodity))
 
-            f2t_bulk_buy_start(job.bundled_commodity, bundled_lots, function(b_commodity, b_lots, b_status, b_error)
+            f2t_bulk_buy_start(job.bundled_commodity, bundled_lots, function(_b_commodity, b_lots, b_status, _b_error)
                 if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                     return
                 end
 
                 if b_status == "error" or b_lots == 0 then
-                    cecho(string.format("\n<yellow>[hauling]<reset> Bundled buy failed for %s, continuing with primary\n",
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> Bundled buy failed for %s, continuing with primary\n",
                         job.bundled_commodity))
                 else
                     cecho(string.format("\n<green>[hauling]<reset> Bought %d lots of <cyan>%s<reset>\n",
@@ -406,7 +413,7 @@ function f2t_hauling_phase_po_bundled_buy()
         lots, commodity))
     f2t_debug_log("[hauling/po] Buying bundled: %d lots of %s", lots, commodity)
 
-    f2t_bulk_buy_start(commodity, lots, function(bought_commodity, lots_bought, status, error_msg)
+    f2t_bulk_buy_start(commodity, lots, function(_bought_commodity, lots_bought, status, _error_msg)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -465,7 +472,7 @@ function f2t_hauling_phase_po_sell()
     f2t_debug_log("[hauling/po] Selling all cargo")
 
     -- Sell everything (bs command)
-    f2t_bulk_sell_start(nil, nil, function(commodity, lots_sold, status, error_msg)
+    f2t_bulk_sell_start(nil, nil, function(_commodity, lots_sold, status, _error_msg)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -490,7 +497,8 @@ function f2t_hauling_phase_po_sell()
         if cargo and #cargo > 0 then
             -- Partial sell - find next sell location
             f2t_debug_log("[hauling/po] Partial sell, %d lots remaining", #cargo)
-            cecho(string.format("\n<yellow>[hauling]<reset> %d lots remain unsold, finding next sell location...\n", #cargo))
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> %d lots remain unsold, finding next sell location...\n", #cargo))
             f2t_hauling_po_find_next_sell()
             return
         end
@@ -549,7 +557,7 @@ function f2t_hauling_po_find_next_sell()
     f2t_debug_log("[hauling/po] Finding next sell location for %s (attempt %d/%d)",
         commodity, F2T_HAULING_STATE.po_sell_attempts, max_attempts)
 
-    f2t_price_check_commodity(commodity, function(commodity_name, parsed_data, analysis)
+    f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end

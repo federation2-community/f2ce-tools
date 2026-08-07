@@ -142,19 +142,10 @@ local function buildContentDef()
                     liveSlotContent, liveGid = slotContent, gid
                     if mapper then mapper:raise() end
 
-                    -- Mudlet's own mapper widget shows a built-in "No map yet
-                    -- for this profile" empty-state overlay whenever the room
-                    -- database is empty, with its own raw Load/Create buttons
-                    -- — entirely outside f2ce-tools' control, no Lua hook to
-                    -- suppress it. This is UNRELATED to the show_import_prompt
-                    -- decision below: it just seeds the player's current room
-                    -- from already-cached GMCP data (no command sent to the
-                    -- game) whenever the database happens to be empty, purely
-                    -- so that native overlay never gets a chance to stick —
-                    -- f2ce-tools decides what the user sees here, never raw
-                    -- Mudlet. See map/import_check.lua for the prompt decision
-                    -- itself, which never looks at room count.
-                    if next(getRooms()) == nil and type(f2t_map_handle_gmcp_room) == "function" then
+                    -- Re-syncs to the current room (cached GMCP, no command sent) so
+                    -- the fresh widget doesn't open on a stale prior-session room,
+                    -- and suppresses Mudlet's native empty-map overlay when unpopulated.
+                    if type(f2t_map_handle_gmcp_room) == "function" then
                         f2t_map_handle_gmcp_room()
                     end
 

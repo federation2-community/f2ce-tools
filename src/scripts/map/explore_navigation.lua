@@ -49,7 +49,7 @@ function f2t_map_explore_navigate_to_next()
         return
     end
 
-    if not F2T_EXPLORE_BRIEF_OWNER then f2t_map_explore_brief_mode_start() end
+    f2t_map_explore_brief_mode_start()
 
     if current_room ~= next_exit.room_id then
         F2T_MAP_EXPLORE_STATE.planned_exit = next_exit

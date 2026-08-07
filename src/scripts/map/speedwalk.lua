@@ -37,8 +37,28 @@ function f2t_map_clear_nav_owner()
     F2T_SPEEDWALK_ON_INTERRUPT = nil
 end
 
+-- Name of whoever holds a long-lived "stay in brief" claim (explore, hauling),
+-- or nil. While held, individual speedwalks skip their own brief/full toggling
+-- so a run made of many short legs isn't flipping the mode between each one.
+F2T_MAP_BRIEF_HOLD_OWNER = nil
+
+--- @return boolean true if the hold is now held by owner
+function f2t_map_brief_hold_acquire(owner)
+    if F2T_MAP_BRIEF_HOLD_OWNER then return F2T_MAP_BRIEF_HOLD_OWNER == owner end
+    if not f2t_settings_get("map", "speedwalk_brief") then return false end
+    F2T_MAP_BRIEF_HOLD_OWNER = owner
+    send("brief")
+    return true
+end
+
+function f2t_map_brief_hold_release(owner)
+    if F2T_MAP_BRIEF_HOLD_OWNER ~= owner then return end
+    F2T_MAP_BRIEF_HOLD_OWNER = nil
+    send(f2t_settings_get("map", "speedwalk_after_mode") or "full")
+end
+
 function f2t_map_speedwalk_restore_mode()
-    if not F2T_EXPLORE_BRIEF_OWNER and F2T_SPEEDWALK_BRIEF_SWITCHED then
+    if not F2T_MAP_BRIEF_HOLD_OWNER and F2T_SPEEDWALK_BRIEF_SWITCHED then
         local after_mode = f2t_settings_get("map", "speedwalk_after_mode") or "full"
         send(after_mode)
         F2T_SPEEDWALK_BRIEF_SWITCHED = false
@@ -65,7 +85,7 @@ function doSpeedWalk()
     F2T_SPEEDWALK_BRIEF_SWITCHED       = false
     local path_length = #speedWalkDir
     cecho(string.format("\n<green>[map]<reset> Speedwalking (%d steps)\n", path_length))
-    if path_length >= 3 and f2t_settings_get("map", "speedwalk_brief") and not F2T_EXPLORE_BRIEF_OWNER then
+    if path_length >= 3 and f2t_settings_get("map", "speedwalk_brief") and not F2T_MAP_BRIEF_HOLD_OWNER then
         send("brief")
         F2T_SPEEDWALK_BRIEF_SWITCHED = true
     end
@@ -219,6 +239,9 @@ function f2t_map_speedwalk_resume_after_disconnect()
     F2T_SPEEDWALK_PAUSED               = false
     F2T_SPEEDWALK_CONSECUTIVE_FAILURES = 0
     cecho("\n<green>[map]<reset> Connection restored, resuming speedwalk...\n")
+    -- A reconnect is a fresh server session, so re-assert brief for whoever
+    -- still holds it rather than walking the rest of the route in full.
+    if F2T_MAP_BRIEF_HOLD_OWNER then send("brief") end
     f2t_map_speedwalk_recompute_path()
 end
 

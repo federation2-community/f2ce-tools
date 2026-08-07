@@ -64,6 +64,23 @@ end
 
 local _BTN_COLLECT_CSS = actionBtnCss("#3ecf5e", "#5ce87c")
 local _BTN_DELIVER_CSS = actionBtnCss("#e0b84d", "#f0cc66")
+local _BTN_HAUL_CSS    = actionBtnCss("#7aa2ff", "#9cb8ff")
+
+-- Haul menu: a small dropdown of action items (Start/Pause/Resume/Stop/
+-- Terminate), same overlay pattern as the commodity dropdown in
+-- price_checker.lua -- Geyser has no native menu widget.
+local _HAUL_MENU_ITEM_CSS = [[
+    QLabel {
+        background-color: rgba(24,26,38,220);
+        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        padding: 0 6px;
+    }
+    QLabel::hover {
+        background-color: rgba(48,56,88,230);
+        color: white;
+    }
+]]
 
 -- Strip showing the job currently under contract, pinned above the list.
 local _CUR_BAR_CSS = [[
@@ -114,6 +131,189 @@ end
 local function acceptJob(jobNumber)
     send("ac " .. jobNumber, false)
 end
+
+-- ── Hauling automation control ───────────────────────────────────────────────
+-- Thin integration with the hauling automation (state_machine.lua): a single
+-- "Haul" button whose dropdown offers only the actions valid for the current
+-- state, plus a status readout. The automation runs standalone via `haul`
+-- regardless of whether this pane is even open -- this is a read/control
+-- surface, not a dependency in either direction.
+
+--- Snapshot of automation state, or nil if the hauling component isn't installed
+local function haulSnapshot()
+    if not F2T_HAULING_STATE then return nil end
+    return {
+        active          = F2T_HAULING_STATE.active,
+        paused          = F2T_HAULING_STATE.paused,
+        pauseRequested  = F2T_HAULING_STATE.pause_requested,
+        mode            = F2T_HAULING_STATE.mode,
+        modeName        = F2T_HAULING_STATE.mode and f2t_hauling_get_mode_name
+            and f2t_hauling_get_mode_name(F2T_HAULING_STATE.mode) or nil,
+        phase           = F2T_HAULING_STATE.current_phase,
+        totalCycles     = F2T_HAULING_STATE.total_cycles or 0,
+        sessionProfit   = F2T_HAULING_STATE.session_profit or 0,
+    }
+end
+
+--- Menu items valid for the current automation state
+--- @param snap table Snapshot from haulSnapshot()
+--- @return table Array of {label, action}
+local function haulMenuItems(snap)
+    if not snap.active then
+        return {
+            { label = "▶ Start", action = function() f2t_hauling_start() end },
+        }
+    end
+
+    if snap.paused then
+        return {
+            { label = "▶ Resume", action = f2t_hauling_resume },
+            { label = "■ Stop",   action = f2t_hauling_stop },
+        }
+    end
+
+    return {
+        { label = snap.pauseRequested and "✕ Cancel Pause" or "⏸ Pause",
+          action = snap.pauseRequested and f2t_hauling_resume or function() f2t_hauling_pause() end },
+        { label = "■ Stop",      action = f2t_hauling_stop },
+        { label = "⏹ Terminate", action = f2t_hauling_terminate },
+    }
+end
+
+--- Status text/color for the current automation state
+--- @param snap table Snapshot from haulSnapshot()
+--- @return string html, string tooltip
+local function haulStatusHtml(snap)
+    if not snap then
+        return string.format("<span style='%scolor:#666666;'>Hauling automation not installed</span>", CELL_FONT),
+            "Install the hauling component to enable start/stop automation"
+    end
+
+    local label, color
+    if not snap.active then
+        label, color = "STOPPED", "#888888"
+    elseif snap.paused then
+        label, color = "PAUSED", "#e0b84d"
+    elseif snap.pauseRequested then
+        label, color = "PAUSING…", "#e0b84d"
+    else
+        label, color = "RUNNING", "#3ecf5e"
+    end
+
+    local detail = ""
+    if snap.active and snap.modeName then
+        detail = string.format(" <span style='%scolor:#888888;'>%s%s</span>",
+            CELL_FONT, snap.modeName, snap.phase and (" · " .. snap.phase) or "")
+    end
+
+    local html = string.format("<span style='%scolor:%s;font-weight:bold;'>&#9679; %s</span>%s",
+        CELL_FONT, color, label, detail)
+
+    local tooltip
+    if snap.active then
+        tooltip = string.format("Cycles: %d  |  Session profit: %d ig", snap.totalCycles, snap.sessionProfit)
+    elseif snap.totalCycles > 0 then
+        tooltip = string.format("Last session -- Cycles: %d  |  Profit: %d ig", snap.totalCycles, snap.sessionProfit)
+    else
+        tooltip = "Not running"
+    end
+
+    return html, tooltip
+end
+
+--- Close an instance's open haul dropdown, if any
+local function closeHaulMenu(inst)
+    if inst.haulMenu then
+        inst.haulMenu:hide()
+        inst.haulMenu = nil
+    end
+end
+
+local function toggleHaulMenu(inst, target)
+    if inst.haulMenu then
+        closeHaulMenu(inst)
+        return
+    end
+
+    local snap = haulSnapshot()
+    if not snap then return end
+
+    local items = haulMenuItems(snap)
+    local rowH  = 22
+    local menuW = 150
+
+    inst.haulMenuGen = (inst.haulMenuGen or 0) + 1
+    local gen = inst.haulMenuGen
+
+    local menu = Geyser.Container:new({
+        name = string.format("%s_hjhm_%d", target._gid, gen),
+        x = inst.haulBtnX or 0, y = H_BAR, width = menuW, height = #items * rowH,
+    }, target.content)
+
+    local bg = Geyser.Label:new({
+        name = string.format("%s_hjhmbg_%d", target._gid, gen),
+        x = 0, y = 0, width = "100%", height = "100%",
+    }, menu)
+    bg:setStyleSheet([[
+        background-color: rgba(20, 22, 32, 250);
+        border: 1px solid rgba(100, 100, 110, 200);
+        border-radius: 4px;
+    ]])
+
+    for i, item in ipairs(items) do
+        local lbl = Geyser.Label:new({
+            name = string.format("%s_hjhmi_%d_%d", target._gid, gen, i),
+            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH,
+        }, menu)
+        lbl:setStyleSheet(_HAUL_MENU_ITEM_CSS)
+        lbl:echo(item.label)
+        local action = item.action
+        lbl:setClickCallback(function()
+            closeHaulMenu(inst)
+            if action then action() end
+        end)
+    end
+
+    menu:show()
+    menu:raise()
+    inst.haulMenu = menu
+end
+
+--- Refresh one instance's status readout (does not touch the open menu, if any)
+local function renderHaulStatus(inst)
+    if not inst or not inst.haulStatusLbl then return end
+    local html, tooltip = haulStatusHtml(haulSnapshot())
+    inst.haulStatusLbl:echo(html)
+    inst.haulStatusLbl:setToolTip(tooltip)
+end
+
+local function renderHaulStatusAll()
+    for _, inst in pairs(instances) do
+        pcall(renderHaulStatus, inst)
+    end
+end
+
+-- Coarse fallback poll: catches in-flight phase text changes (e.g. moving
+-- from "ac_selecting_job" to "ac_collecting") that don't go through
+-- f2t_hauling_start/pause/resume/stop and so don't raise f2tHaulingStatusChanged.
+-- Self-terminates once no instances remain; restarted by ensureHaulPoll().
+local _haulPollTimer = nil
+local function ensureHaulPoll()
+    if _haulPollTimer then return end
+    local function tick()
+        renderHaulStatusAll()
+        if next(instances) then
+            _haulPollTimer = tempTimer(2, tick)
+        else
+            _haulPollTimer = nil
+        end
+    end
+    _haulPollTimer = tempTimer(2, tick)
+end
+
+-- Instant feedback for user-initiated state changes (start/pause/resume/stop),
+-- fired by state_machine.lua. Registered once, same as the GMCP handlers below.
+registerAnonymousEventHandler("f2tHaulingStatusChanged", renderHaulStatusAll)
 
 -- Computes route distance and bonus/penalty pay for one gmcp.jobs.board entry.
 local function buildJobRow(entry)
@@ -213,7 +413,8 @@ local function buildCols()
             label         = "GTU",
             sortable      = false,
             scrollbox_pct = 16,
-            header_tooltip = "Allowed/actual route GTU. A bare number with no slash means the route isn't in your map yet, so it can't be checked.",
+            header_tooltip = "Allowed/actual route GTU. A bare number with no slash means the route isn't " ..
+                "in your map yet, so it can't be checked.",
             render_label  = function(_v, row, cell)
                 local html
                 if row.distance then
@@ -234,7 +435,8 @@ local function buildCols()
                     html = string.format(
                         "<span style='%scolor:#c8c8c8;'><b>%d</b></span>",
                         CELL_FONT, row.allowedMoves)
-                    cell:setToolTip("Allowed GTU (route unknown — no slash shown because origin or destination isn't in your map yet)")
+                    cell:setToolTip("Allowed GTU (route unknown — no slash shown because origin or " ..
+                        "destination isn't in your map yet)")
                 end
                 cell:echo(html)
             end,
@@ -452,6 +654,20 @@ local function buildContent(target)
         btn:setClickCallback(function() send(cmd, false) end)
     end
 
+    -- ── Haul automation control ──────────────────────────────────────────────
+    local haulBtnX = 6 + 2 * (btnW + 8)
+    local haulBtn = Geyser.Label:new({
+        name = wid(), x = haulBtnX, y = 4, width = 70, height = H_BAR - 8,
+    }, bar)
+    haulBtn:setStyleSheet(_BTN_HAUL_CSS)
+    haulBtn:echo("<center>Haul ▾</center>")
+    haulBtn:setToolTip("Start/stop the hauling automation")
+
+    local haulStatusLbl = Geyser.Label:new({
+        name = wid(), x = haulBtnX + 78, y = 0, width = "100%-" .. (haulBtnX + 84) .. "px", height = "100%",
+    }, bar)
+    haulStatusLbl:setStyleSheet("background-color: transparent; border: none;")
+
     -- ── Active-job strip ──────────────────────────────────────────────────────
     -- Hidden/zero-height until gmcp.char.job has a job; layoutInstance() sizes it.
     local currentJobBar = Geyser.Label:new({
@@ -544,7 +760,16 @@ local function buildContent(target)
         contentLabel  = contentLabel,
         contentW      = contentW,
         noJobsLbl     = noJobsLbl,
+        haulStatusLbl = haulStatusLbl,
+        haulBtnX      = haulBtnX,
+        haulMenu      = nil,
+        haulMenuGen   = 0,
     }
+
+    haulBtn:setClickCallback(function() toggleHaulMenu(instances[gid], target) end)
+
+    renderHaulStatus(instances[gid])
+    ensureHaulPoll()
 
     refreshInstance(gid)
 end

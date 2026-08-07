@@ -171,7 +171,7 @@ elseif subcommand == "explore" then
     elseif first == "system" then
         -- f2t_map_explore_system_start defaults to the current system itself
         -- when no name is given, same as the cartel/planet/syndicate forms.
-        f2t_map_explore_system_start(f2t_parse_rest(words, 2), "brief")
+        f2t_map_explore_system_start("brief", f2t_parse_rest(words, 2))
 
     elseif first == "planet" then
         -- f2t_map_explore_planet_start defaults to the current planet itself

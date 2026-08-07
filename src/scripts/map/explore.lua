@@ -21,19 +21,15 @@ F2T_MAP_EXPLORE_STATE = F2T_MAP_EXPLORE_STATE or {
     travel_kind=nil,travel_target=nil,travel_on_arrived=nil,travel_on_failed=nil,
 }
 
-F2T_EXPLORE_BRIEF_OWNER = false
-
+-- Explore takes the shared brief hold for the length of a run. When something
+-- longer-lived already holds it (an explore driven by hauling), these are no-ops
+-- and that owner decides when the mode goes back.
 function f2t_map_explore_brief_mode_start()
-    if not f2t_settings_get("map", "speedwalk_brief") then return end
-    F2T_EXPLORE_BRIEF_OWNER = true
-    send("brief")
+    f2t_map_brief_hold_acquire("explore")
 end
 
 function f2t_map_explore_brief_mode_restore()
-    if not F2T_EXPLORE_BRIEF_OWNER then return end
-    F2T_EXPLORE_BRIEF_OWNER = false
-    local after_mode = f2t_settings_get("map", "speedwalk_after_mode") or "full"
-    send(after_mode)
+    f2t_map_brief_hold_release("explore")
 end
 
 function f2t_map_explore_init_area(area_id, mode_fields)
@@ -402,10 +398,10 @@ function f2t_map_explore_start(mode, name)
         if is_system and is_planet then
             local system_fully_mapped = f2t_map_explore_is_system_fully_mapped(name)
             if system_fully_mapped then return f2t_map_explore_planet_start(mode, name)
-            else return f2t_map_explore_system_start(name, mode)
+            else return f2t_map_explore_system_start(mode, name)
             end
         elseif is_system then
-            return f2t_map_explore_system_start(name, mode)
+            return f2t_map_explore_system_start(mode, name)
         elseif is_planet then
             return f2t_map_explore_planet_start(mode, name)
         else
@@ -420,7 +416,7 @@ function f2t_map_explore_start(mode, name)
             cecho("\n<red>[map-explore]<reset> Error: In space but couldn't detect system\n")
             return false
         end
-        return f2t_map_explore_system_start(system, mode)
+        return f2t_map_explore_system_start(mode, system)
     end
 
     local planet = f2t_get_current_planet()

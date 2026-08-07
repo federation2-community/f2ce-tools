@@ -5,7 +5,7 @@
 -- nested under cartel/galaxy exploration (parent mode preserved, callback
 -- chains back up).
 
-function f2t_map_explore_system_start(system_name, system_mode, on_complete_callback)
+function f2t_map_explore_system_start(system_mode, system_name, on_complete_callback)
     if not system_name or system_name == "" then
         -- Default to the system we are standing in, if detectable.
         system_name = f2t_get_current_system()
@@ -33,17 +33,17 @@ function f2t_map_explore_system_start(system_name, system_mode, on_complete_call
             system_name))
         cecho("  <dim_grey>Capturing expected planet list...<reset>\n")
         f2t_map_di_system_capture_start(system_name, function(expected_planet_names, planets_without_exchange)
-            f2t_map_explore_system_start_with_planets(system_name, system_mode,
+            f2t_map_explore_system_start_with_planets(system_mode, system_name,
                 expected_planet_names, planets_without_exchange, on_complete_callback)
         end)
         return true
     end
 
-    f2t_map_explore_system_start_with_planets(system_name, system_mode, nil, nil, on_complete_callback)
+    f2t_map_explore_system_start_with_planets(system_mode, system_name, nil, nil, on_complete_callback)
     return true
 end
 
-function f2t_map_explore_system_start_with_planets(system_name, system_mode, expected_planet_names,
+function f2t_map_explore_system_start_with_planets(system_mode, system_name, expected_planet_names,
                                                    planets_without_exchange, on_complete_callback)
     local expected_planets_set = nil
     local expected_planets_found_set = nil
@@ -105,7 +105,7 @@ function f2t_map_explore_system_start_with_planets(system_name, system_mode, exp
         end
 
         local function retry()
-            f2t_map_explore_system_start_with_planets(system_name, system_mode,
+            f2t_map_explore_system_start_with_planets(system_mode, system_name,
                 expected_planet_names, planets_without_exchange, on_complete_callback)
         end
         local function give_up()

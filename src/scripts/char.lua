@@ -40,6 +40,13 @@ local function onVitals()
         raiseEvent("f2tCharacterChanged", name, prev)
     end
 
+    -- The ready signal Muxlet defers to (init.lua sets connectedOnGmcp=false).
+    -- Naming the character is the first point the game is actually playable, so
+    -- this is what clears the Connecting overlay.
+    if Mux and Mux.setConnectionState then
+        Mux.setConnectionState("connected")
+    end
+
     f2t_debug_log("[char] logged in as %s", name)
 end
 
