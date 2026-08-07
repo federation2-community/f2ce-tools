@@ -34,6 +34,12 @@ f2t_settings_register("map", "speedwalk_brief", {
     default     = true,
 })
 
+f2t_settings_register("map", "speedwalk_resume_on_reconnect", {
+    label       = "Auto-resume speedwalk on reconnect",
+    description = "Automatically recompute and continue a speedwalk that was paused by a dropped connection",
+    default     = true,
+})
+
 f2t_settings_register("map", "speedwalk_after_mode", {
     label       = "Mode after speedwalk",
     description = "Room description mode to restore after speedwalk ends",

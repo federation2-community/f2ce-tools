@@ -276,8 +276,13 @@ local function renderCurrentJobBar(inst)
         return
     end
 
+    -- Just the dot -- "Active" doesn't fit in the 10% Job-column-width slot
+    -- (unlike short job numbers), and the strip's green border/tint already
+    -- says "active" on their own.
     c.status:echo(string.format(
-        "<span style='%scolor:#3ecf5e;font-weight:bold;'>&#9679; Active</span>", CELL_FONT))
+        "<span style='%scolor:#3ecf5e;font-weight:bold;'>&#9679;</span>", CELL_FONT))
+    c.status:setToolTip(string.format(
+        "Active contract: %d tons of %s", currentJob.quantity or 0, currentJob.commodity or "?"))
 
     c.origin:echo(string.format("<span style='%scolor:#00cccc;'>%s</span>", CELL_FONT, currentJob.originDisplay))
     c.origin:setToolTip("Go to " .. currentJob.origin)

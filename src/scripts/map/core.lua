@@ -39,6 +39,10 @@ function f2t_map_handle_gmcp_room()
 
     F2T_MAP_CURRENT_ROOM_ID = room_id
 
+    if F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT then
+        f2t_map_speedwalk_resume_after_disconnect()
+    end
+
     local area_id = getRoomArea(room_id)
     if area_id then
         local zoom = f2t_settings_get("map", "area_zoom")

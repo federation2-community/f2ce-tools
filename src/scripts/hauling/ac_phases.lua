@@ -1,7 +1,16 @@
 -- Armstrong Cuthbert hauling phases
--- Implements the AC job workflow: fetch jobs -> select -> navigate to source -> accept -> collect -> navigate to dest -> deliver
+-- Implements the AC job workflow: select -> navigate to source -> accept -> collect -> navigate to dest -> deliver
+--
+-- Job selection and accept/collect/deliver confirmation are all driven off
+-- live GMCP data (gmcp.jobs.board, gmcp.char.job) rather than command output
+-- scraping. Each phase function double-checks GMCP state before acting, and
+-- also acts as its own reactive handler: f2t_ac_register_handlers() re-calls
+-- whichever phase is current whenever the relevant GMCP data changes, so
+-- transitions happen within milliseconds of the server pushing an update.
+-- tempTimer() safety nets remain solely as a fallback in case a GMCP push is
+-- ever missed -- they are not the primary detection mechanism.
 
---- Phase: Fetch available AC jobs from work command
+--- Phase: Select the best AC job from the live job board
 --- @return boolean True if phase complete, false if waiting
 function f2t_hauling_phase_ac_fetch_jobs()
     if F2T_HAULING_STATE.paused then
@@ -18,12 +27,13 @@ function f2t_hauling_phase_ac_fetch_jobs()
         return false
     end
 
-    f2t_debug_log("[hauling/ac] Starting fetch jobs phase")
-
     -- Check if we've reached 500 credits (stop condition)
     if f2t_ac_has_enough_credits() then
         local credits = f2t_ac_get_hauling_credits()
-        cecho(string.format("\n<green>[hauling]<reset> Congratulations! You've earned %d hauling credits and can now advance to the next rank!\n", credits))
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Congratulations! You've earned %d hauling credits " ..
+            "and can now advance to the next rank!\n",
+            credits))
         cecho("\n<green>[hauling]<reset> Stopping hauling automation.\n")
         f2t_hauling_stop()
         return true
@@ -33,51 +43,25 @@ function f2t_hauling_phase_ac_fetch_jobs()
     if not F2T_HAULING_STATE.ac_50_milestone_shown and f2t_ac_reached_50_credits() then
         -- Only show this message if currently in Sol system
         if f2t_is_in_system("Sol") then
-            cecho("\n<yellow>[hauling]<reset> You've reached 50 hauling credits! You may now find more profitable jobs from players on player-operated planets.\n")
+            cecho("\n<yellow>[hauling]<reset> You've reached 50 hauling credits! You may now find more profitable " ..
+                "jobs from players on player-operated planets.\n")
             cecho("\n<yellow>[hauling]<reset> However, I'll continue hauling in Sol for now.\n")
         end
         F2T_HAULING_STATE.ac_50_milestone_shown = true
     end
 
-    -- Start capturing job output
-    f2t_ac_start_capture()
-    f2t_debug_log("[hauling/ac] Started job capture, sending work command")
-
-    -- Send work command
-    send("work")
-
-    -- Start the capture timer - it will fire after 0.5s of no new lines
-    -- Each captured line resets this timer
-    f2t_ac_start_capture_timer()
-
-    -- Transition to selecting phase - capture timer will call select function when output completes
     F2T_HAULING_STATE.current_phase = "ac_selecting_job"
-    return false
+    return f2t_hauling_phase_ac_select_job()
 end
 
---- Phase: Select best AC job from fetched jobs
+--- Phase: Select best AC job from the live gmcp.jobs.board
 --- @return boolean True if phase complete, false if waiting
 function f2t_hauling_phase_ac_select_job()
     if F2T_HAULING_STATE.paused then
         return false
     end
 
-    f2t_debug_log("[hauling/ac] Starting select job phase")
-
-    -- Get jobs from capture
-    local jobs = f2t_ac_stop_capture()
-    f2t_debug_log("[hauling/ac] Stopped capture, found %d jobs", jobs and #jobs or 0)
-
-    if not jobs or #jobs == 0 then
-        cecho("\n<red>[hauling]<reset> No AC jobs available, retrying in 10 seconds...\n")
-        tempTimer(10, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                and F2T_HAULING_STATE.current_phase == "ac_selecting_job" then
-                f2t_hauling_phase_ac_fetch_jobs()
-            end
-        end)
-        return false
-    end
+    local jobs = f2t_ac_get_board()
 
     -- Get ship capacity
     local ship_capacity = 0
@@ -98,11 +82,13 @@ function f2t_hauling_phase_ac_select_job()
     local job = f2t_ac_select_best_job(jobs, current_planet, ship_capacity)
 
     if not job then
-        cecho("\n<red>[hauling]<reset> No suitable jobs for ship capacity, retrying in 10 seconds...\n")
+        f2t_debug_log("[hauling/ac] No suitable job on board (%d listed), waiting for board update", #jobs)
+        -- gmcp.jobs.board handler re-calls this the instant the board changes;
+        -- this timer is just a fallback in case a push is ever missed
         tempTimer(10, function()
             if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
                 and F2T_HAULING_STATE.current_phase == "ac_selecting_job" then
-                f2t_hauling_phase_ac_fetch_jobs()
+                f2t_hauling_phase_ac_select_job()
             end
         end)
         return false
@@ -110,11 +96,13 @@ function f2t_hauling_phase_ac_select_job()
 
     -- Store selected job
     F2T_HAULING_STATE.ac_job = job
-    F2T_HAULING_STATE.ac_job_taken = false
+    F2T_HAULING_STATE.ac_accept_sent = false
+    F2T_HAULING_STATE.ac_collect_sent = false
+    F2T_HAULING_STATE.ac_deliver_sent = false
 
     cecho(string.format("\n<green>[hauling]<reset> Selected job %d: %d tons of %s from %s to %s (%dig/tn, %dhcr)\n",
-        job.number, job.tons, job.commodity, job.source, job.destination,
-        job.payment_per_ton, job.hauling_credits))
+        job.id, job.quantity, job.commodity, job.source, job.destination,
+        job.payment, job.credits))
 
     -- Check if already at source
     if current_planet == job.source then
@@ -174,7 +162,8 @@ function f2t_hauling_phase_ac_navigate_to_source()
             return f2t_hauling_phase_ac_accept_job()
         else
             -- Map was wrong, wait for actual navigation
-            f2t_debug_log("[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
+            f2t_debug_log(
+                "[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
                 verify_planet or "unknown", job.source)
             return false
         end
@@ -202,13 +191,17 @@ function f2t_hauling_phase_ac_accept_job()
         return true
     end
 
-    f2t_debug_log("[hauling/ac] Accepting job %d", job.number)
+    -- Already holding this job -- the accept landed
+    if f2t_ac_current_job_matches(job) then
+        f2t_debug_log("[hauling/ac] Job %d accepted", job.id)
+        F2T_HAULING_STATE.current_phase = "ac_collecting"
+        return f2t_hauling_phase_ac_collect()
+    end
 
     -- Verify we're at AC room, wait if not (speedwalk might be in progress)
     if not f2t_ac_at_room() then
         f2t_debug_log("[hauling/ac] Not at AC room yet, waiting for navigation to complete")
 
-        -- Wait and retry - customs intercept or navigation will handle getting us there
         tempTimer(1.0, function()
             if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
                F2T_HAULING_STATE.current_phase == "ac_accepting_job" and
@@ -219,22 +212,38 @@ function f2t_hauling_phase_ac_accept_job()
         return false
     end
 
+    if F2T_HAULING_STATE.ac_accept_sent then
+        -- Already asked for it. gmcp.jobs.board is realtime, so if the job
+        -- has dropped off the board and we still don't hold it, someone else
+        -- got there first.
+        if not f2t_ac_board_has_job(job.id) then
+            cecho(string.format("\n<yellow>[hauling]<reset> Job %d was taken, fetching new jobs...\n", job.id))
+            f2t_debug_log("[hauling/ac] Job %d no longer on board and not accepted, reselecting", job.id)
+            F2T_HAULING_STATE.ac_job = nil
+            F2T_HAULING_STATE.ac_accept_sent = false
+            F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
+            return f2t_hauling_phase_ac_fetch_jobs()
+        end
+        f2t_debug_log("[hauling/ac] Accept sent, waiting for gmcp.char.job to confirm")
+        return false
+    end
+
     -- Clear flags for new job
-    F2T_HAULING_STATE.ac_job_taken = false
-    F2T_HAULING_STATE.ac_cargo_collected = false
-    F2T_HAULING_STATE.ac_cargo_delivered = false
     F2T_HAULING_STATE.ac_collect_sent = false
     F2T_HAULING_STATE.ac_deliver_sent = false
 
     -- Send accept command
-    send(string.format("ac %d", job.number))
-    cecho(string.format("\n<cyan>[hauling]<reset> Accepting job %d...\n", job.number))
+    F2T_HAULING_STATE.ac_accept_sent = true
+    send(string.format("ac %d", job.id))
+    cecho(string.format("\n<cyan>[hauling]<reset> Accepting job %d...\n", job.id))
 
-    -- Transition to collecting phase after brief delay to allow accept to complete
-    F2T_HAULING_STATE.current_phase = "ac_collecting"
-    tempTimer(1.0, function()
-        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and F2T_HAULING_STATE.current_phase == "ac_collecting" then
-            f2t_hauling_phase_ac_collect()
+    -- gmcp.char.job normally confirms within milliseconds via the event
+    -- handler; this is just a safety net in case an update is ever missed
+    tempTimer(3.0, function()
+        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
+           F2T_HAULING_STATE.current_phase == "ac_accepting_job" and
+           F2T_HAULING_STATE.ac_job then
+            f2t_hauling_phase_ac_accept_job()
         end
     end)
     return false
@@ -254,32 +263,26 @@ function f2t_hauling_phase_ac_collect()
         return true
     end
 
-    -- Check if job was taken by someone else
-    if F2T_HAULING_STATE.ac_job_taken then
-        cecho("\n<yellow>[hauling]<reset> Job was taken, fetching new jobs...\n")
-        F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-        return f2t_hauling_phase_ac_fetch_jobs()
-    end
-
-    -- Check for collect errors
-    if F2T_HAULING_STATE.ac_collect_error then
-        cecho(string.format("\n<red>[hauling]<reset> Collect error: %s\n", F2T_HAULING_STATE.ac_collect_error))
-        F2T_HAULING_STATE.ac_collect_error = nil
-        -- Retry by fetching new jobs
+    local current = f2t_ac_get_current_job()
+    if not current or not f2t_ac_current_job_matches(job) then
+        -- Lost the accepted job somehow -- reselect
+        cecho("\n<yellow>[hauling]<reset> Job no longer active, fetching new jobs...\n")
+        f2t_debug_log("[hauling/ac] gmcp.char.job no longer matches accepted job, reselecting")
+        F2T_HAULING_STATE.ac_job = nil
         F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
         return f2t_hauling_phase_ac_fetch_jobs()
     end
 
     -- Check if already collected
-    if F2T_HAULING_STATE.ac_cargo_collected then
-        cecho(string.format("\n<green>[hauling]<reset> Cargo collected: %d tons of %s\n", job.tons, job.commodity))
+    if current.collected then
+        cecho(string.format("\n<green>[hauling]<reset> Cargo collected: %d tons of %s\n", job.quantity, job.commodity))
         F2T_HAULING_STATE.current_phase = "ac_navigating_to_dest"
         return f2t_hauling_phase_ac_navigate_to_dest()
     end
 
     -- Check if we've already sent collect command (prevent duplicate sends)
     if F2T_HAULING_STATE.ac_collect_sent then
-        f2t_debug_log("[hauling/ac] Already sent collect command, waiting for response")
+        f2t_debug_log("[hauling/ac] Collect sent, waiting for gmcp.char.job.collected")
         return false
     end
 
@@ -312,12 +315,12 @@ function f2t_hauling_phase_ac_collect()
     cecho("\n<cyan>[hauling]<reset> Collecting cargo...\n")
     F2T_HAULING_STATE.ac_collect_sent = true
 
-    -- Wait for success/error trigger (will set flags)
-    -- Check again after brief delay to process trigger results
-    tempTimer(1.0, function()
+    -- gmcp.char.job.collected normally flips within milliseconds via the
+    -- event handler; this is just a safety net in case an update is ever missed
+    tempTimer(3.0, function()
         if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
            F2T_HAULING_STATE.current_phase == "ac_collecting" and
-           F2T_HAULING_STATE.ac_job then  -- Ensure we still have a job
+           F2T_HAULING_STATE.ac_job then
             f2t_hauling_phase_ac_collect()
         end
     end)
@@ -369,7 +372,8 @@ function f2t_hauling_phase_ac_navigate_to_dest()
             return f2t_hauling_phase_ac_deliver()
         else
             -- Map was wrong, wait for actual navigation
-            f2t_debug_log("[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
+            f2t_debug_log(
+                "[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
                 verify_planet or "unknown", job.destination)
             return false
         end
@@ -397,43 +401,31 @@ function f2t_hauling_phase_ac_deliver()
         return true
     end
 
-    -- Check for deliver errors
-    if F2T_HAULING_STATE.ac_deliver_error then
-        cecho(string.format("\n<red>[hauling]<reset> Deliver error: %s\n", F2T_HAULING_STATE.ac_deliver_error))
-        F2T_HAULING_STATE.ac_deliver_error = nil
-        -- Retry by fetching new jobs
-        F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-        return f2t_hauling_phase_ac_fetch_jobs()
-    end
-
-    -- Check if already delivered
-    if F2T_HAULING_STATE.ac_cargo_delivered then
+    -- gmcp.char.job clears the instant delivery is confirmed by the server --
+    -- if we no longer hold this job, the delivery went through.
+    if not f2t_ac_current_job_matches(job) then
         local new_credits = f2t_ac_get_hauling_credits() or 0
-        local payment = F2T_HAULING_STATE.ac_payment_amount or 0
 
         cecho(string.format("\n<green>[hauling]<reset> Job complete! Earned %dig and %dhcr (Total: %dhcr)\n",
-            payment, job.hauling_credits, new_credits))
+            job.totalValue, job.credits, new_credits))
 
-        -- Update statistics with actual payment received
+        -- Update statistics with the job's own payment fields (fixed at accept time)
         F2T_HAULING_STATE.total_cycles = (F2T_HAULING_STATE.total_cycles or 0) + 1
-        F2T_HAULING_STATE.session_profit = (F2T_HAULING_STATE.session_profit or 0) + payment
+        F2T_HAULING_STATE.session_profit = (F2T_HAULING_STATE.session_profit or 0) + job.totalValue
 
         -- Add to history
         table.insert(F2T_HAULING_STATE.commodity_history or {}, {
             commodity = job.commodity,
             cycles = 1,
-            profit = payment,
-            hauling_credits = job.hauling_credits
+            profit = job.totalValue,
+            hauling_credits = job.credits
         })
 
         -- Reset job state
         F2T_HAULING_STATE.ac_job = nil
-        F2T_HAULING_STATE.ac_cargo_collected = false
-        F2T_HAULING_STATE.ac_cargo_delivered = false
-        F2T_HAULING_STATE.ac_payment_amount = nil
+        F2T_HAULING_STATE.ac_accept_sent = false
         F2T_HAULING_STATE.ac_collect_sent = false
         F2T_HAULING_STATE.ac_deliver_sent = false
-        F2T_HAULING_STATE.ac_deliver_waiting = false
         F2T_HAULING_STATE.ac_50_milestone_shown = F2T_HAULING_STATE.ac_50_milestone_shown or false
 
         -- Check if graceful stop was requested
@@ -446,22 +438,34 @@ function f2t_hauling_phase_ac_deliver()
         -- Check if we should repay loan (Commander rank only)
         local should_repay, loan_amount = f2t_ac_should_repay_loan()
         if should_repay and loan_amount then
-            cecho(string.format("\n<yellow>[hauling]<reset> You have enough cash to repay your loan (%dig). Repaying now...\n", loan_amount))
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> You have enough cash to repay your loan (%dig). Repaying now...\n",
+                loan_amount))
             f2t_debug_log("[hauling/ac] Repaying loan: %d", loan_amount)
 
-            -- Send repay command
             send(string.format("repay %d", loan_amount))
 
-            -- Wait briefly for confirmation, then continue
-            tempTimer(1.0, function()
+            -- Confirm via gmcp.char.vitals as soon as the loan clears, with a
+            -- short fallback in case the push is ever missed
+            local watch_id
+            local function continueAfterRepay()
+                if watch_id then
+                    killAnonymousEventHandler(watch_id)
+                    watch_id = nil
+                end
                 if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
                     and F2T_HAULING_STATE.current_phase == "ac_delivering" then
                     cecho("\n<green>[hauling]<reset> Loan repaid! You'll now earn more from hauling.\n")
-                    -- Continue to fetch new jobs
                     F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
                     f2t_hauling_phase_ac_fetch_jobs()
                 end
+            end
+            watch_id = registerAnonymousEventHandler("gmcp.char.vitals", function()
+                if f2t_ac_get_loan_amount() == 0 then
+                    continueAfterRepay()
+                end
             end)
+            tempTimer(5.0, continueAfterRepay)
             return false
         end
 
@@ -472,7 +476,7 @@ function f2t_hauling_phase_ac_deliver()
 
     -- Check if we've already sent deliver command (prevent duplicate sends)
     if F2T_HAULING_STATE.ac_deliver_sent then
-        f2t_debug_log("[hauling/ac] Already sent deliver command, waiting for response")
+        f2t_debug_log("[hauling/ac] Deliver sent, waiting for gmcp.char.job to clear")
         return false
     end
 
@@ -507,23 +511,20 @@ function f2t_hauling_phase_ac_deliver()
         end
     end
 
-    -- Send deliver command (only once)
+    -- Send deliver command (only once). If stevedores are busy the game
+    -- queues the delivery and gmcp.char.job simply won't clear until it's
+    -- actually done -- no need to resend or detect that state specially.
     send("deliver")
     cecho("\n<cyan>[hauling]<reset> Delivering cargo...\n")
     F2T_HAULING_STATE.ac_deliver_sent = true
 
-    -- Wait for success/error trigger (will set flags)
-    -- Use extended timeout if stevedores are busy, otherwise normal timeout
-    local wait_time = F2T_HAULING_STATE.ac_deliver_waiting and 15.0 or 1.0
-
-    if F2T_HAULING_STATE.ac_deliver_waiting then
-        f2t_debug_log("[hauling/ac] Waiting up to 15s for stevedores to become available")
-    end
-
-    tempTimer(wait_time, function()
+    -- gmcp.char.job normally clears within milliseconds of the delivery
+    -- actually completing; this is just a safety net in case an update is
+    -- ever missed. Long timeout since stevedore waits can run ~15s.
+    tempTimer(20.0, function()
         if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
            F2T_HAULING_STATE.current_phase == "ac_delivering" and
-           F2T_HAULING_STATE.ac_job then  -- Ensure we still have a job
+           F2T_HAULING_STATE.ac_job then
             f2t_hauling_phase_ac_deliver()
         end
     end)
@@ -577,7 +578,8 @@ function f2t_hauling_check_nav_to_ac_source_complete()
                 else
                     f2t_debug_log("[hauling/ac] Speedwalk completed but not at source (at %s, need %s)",
                         current_planet or "unknown", job.source)
-                    cecho(string.format("\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
                     f2t_hauling_phase_ac_navigate_to_source()
                 end
 
@@ -593,7 +595,9 @@ function f2t_hauling_check_nav_to_ac_source_complete()
                 -- available jobs. One blocked path doesn't mean all jobs are unreachable.
                 -- Exchange mode stops hauling on "failed" because the selected commodity/location
                 -- is the most profitable choice - can't proceed without reaching it.
-                cecho(string.format("\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n", job.source))
+                cecho(string.format(
+                    "\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n",
+                    job.source))
                 f2t_debug_log("[hauling/ac] Navigation failed after retries, skipping job")
                 F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
                 f2t_hauling_phase_ac_fetch_jobs()
@@ -605,7 +609,8 @@ function f2t_hauling_check_nav_to_ac_source_complete()
                 if current_planet == job.source then
                     f2t_hauling_transition("ac_accepting_job")
                 else
-                    cecho(string.format("\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
                     f2t_hauling_phase_ac_navigate_to_source()
                 end
             end
@@ -653,7 +658,8 @@ function f2t_hauling_check_nav_to_ac_dest_complete()
                 else
                     f2t_debug_log("[hauling/ac] Speedwalk completed but not at destination (at %s, need %s)",
                         current_planet or "unknown", job.destination)
-                    cecho(string.format("\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
                     f2t_hauling_phase_ac_navigate_to_dest()
                 end
 
@@ -666,7 +672,9 @@ function f2t_hauling_check_nav_to_ac_dest_complete()
             elseif result == "failed" then
                 -- Speedwalk couldn't reach destination after retries - path is blocked
                 -- (See source handler for explanation of why AC fetches new jobs vs stopping)
-                cecho(string.format("\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n", job.destination))
+                cecho(string.format(
+                    "\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n",
+                    job.destination))
                 f2t_debug_log("[hauling/ac] Navigation failed after retries, skipping job")
                 F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
                 f2t_hauling_phase_ac_fetch_jobs()
@@ -678,7 +686,8 @@ function f2t_hauling_check_nav_to_ac_dest_complete()
                 if current_planet == job.destination then
                     f2t_hauling_transition("ac_delivering")
                 else
-                    cecho(string.format("\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
                     f2t_hauling_phase_ac_navigate_to_dest()
                 end
             end
@@ -686,8 +695,8 @@ function f2t_hauling_check_nav_to_ac_dest_complete()
     end
 end
 
---- Check if AC job selection should proceed after work command completes
-function f2t_hauling_check_ac_select_complete()
+--- Re-run job selection when the live board changes
+function f2t_hauling_check_ac_board_update()
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
         return
     end
@@ -696,75 +705,61 @@ function f2t_hauling_check_ac_select_complete()
         return
     end
 
-    f2t_debug_log("[hauling/ac] Work command output complete, selecting job")
+    f2t_debug_log("[hauling/ac] Job board updated, re-selecting")
     f2t_hauling_phase_ac_select_job()
 end
 
---- Check if AC cargo collection should proceed after accept command
-function f2t_hauling_check_ac_collect_ready()
+--- Re-run the current AC phase when gmcp.char.job changes (accept/collect/
+--- deliver confirmation all land here)
+function f2t_hauling_check_ac_job_update()
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
         return
     end
 
-    if F2T_HAULING_STATE.current_phase ~= "ac_collecting" then
-        return
+    local phase = F2T_HAULING_STATE.current_phase
+    if phase == "ac_accepting_job" then
+        f2t_hauling_phase_ac_accept_job()
+    elseif phase == "ac_collecting" then
+        f2t_hauling_phase_ac_collect()
+    elseif phase == "ac_delivering" then
+        f2t_hauling_phase_ac_deliver()
     end
-
-    -- Wait a moment for triggers to fire, then check collect completion
-    tempTimer(0.5, function()
-        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-           F2T_HAULING_STATE.current_phase == "ac_collecting" and
-           F2T_HAULING_STATE.ac_job then  -- Ensure we still have a job and are in correct phase
-            f2t_hauling_phase_ac_collect()
-        end
-    end)
-end
-
---- Check if AC cargo delivery should proceed
-function f2t_hauling_check_ac_deliver_ready()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "ac_delivering" then
-        return
-    end
-
-    -- Wait a moment for triggers to fire, then check deliver completion
-    tempTimer(0.5, function()
-        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-           F2T_HAULING_STATE.current_phase == "ac_delivering" and
-           F2T_HAULING_STATE.ac_job then  -- Ensure we still have a job and are in correct phase
-            f2t_hauling_phase_ac_deliver()
-        end
-    end)
 end
 
 --- Register AC-specific GMCP event handlers
---- @return string Event handler ID
+--- @return table Map of handler ids, keyed by GMCP event name
 function f2t_ac_register_handlers()
-    local handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        -- Check navigation completion after brief delay for GMCP to settle
+    local handlers = {}
+
+    -- Map navigation completion (speedwalk state, unrelated to job data)
+    handlers.room_info = registerAnonymousEventHandler("gmcp.room.info", function()
         tempTimer(0.5, function()
             f2t_hauling_check_nav_to_ac_source_complete()
             f2t_hauling_check_nav_to_ac_dest_complete()
-            f2t_hauling_check_ac_select_complete()
-            f2t_hauling_check_ac_collect_ready()
-            f2t_hauling_check_ac_deliver_ready()
         end)
     end)
 
+    -- Live job board (job selection)
+    handlers.jobs_board = registerAnonymousEventHandler("gmcp.jobs.board", f2t_hauling_check_ac_board_update)
+    handlers.jobs = registerAnonymousEventHandler("gmcp.jobs", f2t_hauling_check_ac_board_update)
+
+    -- Current contract (accept/collect/deliver confirmation)
+    handlers.char_job = registerAnonymousEventHandler("gmcp.char.job", f2t_hauling_check_ac_job_update)
+
     f2t_debug_log("[hauling/ac] Registered AC event handlers")
-    return handler_id
+    return handlers
 end
 
 --- Cleanup AC event handlers
---- @param handler_id string Event handler ID to kill
-function f2t_ac_cleanup_handlers(handler_id)
-    if handler_id then
-        killAnonymousEventHandler(handler_id)
-        f2t_debug_log("[hauling/ac] Cleaned up AC event handlers")
+--- @param handlers table Map of handler ids returned by f2t_ac_register_handlers
+function f2t_ac_cleanup_handlers(handlers)
+    if not handlers then
+        return
     end
+    for _, handler_id in pairs(handlers) do
+        killAnonymousEventHandler(handler_id)
+    end
+    f2t_debug_log("[hauling/ac] Cleaned up AC event handlers")
 end
 
 f2t_debug_log("[hauling/ac] AC phases module loaded")

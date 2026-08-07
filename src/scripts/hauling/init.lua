@@ -58,17 +58,14 @@ F2T_HAULING_STATE = {
     cycle_pause_return_location = nil,  -- Room to return to after cycle pause
 
     -- Armstrong Cuthbert job tracking (Commander, Captain ranks)
-    ac_job = nil,                   -- Currently selected job (or nil)
-    ac_job_taken = false,           -- Job was taken by someone else
-    ac_cargo_collected = false,     -- Cargo collection complete
-    ac_cargo_delivered = false,     -- Cargo delivery complete
+    -- Job state (accepted/collected/delivered) is read live from
+    -- gmcp.jobs.board / gmcp.char.job -- these flags only guard against
+    -- resending a command while waiting for the GMCP confirmation.
+    ac_job = nil,                   -- Currently selected job (raw gmcp.jobs.board entry, or nil)
+    ac_accept_sent = false,         -- Accept command sent (prevent duplicates)
     ac_collect_sent = false,        -- Collect command sent (prevent duplicates)
     ac_deliver_sent = false,        -- Deliver command sent (prevent duplicates)
-    ac_collect_error = nil,         -- Collection error message
-    ac_deliver_error = nil,         -- Delivery error message
-    ac_deliver_waiting = false,     -- Waiting for stevedores
     ac_50_milestone_shown = false,  -- Whether 50 credit message shown
-    ac_payment_amount = nil,        -- Payment received for job
 
     -- Akaturi contract tracking (Adventurer rank)
     akaturi_contract = {

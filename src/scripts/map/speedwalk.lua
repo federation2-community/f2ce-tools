@@ -22,6 +22,10 @@ F2T_SPEEDWALK_BRIEF_SWITCHED       = false
 -- recovery navigate being issued. Owners' nav-complete checks must not
 -- treat the "stopped" result during this window as a real user stop.
 F2T_SPEEDWALK_CUSTOMS_PENDING      = false
+-- True while paused specifically because the socket dropped mid-move, as
+-- opposed to a manual f2t_map_speedwalk_pause(). Distinguishes "resume when
+-- the connection comes back" from "wait for the user to resume".
+F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
 
 function f2t_map_set_nav_owner(owner, on_interrupt)
     F2T_SPEEDWALK_OWNER        = owner
@@ -47,6 +51,7 @@ function doSpeedWalk()
     end
     F2T_SPEEDWALK_ACTIVE               = true
     F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
     F2T_SPEEDWALK_DIR                  = speedWalkDir
     F2T_SPEEDWALK_PATH                 = speedWalkPath
     F2T_SPEEDWALK_CURRENT_STEP         = 0
@@ -114,6 +119,7 @@ function f2t_map_speedwalk_complete()
     f2t_map_speedwalk_restore_mode()
     F2T_SPEEDWALK_ACTIVE               = false
     F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
     F2T_SPEEDWALK_DIR                  = {}
     F2T_SPEEDWALK_PATH                 = {}
     F2T_SPEEDWALK_CURRENT_STEP         = 0
@@ -144,6 +150,7 @@ function f2t_map_speedwalk_stop()
     end
     F2T_SPEEDWALK_ACTIVE               = false
     F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
     F2T_SPEEDWALK_DIR                  = {}
     F2T_SPEEDWALK_PATH                 = {}
     F2T_SPEEDWALK_CURRENT_STEP         = 0
@@ -179,6 +186,40 @@ function f2t_map_speedwalk_resume()
     cecho(string.format("\n<green>[map]<reset> Speedwalk resumed (%d steps remaining)\n", remaining))
     f2t_map_speedwalk_next_step()
     return true
+end
+
+-- Called from the sysDisconnectionEvent handler. A dead socket looks
+-- identical to a blocked exit to the timeout-driven failure path below --
+-- "attempt 1/3", recompute, resend into the void, "attempt 2/3"... -- and
+-- eventually gives up claiming the path is blocked when actually nothing
+-- was ever wrong with the route. Catch it before that timeout fires instead.
+function f2t_map_speedwalk_pause_for_disconnect()
+    if not F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_PAUSED then return end
+    F2T_SPEEDWALK_PAUSED                = true
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = true
+    if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
+        killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
+        F2T_SPEEDWALK_MOVE_TIMEOUT_ID = nil
+    end
+    F2T_SPEEDWALK_WAITING_FOR_MOVE = false
+    cecho("\n<yellow>[map]<reset> Connection lost, speedwalk paused\n")
+end
+
+-- Called once GMCP confirms a room again after a reconnect (see
+-- f2t_map_handle_gmcp_room in core.lua). The move sent right before the
+-- drop may or may not have landed server-side, so recompute from wherever
+-- we actually are rather than assuming the old path is still valid.
+function f2t_map_speedwalk_resume_after_disconnect()
+    if not F2T_SPEEDWALK_ACTIVE or not F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT then return end
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
+    if not f2t_settings_get("map", "speedwalk_resume_on_reconnect") then
+        cecho("\n<yellow>[map]<reset> Connection restored, speedwalk still paused (resume manually)\n")
+        return
+    end
+    F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_CONSECUTIVE_FAILURES = 0
+    cecho("\n<green>[map]<reset> Connection restored, resuming speedwalk...\n")
+    f2t_map_speedwalk_recompute_path()
 end
 
 function f2t_map_speedwalk_on_room_change()
@@ -316,6 +357,7 @@ function f2t_map_speedwalk_fail(reason)
     end
     F2T_SPEEDWALK_ACTIVE               = false
     F2T_SPEEDWALK_PAUSED               = false
+    F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
     F2T_SPEEDWALK_DIR                  = {}
     F2T_SPEEDWALK_PATH                 = {}
     F2T_SPEEDWALK_CURRENT_STEP         = 0

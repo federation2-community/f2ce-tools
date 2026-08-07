@@ -196,19 +196,20 @@ function f2t_hauling_stop()
            phase == "ac_navigating_to_dest" or phase == "ac_delivering" then
             F2T_HAULING_STATE.stopping = true
             local job = F2T_HAULING_STATE.ac_job
+            local current = f2t_ac_get_current_job()
 
             -- Different message depending on whether we have cargo
-            if F2T_HAULING_STATE.ac_cargo_collected then
+            if current and current.collected then
                 cecho(string.format("\n<green>[hauling]<reset> Stopping after delivering cargo (%s to %s)...\n",
                     job.commodity, job.destination))
             else
                 cecho(string.format("\n<green>[hauling]<reset> Stopping after completing job %d (%s from %s to %s)...\n",
-                    job.number, job.commodity, job.source, job.destination))
+                    job.id, job.commodity, job.source, job.destination))
             end
 
             cecho("\n<dim_grey>Use 'haul terminate' to stop immediately<reset>\n")
             f2t_debug_log("[hauling/ac] Graceful stop requested, will finish job %d (phase: %s)",
-                job.number, phase)
+                job.id, phase)
             return
         end
         -- Otherwise (fetching/selecting phase), we can stop immediately below
@@ -420,22 +421,10 @@ function f2t_hauling_finish_stop()
 
     -- Clear AC job state
     F2T_HAULING_STATE.ac_job = nil
-    F2T_HAULING_STATE.ac_job_taken = false
-    F2T_HAULING_STATE.ac_cargo_collected = false
-    F2T_HAULING_STATE.ac_cargo_delivered = false
-    F2T_HAULING_STATE.ac_collect_error = nil
-    F2T_HAULING_STATE.ac_deliver_error = nil
+    F2T_HAULING_STATE.ac_accept_sent = false
     F2T_HAULING_STATE.ac_collect_sent = false
     F2T_HAULING_STATE.ac_deliver_sent = false
-    F2T_HAULING_STATE.ac_deliver_waiting = false
     F2T_HAULING_STATE.ac_50_milestone_shown = false
-    F2T_HAULING_STATE.ac_payment_amount = nil
-
-    -- Clear AC capture state
-    if F2T_AC_JOB_STATE then
-        F2T_AC_JOB_STATE.capturing = false
-        F2T_AC_JOB_STATE.jobs = {}
-    end
 
     -- Clear Akaturi contract state
     F2T_HAULING_STATE.akaturi_contract = {
