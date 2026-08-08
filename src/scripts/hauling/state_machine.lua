@@ -443,6 +443,8 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.ac_accept_sent = false
     F2T_HAULING_STATE.ac_collect_sent = false
     F2T_HAULING_STATE.ac_deliver_sent = false
+    F2T_HAULING_STATE.ac_cash_before_deliver = nil
+    F2T_HAULING_STATE.ac_completing = false
     F2T_HAULING_STATE.ac_50_milestone_shown = false
 
     -- Clear Akaturi contract state

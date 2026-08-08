@@ -7,6 +7,10 @@
 -- The pattern matches a substring on just the first line of the message
 -- rather than the full sentence: the game wraps this message onto a second
 -- line (after "at least 50"), so an anchored full-line pattern never matches.
+-- The fail message is deferred slightly so the game's own second line prints
+-- first, instead of interleaving in front of it.
 if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE then
-    f2t_map_speedwalk_fail("Sol requires at least 50 hauler credits before you can leave")
+    tempTimer(0.2, function()
+        f2t_map_speedwalk_fail("Sol requires at least 50 hauler credits before you can leave")
+    end)
 end

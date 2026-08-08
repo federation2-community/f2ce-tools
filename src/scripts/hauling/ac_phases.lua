@@ -404,74 +404,111 @@ function f2t_hauling_phase_ac_deliver()
     -- gmcp.char.job clears the instant delivery is confirmed by the server --
     -- if we no longer hold this job, the delivery went through.
     if not f2t_ac_current_job_matches(job) then
-        local new_credits = f2t_ac_get_hauling_credits() or 0
-
-        cecho(string.format("\n<green>[hauling]<reset> Job complete! Earned %dig and %dhcr (Total: %dhcr)\n",
-            job.totalValue, job.credits, new_credits))
-
-        -- Update statistics with the job's own payment fields (fixed at accept time)
-        F2T_HAULING_STATE.total_cycles = (F2T_HAULING_STATE.total_cycles or 0) + 1
-        F2T_HAULING_STATE.session_profit = (F2T_HAULING_STATE.session_profit or 0) + job.totalValue
-
-        -- Add to history
-        table.insert(F2T_HAULING_STATE.commodity_history or {}, {
-            commodity = job.commodity,
-            cycles = 1,
-            profit = job.totalValue,
-            hauling_credits = job.credits
-        })
-
-        -- Reset job state
-        F2T_HAULING_STATE.ac_job = nil
-        F2T_HAULING_STATE.ac_accept_sent = false
-        F2T_HAULING_STATE.ac_collect_sent = false
-        F2T_HAULING_STATE.ac_deliver_sent = false
-        F2T_HAULING_STATE.ac_50_milestone_shown = F2T_HAULING_STATE.ac_50_milestone_shown or false
-
-        -- Check if graceful stop was requested
-        if F2T_HAULING_STATE.stopping then
-            f2t_debug_log("[hauling/ac] Job complete, stopping as requested")
-            f2t_hauling_do_stop()
-            return true
-        end
-
-        -- Check if we should repay loan (Commander rank only)
-        local should_repay, loan_amount = f2t_ac_should_repay_loan()
-        if should_repay and loan_amount then
-            cecho(string.format(
-                "\n<yellow>[hauling]<reset> You have enough cash to repay your loan (%dig). Repaying now...\n",
-                loan_amount))
-            f2t_debug_log("[hauling/ac] Repaying loan: %d", loan_amount)
-
-            send(string.format("repay %d", loan_amount))
-
-            -- Confirm via gmcp.char.vitals as soon as the loan clears, with a
-            -- short fallback in case the push is ever missed
-            local watch_id
-            local function continueAfterRepay()
-                if watch_id then
-                    killAnonymousEventHandler(watch_id)
-                    watch_id = nil
-                end
-                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                    and F2T_HAULING_STATE.current_phase == "ac_delivering" then
-                    cecho("\n<green>[hauling]<reset> Loan repaid! You'll now earn more from hauling.\n")
-                    F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-                    f2t_hauling_phase_ac_fetch_jobs()
-                end
-            end
-            watch_id = registerAnonymousEventHandler("gmcp.char.vitals", function()
-                if f2t_ac_get_loan_amount() == 0 then
-                    continueAfterRepay()
-                end
-            end)
-            tempTimer(5.0, continueAfterRepay)
+        -- Avoid double-counting if this branch is re-entered (e.g. the 20s
+        -- safety-net timer firing) while the completion below is still
+        -- waiting on its own settle timer.
+        if F2T_HAULING_STATE.ac_completing then
             return false
         end
+        F2T_HAULING_STATE.ac_completing = true
 
-        -- Start next job
-        F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-        return f2t_hauling_phase_ac_fetch_jobs()
+        -- char.job clearing and char.vitals.cash updating are separate GMCP
+        -- pushes that can arrive in either order; wait briefly for cash to
+        -- settle before reading the actual payment.
+        tempTimer(0.3, function()
+            F2T_HAULING_STATE.ac_completing = false
+
+            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
+                    F2T_HAULING_STATE.current_phase == "ac_delivering" and
+                    F2T_HAULING_STATE.ac_job == job) then
+                return
+            end
+
+            local new_credits = f2t_ac_get_hauling_credits() or 0
+
+            -- job.totalValue is the LISTED rate, fixed when the job was accepted
+            -- -- it does not reflect the fast-delivery bonus or late-delivery
+            -- fine applied at settlement (early/on-time/late vs the job's GTU).
+            -- Read the actual credited amount from the cash delta instead of
+            -- assuming the listed value, falling back only if cash tracking
+            -- is unavailable.
+            local cash_after = f2t_ac_get_cash()
+            local payment = job.totalValue
+            if cash_after and F2T_HAULING_STATE.ac_cash_before_deliver then
+                payment = cash_after - F2T_HAULING_STATE.ac_cash_before_deliver
+            else
+                f2t_debug_log("[hauling/ac] Could not determine actual payment via cash delta, using listed value")
+            end
+            F2T_HAULING_STATE.ac_cash_before_deliver = nil
+
+            cecho(string.format("\n<green>[hauling]<reset> Job complete! Earned %dig and %dhcr (Total: %dhcr)\n",
+                payment, job.credits, new_credits))
+
+            -- Update statistics with the actual payment received
+            F2T_HAULING_STATE.total_cycles = (F2T_HAULING_STATE.total_cycles or 0) + 1
+            F2T_HAULING_STATE.session_profit = (F2T_HAULING_STATE.session_profit or 0) + payment
+
+            -- Add to history
+            table.insert(F2T_HAULING_STATE.commodity_history or {}, {
+                commodity = job.commodity,
+                cycles = 1,
+                profit = payment,
+                hauling_credits = job.credits
+            })
+
+            -- Reset job state
+            F2T_HAULING_STATE.ac_job = nil
+            F2T_HAULING_STATE.ac_accept_sent = false
+            F2T_HAULING_STATE.ac_collect_sent = false
+            F2T_HAULING_STATE.ac_deliver_sent = false
+            F2T_HAULING_STATE.ac_50_milestone_shown = F2T_HAULING_STATE.ac_50_milestone_shown or false
+
+            -- Check if graceful stop was requested
+            if F2T_HAULING_STATE.stopping then
+                f2t_debug_log("[hauling/ac] Job complete, stopping as requested")
+                f2t_hauling_do_stop()
+                return
+            end
+
+            -- Check if we should repay loan (Commander rank only)
+            local should_repay, loan_amount = f2t_ac_should_repay_loan()
+            if should_repay and loan_amount then
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> You have enough cash to repay your loan (%dig). Repaying now...\n",
+                    loan_amount))
+                f2t_debug_log("[hauling/ac] Repaying loan: %d", loan_amount)
+
+                send(string.format("repay %d", loan_amount))
+
+                -- Confirm via gmcp.char.vitals as soon as the loan clears, with a
+                -- short fallback in case the push is ever missed
+                local watch_id
+                local function continueAfterRepay()
+                    if watch_id then
+                        killAnonymousEventHandler(watch_id)
+                        watch_id = nil
+                    end
+                    if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                        and F2T_HAULING_STATE.current_phase == "ac_delivering" then
+                        cecho("\n<green>[hauling]<reset> Loan repaid! You'll now earn more from hauling.\n")
+                        F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
+                        f2t_hauling_phase_ac_fetch_jobs()
+                    end
+                end
+                watch_id = registerAnonymousEventHandler("gmcp.char.vitals", function()
+                    if f2t_ac_get_loan_amount() == 0 then
+                        continueAfterRepay()
+                    end
+                end)
+                tempTimer(5.0, continueAfterRepay)
+                return
+            end
+
+            -- Start next job
+            F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
+            f2t_hauling_phase_ac_fetch_jobs()
+        end)
+        return false
     end
 
     -- Check if we've already sent deliver command (prevent duplicate sends)
@@ -514,6 +551,10 @@ function f2t_hauling_phase_ac_deliver()
     -- Send deliver command (only once). If stevedores are busy the game
     -- queues the delivery and gmcp.char.job simply won't clear until it's
     -- actually done -- no need to resend or detect that state specially.
+    -- Snapshot cash now so the completion branch can read the actual
+    -- credited amount (bonus/fine applied) as a delta instead of assuming
+    -- the job's listed value.
+    F2T_HAULING_STATE.ac_cash_before_deliver = f2t_ac_get_cash()
     send("deliver")
     cecho("\n<cyan>[hauling]<reset> Delivering cargo...\n")
     F2T_HAULING_STATE.ac_deliver_sent = true

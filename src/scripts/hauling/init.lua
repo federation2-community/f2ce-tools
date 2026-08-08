@@ -65,6 +65,8 @@ F2T_HAULING_STATE = {
     ac_accept_sent = false,         -- Accept command sent (prevent duplicates)
     ac_collect_sent = false,        -- Collect command sent (prevent duplicates)
     ac_deliver_sent = false,        -- Deliver command sent (prevent duplicates)
+    ac_cash_before_deliver = nil,   -- Cash snapshot taken right before "deliver", to compute actual payment
+    ac_completing = false,          -- Job-complete accounting is running (guards against double-counting)
     ac_50_milestone_shown = false,  -- Whether 50 credit message shown
 
     -- Akaturi contract tracking (Adventurer rank)

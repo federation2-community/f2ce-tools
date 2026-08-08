@@ -17,6 +17,11 @@ local SB_W   = 17    -- scrollbar pixel allowance
 
 local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
 
+-- Without a QToolTip rule, a widget's own dark background bleeds into its
+-- native tooltip box (unreadable black-on-black) instead of Qt/OS defaults.
+local _TOOLTIP_CSS = "QToolTip{background-color:#1d2030;color:#e8ebf5;" ..
+    "border:1px solid rgba(255,255,255,0.18);padding:3px;}"
+
 -- Same vertical gradient as Galaxy Navigator's header strip, for a
 -- consistent header look across content types.
 local _HDR_BAR_CSS = [[
@@ -59,7 +64,7 @@ local function actionBtnCss(accent, accentHover)
             border-left: 3px solid %s;
             color: white;
         }
-    ]], accent, accentHover)
+    ]], accent, accentHover) .. _TOOLTIP_CSS
 end
 
 local _BTN_COLLECT_CSS = actionBtnCss("#3ecf5e", "#5ce87c")
@@ -139,6 +144,20 @@ end
 -- regardless of whether this pane is even open -- this is a read/control
 -- surface, not a dependency in either direction.
 
+-- Friendly labels for AC phases -- this tab is AC-only, so the mode itself
+-- ("Armstrong Cuthbert Jobs") is redundant to display; only the phase is
+-- useful, and only if it reads as plain English rather than an internal
+-- phase constant like "ac_navigating_to_source".
+local _AC_PHASE_LABELS = {
+    ac_fetching_jobs        = "selecting job",
+    ac_selecting_job        = "selecting job",
+    ac_navigating_to_source = "heading to pickup",
+    ac_accepting_job        = "accepting job",
+    ac_collecting           = "collecting cargo",
+    ac_navigating_to_dest   = "heading to dropoff",
+    ac_delivering           = "delivering cargo",
+}
+
 --- Snapshot of automation state, or nil if the hauling component isn't installed
 local function haulSnapshot()
     if not F2T_HAULING_STATE then return nil end
@@ -146,10 +165,8 @@ local function haulSnapshot()
         active          = F2T_HAULING_STATE.active,
         paused          = F2T_HAULING_STATE.paused,
         pauseRequested  = F2T_HAULING_STATE.pause_requested,
-        mode            = F2T_HAULING_STATE.mode,
-        modeName        = F2T_HAULING_STATE.mode and f2t_hauling_get_mode_name
-            and f2t_hauling_get_mode_name(F2T_HAULING_STATE.mode) or nil,
-        phase           = F2T_HAULING_STATE.current_phase,
+        stopping        = F2T_HAULING_STATE.stopping,
+        phaseLabel      = _AC_PHASE_LABELS[F2T_HAULING_STATE.current_phase],
         totalCycles     = F2T_HAULING_STATE.total_cycles or 0,
         sessionProfit   = F2T_HAULING_STATE.session_profit or 0,
     }
@@ -192,6 +209,8 @@ local function haulStatusHtml(snap)
     local label, color
     if not snap.active then
         label, color = "STOPPED", "#888888"
+    elseif snap.stopping then
+        label, color = "STOPPING…", "#ff5555"
     elseif snap.paused then
         label, color = "PAUSED", "#e0b84d"
     elseif snap.pauseRequested then
@@ -201,9 +220,8 @@ local function haulStatusHtml(snap)
     end
 
     local detail = ""
-    if snap.active and snap.modeName then
-        detail = string.format(" <span style='%scolor:#888888;'>%s%s</span>",
-            CELL_FONT, snap.modeName, snap.phase and (" · " .. snap.phase) or "")
+    if snap.active and snap.phaseLabel then
+        detail = string.format(" <span style='%scolor:#888888;'>%s</span>", CELL_FONT, snap.phaseLabel)
     end
 
     local html = string.format("<span style='%scolor:%s;font-weight:bold;'>&#9679; %s</span>%s",
@@ -279,12 +297,45 @@ local function toggleHaulMenu(inst, target)
     inst.haulMenu = menu
 end
 
+--- Custom hover popup for the haul controls. Native QToolTip styling proved
+--- unreliable here (per-widget QToolTip{} stylesheet rules didn't consistently
+--- take effect), so hover text is drawn with an ordinary Geyser label instead
+--- of setToolTip(), same overlay approach as the dropdown menu above.
+local function showHoverTip(inst, target, x, text)
+    if not inst or not text or text == "" then return end
+    if not inst.hoverTip then
+        inst.hoverTipGen = (inst.hoverTipGen or 0) + 1
+        inst.hoverTip = Geyser.Label:new({
+            name = string.format("%s_hjhtip_%d", target._gid, inst.hoverTipGen),
+            x = x, y = H_BAR, width = 260, height = 20,
+        }, target.content)
+        inst.hoverTip:setStyleSheet(string.format([[
+            background-color: rgba(29, 32, 48, 250);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 3px;
+            color: #e8ebf5;
+            padding: 0 6px;
+            %s
+        ]], CELL_FONT))
+    end
+    inst.hoverTip:move(x, nil)
+    inst.hoverTip:echo(text)
+    inst.hoverTip:show()
+    inst.hoverTip:raise()
+end
+
+local function hideHoverTip(inst)
+    if inst and inst.hoverTip then
+        inst.hoverTip:hide()
+    end
+end
+
 --- Refresh one instance's status readout (does not touch the open menu, if any)
 local function renderHaulStatus(inst)
     if not inst or not inst.haulStatusLbl then return end
     local html, tooltip = haulStatusHtml(haulSnapshot())
     inst.haulStatusLbl:echo(html)
-    inst.haulStatusLbl:setToolTip(tooltip)
+    inst.haulTooltipText = tooltip
 end
 
 local function renderHaulStatusAll()
@@ -348,6 +399,16 @@ local function buildJobRow(entry)
         effectivePay, payType = math.floor(basePay * 0.50), "penalty"
     else
         effectivePay, payType = basePay, "normal"
+    end
+
+    -- The bank automatically skims 10% off any cargo-job earnings while a
+    -- loan is outstanding (fed2_guide.txt: "The Bank will automatically skim
+    -- 10% off any money you earn by doing cargo jobs"), regardless of
+    -- bonus/penalty outcome. Without this, the estimate overstates take-home
+    -- pay for every player who hasn't repaid their starting loan yet.
+    local loan = gmcp and gmcp.char and gmcp.char.vitals and tonumber(gmcp.char.vitals.loan)
+    if loan and loan > 0 then
+        effectivePay = math.floor(effectivePay * 0.90)
     end
 
     return {
@@ -462,7 +523,8 @@ local function buildCols()
                     "<span style='%scolor:%s;'><b>%d</b></span>" ..
                     "<span style='%scolor:#c8c8c8;'>)</span>",
                     CELL_FONT, row.basePay, CELL_FONT, payColor, row.effectivePay, CELL_FONT))
-                cell:setToolTip("Base pay (effective pay after route bonus/penalty)")
+                cell:setToolTip("Base pay (estimated net pay after route bonus/penalty and " ..
+                    "the bank's 10% loan repayment skim, if a loan is outstanding)")
             end,
         },
     }
@@ -661,12 +723,20 @@ local function buildContent(target)
     }, bar)
     haulBtn:setStyleSheet(_BTN_HAUL_CSS)
     haulBtn:echo("<center>Haul ▾</center>")
-    haulBtn:setToolTip("Start/stop the hauling automation")
+    haulBtn:setOnEnter(function()
+        showHoverTip(instances[gid], target, haulBtnX, "Start/stop the hauling automation")
+    end)
+    haulBtn:setOnLeave(function() hideHoverTip(instances[gid]) end)
 
     local haulStatusLbl = Geyser.Label:new({
         name = wid(), x = haulBtnX + 78, y = 0, width = "100%-" .. (haulBtnX + 84) .. "px", height = "100%",
     }, bar)
     haulStatusLbl:setStyleSheet("background-color: transparent; border: none;")
+    haulStatusLbl:setOnEnter(function()
+        local inst = instances[gid]
+        if inst then showHoverTip(inst, target, haulBtnX + 78, inst.haulTooltipText) end
+    end)
+    haulStatusLbl:setOnLeave(function() hideHoverTip(instances[gid]) end)
 
     -- ── Active-job strip ──────────────────────────────────────────────────────
     -- Hidden/zero-height until gmcp.char.job has a job; layoutInstance() sizes it.

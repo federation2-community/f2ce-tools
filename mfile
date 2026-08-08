@@ -3,18 +3,12 @@
   "version": "3.2.4",
   "dependency": {
     "package": "Muxlet",
-    "version": "2.2.9",
+    "version": "v2.2.9",
     "repo": "tmtocloud/Muxlet",
     "initFile": "src/scripts/init.lua",
     "versionVar": "F2T_REQUIRED_MUXLET",
     "urlVar": "MUXLET_URL"
   },
-  "devServer": {
-    "host": "play.federation2.com",
-    "port": "30003"
-  },
-  "devProfile": "f2ce-dev",
-  "devUsername": "jackrungh",
   "author": "tmtocloud",
   "description": "F2CE-Tools — Mudlet package for Federation 2 Community Edition.",
   "title": "f2ce-tools"
