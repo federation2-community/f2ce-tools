@@ -33,6 +33,15 @@ F2T_UI_FONT_SCALE = f2t_is_web() and 0.85 or 1.0
 function f2t_ui_pt(pt) return string.format("%gpt", pt * F2T_UI_FONT_SCALE) end
 function f2t_ui_px(px) return string.format("%gpx", math.floor(px * F2T_UI_FONT_SCALE + 0.5)) end
 
+-- The same scale as a bare number, for Geyser.Label:setFontSize().
+--
+-- Use this — NOT a font-size in the widget's stylesheet — to size a Geyser
+-- label. Geyser.Label:echo() re-wraps the message in `<div style="font-size:
+-- <self.fontSize>pt">` on every single update, and that inline style beats
+-- anything the stylesheet says. A font-size in setStyleSheet() on a label you
+-- ever :echo() to is silently dead code.
+function f2t_ui_fs(pt) return math.max(6, math.floor(pt * F2T_UI_FONT_SCALE + 0.5)) end
+
 -- ── Debug ─────────────────────────────────────────────────────────────────────
 
 F2T_DEBUG = false
