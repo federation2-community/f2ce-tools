@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# muddle — Docker shim for demonnic/muddler.
+#
+# muddlet (https://github.com/tmtocloud/muddlet) builds this package by shelling
+# out to a bare `muddle` on PATH, and has no opinion on how `muddle` got there
+# (native JVM build, a Docker wrapper, whatever). This shim provides one with
+# ZERO local Java/Gradle: it runs the demonnic/muddler Docker image against the
+# current directory and forwards any arguments. It replaces the old
+# scripts/build-local.sh — muddlet already does the mfile-driven Muxlet
+# dependency injection that build-local hand-rolled, so all that was missing was
+# a `muddle` on PATH.
+#
+# Install once — symlink it onto your PATH (with ~/bin on PATH):
+#
+#   ln -sf "$PWD/scripts/muddle" ~/bin/muddle
+#
+# then build/deploy from the repo root the normal muddlet way, e.g.:
+#
+#   muddlet --profile <your-mudlet-profile>
+#
+# For a local full-stack browser test, point the web client at the built
+# package (muddlet writes build/f2ce-tools.mpackage):
+#
+#   LOCAL_PKG=../fed2-tools/build/f2ce-tools.mpackage ../f2ce-web-client/scripts/dev-stack.sh
+#
+# Requires Docker. Prefer a native muddle (faster, no container spin-up)? Install
+# demonnic/muddler per its README and don't put this shim on PATH.
+exec docker run --rm -v "$PWD:/work" -w /work demonnic/muddler "$@"
