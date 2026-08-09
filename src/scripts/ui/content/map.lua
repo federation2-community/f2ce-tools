@@ -99,6 +99,67 @@ local function mapperFit()
     f2t_debug_log("[map content] mapperFit total: %.0fms", (os.clock() - tFitStart) * 1000)
 end
 
+-- ── Post-mount view sync ─────────────────────────────────────────────────────
+-- Mudlet's 2D mapper draws a room cell at min(widgetW, widgetH) / areaZoom
+-- pixels, and it takes both its zoom AND its displayed area from whatever
+-- f2t_map_handle_gmcp_room() last applied via setMapZoom()/centerview().  Until
+-- that has run *with a live native mapper*, the widget keeps some other area at
+-- some other zoom — which renders as a couple of rooms blown up to the size of
+-- the whole pane.
+--
+-- A single attempt at mount is not enough.  Two independent ways it misses:
+--   * gmcp.room.info has not landed yet (the handler early-returns), which is
+--     common on the new-character path where the room burst trails the UI build;
+--   * the native mapper is not up yet, and setMapZoom() fails soft with
+--     "no active mapper" — it returns nil + message rather than raising.
+-- Either miss used to persist until the player moved.  It only looked rare
+-- because a *first-run* profile also runs the silent map import, whose
+-- tempTimer(0.5, f2t_map_sync) happened to re-apply the view as a side effect;
+-- profiles that skip the import (and unlucky first-run ones) had nothing.
+--
+-- There is a third miss, and measurement showed it is the one that actually
+-- bites: the widget's GEOMETRY, not its zoom (see settleView below).  A fix
+-- that only re-applied zoom/centre was built and A/B tested against the
+-- released package and did NOT repair the view — zoom was already correct.
+-- Hence the settle loop refits the widget every tick rather than gating on
+-- viewIsApplied(), which is kept only as a debug-log signal.
+local VIEW_SYNC_RETRY_DELAYS = {0.25, 0.75, 1.5, 3.0}
+
+-- Diagnostic only: has the widget been pointed at the player's area at our
+-- zoom?  NOT used to skip work — a "yes" here was true throughout the bug.
+local function viewIsApplied()
+    local room = F2T_MAP_CURRENT_ROOM_ID
+    if not room then return false end
+    local ok_exists, exists = pcall(roomExists, room)
+    if not ok_exists or not exists then return false end
+    local ok_area, area = pcall(getRoomArea, room)
+    if not ok_area or not area then return false end
+    local want = tonumber(f2t_settings_get("map", "area_zoom"))
+    if not want then return true end          -- nothing to verify against
+    local ok_zoom, got = pcall(getMapZoom, area)
+    return ok_zoom and tonumber(got) == want
+end
+
+-- Deliberately NOT a plain re-run of f2t_map_handle_gmcp_room(): that handler
+-- also processes exits and can fire on-arrival commands, so calling it on every
+-- retry risks duplicate side effects.  Once the room is known, re-apply just the
+-- two view calls, which are idempotent.  Only fall back to the full handler
+-- while the room is still unknown, i.e. the handler never got to run at all.
+local function applyMapView()
+    local room = F2T_MAP_CURRENT_ROOM_ID
+    if not room then
+        if type(f2t_map_handle_gmcp_room) == "function" then
+            pcall(f2t_map_handle_gmcp_room)
+        end
+        return
+    end
+    local ok_area, area = pcall(getRoomArea, room)
+    if not ok_area or not area then return end
+    local want = tonumber(f2t_settings_get("map", "area_zoom"))
+    if want then pcall(setMapZoom, want, area) end
+    pcall(centerview, room)
+end
+
 local function buildContentDef()
     -- Token-based guard: each apply mints a new token table.  The deferred timer
     -- checks this token before building; remove() clears it so a timer that fires
@@ -148,6 +209,31 @@ local function buildContentDef()
                     if type(f2t_map_handle_gmcp_room) == "function" then
                         f2t_map_handle_gmcp_room()
                     end
+
+                    -- ...and then settle the view over the next few seconds.
+                    -- See VIEW_SYNC_RETRY_DELAYS above for why one shot isn't
+                    -- enough. Each tick refits the widget to its slot as well as
+                    -- re-applying zoom/centre: the native mapper is a singleton
+                    -- that does NOT track its Geyser container's geometry (Mudlet's
+                    -- T2DMap has no resizeEvent), so when the pane is still being
+                    -- laid out at mount it can end up sized to something far larger
+                    -- than the slot. Room cells are min(widgetW,widgetH)/zoom, so an
+                    -- oversized widget draws rooms many times too big and the pane
+                    -- shows a clipped corner of them — the reported symptom. Both
+                    -- calls are idempotent, so ticking a few times is harmless.
+                    local function settleView(attempt)
+                        if activeToken ~= myToken then return end   -- pane went away
+                        mapperFit()
+                        applyMapView()
+                        local delay = VIEW_SYNC_RETRY_DELAYS[attempt]
+                        if not delay then
+                            f2t_debug_log("[map content] view settle finished after %d ticks (applied=%s)",
+                                attempt, tostring(viewIsApplied()))
+                            return
+                        end
+                        tempTimer(delay, function() settleView(attempt + 1) end)
+                    end
+                    settleView(1)
 
                     -- Movement button overlay lives on top of the mapper.  It is
                     -- a true child of the slot, so the framework's slot delete
