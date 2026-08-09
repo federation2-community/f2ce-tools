@@ -56,7 +56,7 @@ local _COMPONENTS = {
     { name = "Stamina & Refuel",  desc = "automatic food runs and ship refueling" },
     { name = "Death Protection",  desc = "halts automation when you die" },
     { name = "Chat",              desc = "persistent com/tell/say history" },
-    { name = "Player Info",       desc = "rank, fuel, stamina, groats, slithies, and hold at a glance" },
+    { name = "Player Info",       desc = "rank, fuel, stamina, groats, and hold at a glance" },
     { name = "Who / Local Players", desc = "online and in-room player lists" },
 }
 
