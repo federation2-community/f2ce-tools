@@ -151,15 +151,18 @@ function f2t_map_show_route_info(origin, destination)
     cecho("<cyan>═══════════════════════════════════════════════════════════<reset>\n\n")
     cecho("<yellow>Origin:<reset>\n")
     cecho(string.format("  <white>Query:<reset>    %s\n", origin_name))
-    cecho(string.format("  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", origin_room_name, route_info.origin_room_id))
+    cecho(string.format(
+        "  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", origin_room_name, route_info.origin_room_id))
     cecho(string.format("  <white>Area:<reset>     %s\n\n", origin_area_name))
     cecho("<yellow>Destination:<reset>\n")
     cecho(string.format("  <white>Query:<reset>    %s\n", destination))
-    cecho(string.format("  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", dest_room_name, route_info.dest_room_id))
+    cecho(string.format(
+        "  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", dest_room_name, route_info.dest_room_id))
     cecho(string.format("  <white>Area:<reset>     %s\n\n", dest_area_name))
     cecho("<yellow>Route Statistics:<reset>\n")
     cecho(string.format("  <white>Total Moves:<reset>  <green>%d<reset>\n", route_info.total_moves))
-    cecho(string.format("  <white>Space Moves:<reset>  <ansiCyan>%d<reset> <dim_grey>(GTU)<reset>\n", route_info.space_moves))
+    cecho(string.format(
+        "  <white>Space Moves:<reset>  <ansiCyan>%d<reset> <dim_grey>(GTU)<reset>\n", route_info.space_moves))
     cecho(string.format("  <white>Ground Moves:<reset> %d\n", route_info.total_moves - route_info.space_moves))
     cecho("\n<cyan>═══════════════════════════════════════════════════════════<reset>\n")
 end

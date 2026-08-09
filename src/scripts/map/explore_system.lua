@@ -90,6 +90,21 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_area = current_room and getRoomArea(current_room)
 
+    -- Computed once up front (not re-derived per branch below) so a standalone
+    -- call is recognized the same way whether or not it needs to travel first,
+    -- and so the completion cleanup wrapped onto on_complete_callback just
+    -- below only ever fires for the call that actually flipped .active on.
+    local started_standalone = not F2T_MAP_EXPLORE_STATE.active
+    if started_standalone and on_complete_callback then
+        local real_callback = on_complete_callback
+        on_complete_callback = function(...)
+            F2T_MAP_EXPLORE_STATE.active = false
+            f2t_map_clear_nav_owner()
+            if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+            real_callback(...)
+        end
+    end
+
     -- Not there yet: travel first, then retry with the same (already-captured)
     -- expected-planet data rather than repeating the DI system capture.
     if not space_area_id or current_area ~= space_area_id then
@@ -97,7 +112,6 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
         -- runs while F2T_MAP_EXPLORE_STATE.active is true; a nested call
         -- already has that (and its own safety hooks) from the parent sweep,
         -- but a standalone call hasn't started yet, so ensure both here too.
-        local started_standalone = not F2T_MAP_EXPLORE_STATE.active
         if started_standalone then
             F2T_MAP_EXPLORE_STATE.active = true
             F2T_MAP_EXPLORE_STATE.mode = "system"
@@ -150,7 +164,14 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     }
 
     if on_complete_callback then
-        -- Nested: preserve parent mode (cartel/galaxy), just add Layer 2 fields.
+        -- Nested (parent sweep already has .active/hooks) or a standalone call
+        -- that was already sitting in the target system space, so the
+        -- travel branch above never ran: either way, ensure both here too.
+        if started_standalone then
+            F2T_MAP_EXPLORE_STATE.active = true
+            F2T_MAP_EXPLORE_STATE.mode = "system"
+            f2t_map_explore_register_safety_hooks()
+        end
         F2T_MAP_EXPLORE_STATE.phase = "navigating"
         F2T_MAP_EXPLORE_STATE.system_name = system_name
         F2T_MAP_EXPLORE_STATE.system_mode = system_mode

@@ -36,11 +36,20 @@ function f2t_map_explore_navigate_to_next()
             end
         end
 
+        if F2T_MAP_EXPLORE_STATE.target_room_name and not F2T_MAP_EXPLORE_STATE.target_room_found_id then
+            cecho(string.format("\n  <yellow>Warning:<reset> Target room '%s' not found\n",
+                F2T_MAP_EXPLORE_STATE.target_room_name))
+        end
+
         local callback = F2T_MAP_EXPLORE_STATE.on_complete_callback
         if callback then
             cecho("\n<green>[map-explore]<reset> Area exploration complete\n\n")
+            -- target_room_found_id is nil for every existing 0-arg callback and
+            -- for a target-room search that never matched - only a caller that
+            -- passed target_room_name to f2t_map_explore_planet_start reads it.
+            local found_room_id = F2T_MAP_EXPLORE_STATE.target_room_found_id
             tempTimer(0.5, function()
-                if F2T_MAP_EXPLORE_STATE.active then callback() end
+                if F2T_MAP_EXPLORE_STATE.active then callback(found_room_id) end
             end)
         else
             F2T_MAP_EXPLORE_STATE.phase = "returning"

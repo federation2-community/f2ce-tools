@@ -1,5 +1,6 @@
 -- Akaturi contract hauling phases
--- Implements the Akaturi workflow: get job -> find pickup room -> navigate -> pickup -> find delivery room -> navigate -> deliver
+-- Implements the Akaturi workflow: get job -> find pickup room -> navigate -> pickup ->
+-- find delivery room -> navigate -> deliver
 
 --- Phase: Get Akaturi job from AC room
 --- @return boolean True if phase complete, false if waiting
@@ -23,7 +24,9 @@ function f2t_hauling_phase_akaturi_get_job()
     -- Check if we've completed all 25 jobs
     if f2t_akaturi_is_complete() then
         local points = f2t_akaturi_get_points()
-        cecho(string.format("\n<green>[hauling]<reset> Congratulations! You've completed all 25 Akaturi contracts (%d points)!\n", points))
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Congratulations! You've completed all 25 Akaturi contracts (%d points)!\n",
+            points))
         cecho("\n<green>[hauling]<reset> Stopping hauling automation.\n")
         f2t_hauling_stop()
         return true
@@ -169,38 +172,52 @@ function f2t_hauling_phase_akaturi_search_pickup()
     end
 
     f2t_debug_log("[hauling/akaturi] Searching for pickup room: %s on %s", contract.pickup_room, contract.pickup_planet)
-    cecho(string.format("\n<cyan>[hauling]<reset> Searching map for '%s' on %s...\n", contract.pickup_room, contract.pickup_planet))
+    cecho(string.format(
+        "\n<cyan>[hauling]<reset> Searching map for '%s' on %s...\n", contract.pickup_room, contract.pickup_planet))
 
     -- Search map for room (synchronous)
     local matches = f2t_akaturi_search_room(contract.pickup_planet, contract.pickup_room)
 
-    -- Check if planet not mapped
-    if matches == nil then
-        cecho(string.format("\n<yellow>[hauling]<reset> Planet '%s' not yet mapped\n", contract.pickup_planet))
-        cecho(string.format("\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n", contract.pickup_planet))
-
-        -- Navigate to planet (will pause after arrival via special phase)
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_pickup"
-        f2t_map_navigate(contract.pickup_planet)
-        return false
-    end
-
-    -- Check if no matches found
-    if #matches == 0 then
-        -- No exact matches found - navigate to planet and pause for manual finding
-        cecho(string.format("\n<yellow>[hauling]<reset> Could not find '%s' on %s in map database\n", contract.pickup_room, contract.pickup_planet))
-        cecho(string.format("\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n", contract.pickup_planet))
-
-        -- Navigate to planet (will pause after arrival via special phase)
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_pickup"
-        f2t_map_navigate(contract.pickup_planet)
+    -- Known planet but the room genuinely isn't in the map database yet (or
+    -- the planet itself isn't mapped at all) - explore for the exact room
+    -- name instead of giving up immediately. f2t_map_explore_planet_start's
+    -- own travel step self-heals an unmapped planet via f2t_map_navigate's
+    -- whereis support.
+    if matches == nil or #matches == 0 then
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> '%s' not found on %s, exploring to look for it...\n",
+            contract.pickup_room, contract.pickup_planet))
+        F2T_HAULING_STATE.current_phase = "akaturi_searching_pickup"
+        f2t_map_explore_planet_start("brief", contract.pickup_planet, function(found_room_id)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            if found_room_id then
+                cecho(string.format("\n<green>[hauling]<reset> Found room: %s (ID: %s)\n",
+                    contract.pickup_room, found_room_id))
+                F2T_AKATURI_STATE.pickup_matches = {{name = contract.pickup_room, room_id = found_room_id}}
+                f2t_akaturi_reset_match_index()
+                F2T_HAULING_STATE.current_phase = "akaturi_navigating_pickup"
+                f2t_hauling_phase_akaturi_navigate_pickup()
+            else
+                cecho(string.format("\n<yellow>[hauling]<reset> Still could not find '%s' on %s\n",
+                    contract.pickup_room, contract.pickup_planet))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n",
+                    contract.pickup_planet))
+                F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_pickup"
+                f2t_map_navigate(contract.pickup_planet)
+            end
+        end, nil, contract.pickup_room, true)
         return false
     end
 
     if #matches == 1 then
         cecho(string.format("\n<green>[hauling]<reset> Found room: %s (ID: %s)\n", matches[1].name, matches[1].room_id))
     else
-        cecho(string.format("\n<yellow>[hauling]<reset> Found %d rooms matching '%s', will try each one\n", #matches, contract.pickup_room))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Found %d rooms matching '%s', will try each one\n",
+            #matches, contract.pickup_room))
     end
 
     -- Store matches and reset index
@@ -231,7 +248,8 @@ function f2t_hauling_phase_akaturi_navigate_pickup()
 
     if not room_id then
         -- No more matches to try - navigate to planet and pause
-        cecho(string.format("\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.pickup_planet))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.pickup_planet))
         cecho("\n<yellow>[hauling]<reset> Please find the pickup room manually and resume hauling.\n")
 
         -- Navigate to planet
@@ -344,7 +362,8 @@ function f2t_hauling_phase_akaturi_navigate_delivery()
 
     if not room_id then
         -- No more matches to try
-        cecho(string.format("\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.delivery_planet))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.delivery_planet))
         cecho("\n<yellow>[hauling]<reset> Please find the delivery room manually and resume hauling.\n")
 
         f2t_map_navigate(contract.delivery_planet)
@@ -400,7 +419,8 @@ function f2t_hauling_phase_akaturi_deliver()
         local points = f2t_akaturi_get_points() or 0
         local payment = F2T_HAULING_STATE.akaturi_payment_amount or 0
 
-        cecho(string.format("\n<green>[hauling]<reset> Contract complete! Earned %dig (Total points: %d/25)\n", payment, points))
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Contract complete! Earned %dig (Total points: %d/25)\n", payment, points))
 
         -- Update statistics
         F2T_HAULING_STATE.total_cycles = (F2T_HAULING_STATE.total_cycles or 0) + 1
@@ -627,7 +647,8 @@ function f2t_hauling_check_nav_to_planet_for_pickup_complete()
             if result == "completed" or result == nil then
                 -- Navigation complete - pause for manual room finding
                 local room_name = F2T_HAULING_STATE.akaturi_contract.pickup_room or "the pickup room"
-                cecho(string.format("\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
                 cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
                 f2t_hauling_pause(true)
 
@@ -667,7 +688,8 @@ function f2t_hauling_check_nav_to_planet_for_delivery_complete()
             if result == "completed" or result == nil then
                 -- Navigation complete - pause for manual room finding
                 local room_name = F2T_HAULING_STATE.akaturi_contract.delivery_room or "the delivery room"
-                cecho(string.format("\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
                 cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
                 f2t_hauling_pause(true)
 

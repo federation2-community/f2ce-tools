@@ -95,7 +95,8 @@ function f2t_map_explore_recompute_frontier()
     table.sort(candidates, function(a, b) return a.distance < b.distance end)
 
     if is_brief and reference_room == F2T_MAP_EXPLORE_STATE.starting_room_id then
-        local seeking_exchange = F2T_MAP_EXPLORE_STATE.brief_flags_set and F2T_MAP_EXPLORE_STATE.brief_flags_set["exchange"]
+        local seeking_exchange =
+            F2T_MAP_EXPLORE_STATE.brief_flags_set and F2T_MAP_EXPLORE_STATE.brief_flags_set["exchange"]
         if seeking_exchange and #candidates > 0 then
             local direction_priority = {"e","n","sw","w","s","ne","nw","se","in","u","d","out"}
             local grouped = {}
@@ -120,7 +121,8 @@ function f2t_map_explore_recompute_frontier()
 
     F2T_MAP_EXPLORE_STATE.frontier_stack = {}
     for i = 1, #candidates do
-        table.insert(F2T_MAP_EXPLORE_STATE.frontier_stack, {room_id=candidates[i].room_id, direction=candidates[i].direction})
+        table.insert(F2T_MAP_EXPLORE_STATE.frontier_stack,
+            {room_id=candidates[i].room_id, direction=candidates[i].direction})
     end
     f2t_debug_log("[map-explore] Frontier recomputed: %d stub(s) remaining", #F2T_MAP_EXPLORE_STATE.frontier_stack)
 end

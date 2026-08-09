@@ -61,7 +61,8 @@ function f2t_bulk_buy_start(commodity, requested_lots, callback)
     if max_lots == 0 then
         f2t_debug_log("[bulk-buy] ERROR: Hold is full")
         if not callback then
-            cecho(string.format("\n<red>[bulk-buy]<reset> Your hold is full! (%d/%d tons used)\n", used_space, max_hold))
+            cecho(string.format(
+                "\n<red>[bulk-buy]<reset> Your hold is full! (%d/%d tons used)\n", used_space, max_hold))
         else
             callback(commodity, 0, "error", "Hold is full")
         end

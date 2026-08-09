@@ -19,7 +19,8 @@ function f2t_map_manual_create_stub(room_id, direction)
     if existing_stubs then
         for _, stub_dir_num in pairs(existing_stubs) do
             if direction_number_to_name(stub_dir_num) == direction then
-                cecho(string.format("\n<yellow>[map]<reset> Stub exit '%s' already exists in room %d\n", direction, room_id))
+                cecho(string.format(
+                    "\n<yellow>[map]<reset> Stub exit '%s' already exists in room %d\n", direction, room_id))
                 return true
             end
         end
@@ -31,7 +32,9 @@ function f2t_map_manual_create_stub(room_id, direction)
     end
     setExitStub(room_id, direction, true)
     local room_name = getRoomName(room_id) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Stub exit created: <white>%s<reset> --%s--> <yellow>(stub)<reset>\n", room_name, direction))
+    cecho(string.format(
+        "\n<green>[map]<reset> Stub exit created: <white>%s<reset> --%s--> <yellow>(stub)<reset>\n",
+        room_name, direction))
     return true
 end
 
@@ -52,7 +55,8 @@ function f2t_map_manual_delete_stub(room_id, direction)
         cecho(string.format("\n<yellow>[map]<reset> No stub exit '%s' in room %d\n", direction, room_id)); return false
     end
     setExitStub(room_id, direction, false)
-    cecho(string.format("\n<green>[map]<reset> Stub exit deleted: <white>%s<reset> --%s--> <dim_grey>(removed)<reset>\n",
+    cecho(string.format(
+        "\n<green>[map]<reset> Stub exit deleted: <white>%s<reset> --%s--> <dim_grey>(removed)<reset>\n",
         getRoomName(room_id) or "unnamed", direction))
     return true
 end
@@ -79,7 +83,8 @@ function f2t_map_manual_connect_stub(room_id, direction)
         local exits = getRoomExits(room_id)
         local dest_room = exits and exits[direction]
         if dest_room then
-            cecho(string.format("\n<green>[map]<reset> Stub exit connected: <white>%s<reset> --%s--> <white>%s<reset>\n",
+            cecho(string.format(
+                "\n<green>[map]<reset> Stub exit connected: <white>%s<reset> --%s--> <white>%s<reset>\n",
                 getRoomName(room_id) or "unnamed", direction, getRoomName(dest_room) or "unnamed"))
         else
             cecho(string.format("\n<green>[map]<reset> Stub exit '%s' in room %d connected\n", direction, room_id))
@@ -106,10 +111,12 @@ function f2t_map_manual_list_stubs(room_id)
             if stub_dir then
                 cecho(string.format("  <yellow>%-10s<reset> <dim_grey>(stub exit, not connected)<reset>\n", stub_dir))
             else
-                cecho(string.format("  <yellow>%-10s<reset> <dim_grey>(unknown direction: %d)<reset>\n", "???", stub_dir_num))
+                cecho(string.format(
+                    "  <yellow>%-10s<reset> <dim_grey>(unknown direction: %d)<reset>\n", "???", stub_dir_num))
             end
         end
-        cecho(string.format("\n<dim_grey>Use 'map exit stub connect %d <direction>' to connect stubs<reset>\n", room_id))
+        cecho(string.format(
+            "\n<dim_grey>Use 'map exit stub connect %d <direction>' to connect stubs<reset>\n", room_id))
     else
         cecho("\n<dim_grey>No stub exits in this room<reset>\n")
     end

@@ -126,7 +126,8 @@ function f2t_bulk_sell_start(commodity, requested_lots, callback)
 
         -- Only show user feedback in user mode
         if not callback then
-            cecho(string.format("\n<green>[bulk-sell]<reset> Selling all cargo (%d different commodities)...\n", #all_commodities))
+            cecho(string.format(
+                "\n<green>[bulk-sell]<reset> Selling all cargo (%d different commodities)...\n", #all_commodities))
         end
 
         -- Start selling first commodity
@@ -361,7 +362,9 @@ function f2t_bulk_sell_finish()
             -- Color code profit
             local profit_color = profit >= 0 and "green" or "red"
 
-            msg = msg .. string.format("\n  <dim_grey>Cost: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset> | <dim_grey>Revenue: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset>",
+            msg = msg .. string.format(
+                "\n  <dim_grey>Cost: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset> | " ..
+                "<dim_grey>Revenue: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset>",
                 cost, avg_cost_per_ton, revenue, avg_revenue_per_ton)
             msg = msg .. string.format("\n  <dim_grey>Profit: <%s>%d ig<reset> | <dim_grey>Margin: <%s>%.1f%%<reset>",
                 profit_color, profit, margin_color, margin_pct)
@@ -418,7 +421,8 @@ function f2t_bulk_sell_finish_all()
         else
             -- Still have unsold cargo
             local remaining_tons = remaining_lots * 75
-            msg = string.format("\n<green>[bulk-sell]<reset> Complete: Sold %d lots (%d tons) - %d lots (%d tons) remain unsold",
+            msg = string.format(
+                "\n<green>[bulk-sell]<reset> Complete: Sold %d lots (%d tons) - %d lots (%d tons) remain unsold",
                 total_sold, total_tons, remaining_lots, remaining_tons)
         end
 
@@ -443,7 +447,9 @@ function f2t_bulk_sell_finish_all()
             -- Color code profit
             local profit_color = profit >= 0 and "green" or "red"
 
-            msg = msg .. string.format("\n  <dim_grey>Cost: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset> | <dim_grey>Revenue: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset>",
+            msg = msg .. string.format(
+                "\n  <dim_grey>Cost: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset> | " ..
+                "<dim_grey>Revenue: <white>%d ig<reset> <dim_grey>(%d ig/ton)<reset>",
                 agg_cost, avg_cost_per_ton, agg_revenue, avg_revenue_per_ton)
             msg = msg .. string.format("\n  <dim_grey>Profit: <%s>%d ig<reset> | <dim_grey>Margin: <%s>%.1f%%<reset>",
                 profit_color, profit, margin_color, margin_pct)

@@ -13,7 +13,8 @@ end
 
 -- Rank requirement: only Industrialist or Manufacturer own factories.
 if not (f2t_is_rank_exactly("Industrialist") or f2t_is_rank_exactly("Manufacturer")) then
-    cecho("\n<red>[factory]<reset> Factory commands require <cyan>Industrialist<reset> or <cyan>Manufacturer<reset> rank\n")
+    cecho("\n<red>[factory]<reset> Factory commands require " ..
+        "<cyan>Industrialist<reset> or <cyan>Manufacturer<reset> rank\n")
     local rank = f2t_get_rank()
     if rank then
         cecho(string.format("<dim_grey>Your current rank: <white>%s<reset>\n", rank))

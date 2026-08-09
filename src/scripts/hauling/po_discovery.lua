@@ -27,7 +27,8 @@ function f2t_po_hauling_scan_system(callback)
         local player_name = gmcp.char and gmcp.char.vitals and gmcp.char.vitals.name
 
         if not owner or not player_name or owner ~= player_name then
-            cecho(string.format("\n<red>[hauling]<reset> Current system <cyan>%s<reset> is not owned by you (owner: %s)\n",
+            cecho(string.format(
+                "\n<red>[hauling]<reset> Current system <cyan>%s<reset> is not owned by you (owner: %s)\n",
                 system_name, owner or "unknown"))
             callback(nil, nil)
             return

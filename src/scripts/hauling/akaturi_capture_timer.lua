@@ -60,33 +60,44 @@ function f2t_akaturi_process_pickup_capture()
 
     local matches = f2t_akaturi_search_room(planet, room)
 
-    -- Check if planet not mapped
-    if matches == nil then
-        cecho(string.format("\n<yellow>[hauling]<reset> Planet '%s' not yet mapped\n", planet))
-        cecho(string.format("\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n", planet))
-
-        -- Navigate to planet (will pause after arrival via special phase)
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_delivery"
-        f2t_map_navigate(planet)
-        return
-    end
-
-    -- Check if no matches found
-    if #matches == 0 then
-        -- No exact matches found
-        cecho(string.format("\n<yellow>[hauling]<reset> Could not find '%s' on %s in map database\n", room, planet))
-        cecho(string.format("\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n", planet))
-
-        -- Navigate to planet (will pause after arrival via special phase)
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_delivery"
-        f2t_map_navigate(planet)
+    -- Known planet but the room genuinely isn't in the map database yet (or
+    -- the planet itself isn't mapped at all) - explore for the exact room
+    -- name instead of giving up immediately. f2t_map_explore_planet_start's
+    -- own travel step self-heals an unmapped planet via f2t_map_navigate's
+    -- whereis support.
+    if matches == nil or #matches == 0 then
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> '%s' not found on %s, exploring to look for it...\n", room, planet))
+        F2T_HAULING_STATE.current_phase = "akaturi_searching_delivery"
+        f2t_map_explore_planet_start("brief", planet, function(found_room_id)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            if found_room_id then
+                cecho(string.format("\n<green>[hauling]<reset> Found delivery room: %s (ID: %s)\n",
+                    room, found_room_id))
+                F2T_AKATURI_STATE.delivery_matches = {{name = room, room_id = found_room_id}}
+                f2t_akaturi_reset_match_index()
+                F2T_HAULING_STATE.current_phase = "akaturi_navigating_delivery"
+                f2t_hauling_phase_akaturi_navigate_delivery()
+            else
+                cecho(string.format("\n<yellow>[hauling]<reset> Still could not find '%s' on %s\n", room, planet))
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n",
+                    planet))
+                F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_delivery"
+                f2t_map_navigate(planet)
+            end
+        end, nil, room, true)
         return
     end
 
     if #matches == 1 then
-        cecho(string.format("\n<green>[hauling]<reset> Found delivery room: %s (ID: %s)\n", matches[1].name, matches[1].room_id))
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Found delivery room: %s (ID: %s)\n", matches[1].name, matches[1].room_id))
     else
-        cecho(string.format("\n<yellow>[hauling]<reset> Found %d rooms matching '%s', will try each one\n", #matches, room))
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Found %d rooms matching '%s', will try each one\n", #matches, room))
     end
 
     -- Store matches and transition

@@ -62,7 +62,8 @@ local _CSS_BTN_DONE = [[
 local _CSS_STATUS_INFO = "background:transparent; color:rgba(105,125,180,255); font-size:9px; padding:0 14px;"
 local _CSS_STATUS_OK   = "background:transparent; color:rgba(115,222,148,255); font-size:9px; padding:0 14px;"
 local _CSS_STATUS_ERR  = "background:transparent; color:rgba(210,120,115,255); font-size:9px; padding:0 14px;"
-local _CSS_TITLE = "background:transparent; color:rgba(230,236,250,255); font-size:12px; font-weight:bold; padding:0 14px;"
+local _CSS_TITLE =
+    "background:transparent; color:rgba(230,236,250,255); font-size:12px; font-weight:bold; padding:0 14px;"
 
 local _INTRO_BY_REASON = {
     firstrun =
@@ -178,12 +179,14 @@ function f2tShowMapImportOverlay(slotContent, gid, reason)
     y = y + 48
 
     local div1 = Geyser.Label:new({ name=pfx.."div1", x=0, y=y, width="100%", height=1 }, panel)
-    div1:setStyleSheet(Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
+    div1:setStyleSheet(
+        Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
     y = y + 10
 
     -- Map option selector
     local optLbl = Geyser.Label:new({ name=pfx.."optLbl", x=IX, y=y, width=IW, height=14 }, panel)
-    optLbl:setStyleSheet("background:transparent; color:rgba(115,222,148,255); font-size:9px; font-weight:bold; padding:0 14px;")
+    optLbl:setStyleSheet(
+        "background:transparent; color:rgba(115,222,148,255); font-size:9px; font-weight:bold; padding:0 14px;")
     optLbl:echo("SELECT MAP DATABASE")
     y = y + 18
 
@@ -227,7 +230,8 @@ function f2tShowMapImportOverlay(slotContent, gid, reason)
 
     y = y + 4
     local div2 = Geyser.Label:new({ name=pfx.."div2", x=0, y=y, width="100%", height=1 }, panel)
-    div2:setStyleSheet(Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
+    div2:setStyleSheet(
+        Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
     y = y + 8
 
     -- Status label
@@ -274,7 +278,8 @@ function f2tShowMapImportOverlay(slotContent, gid, reason)
     y = y + 38
 
     local div3 = Geyser.Label:new({ name=pfx.."div3", x=0, y=y, width="100%", height=1 }, panel)
-    div3:setStyleSheet(Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
+    div3:setStyleSheet(
+        Mux and Mux.dialogCss and Mux.dialogCss.divider or "background-color: rgba(255,255,255,0.10); border: none;")
     y = y + 8
 
     -- Skip / close button — always available, per design: the user must deal

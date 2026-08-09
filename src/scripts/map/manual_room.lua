@@ -53,7 +53,8 @@ function f2t_map_manual_delete_room(room_id)
                 cecho(string.format("\n<red>[map]<reset> Room %d no longer exists\n", data.room_id)); return
             end
             deleteRoom(data.room_id)
-            cecho(string.format("\n<green>[map]<reset> Room deleted: <white>%d<reset> (%s)\n", data.room_id, data.room_name))
+            cecho(string.format(
+                "\n<green>[map]<reset> Room deleted: <white>%d<reset> (%s)\n", data.room_id, data.room_name))
         end,
         {room_id = room_id, room_name = room_name, hash = hash}
     )
@@ -95,13 +96,15 @@ function f2t_map_manual_room_info(room_id)
     if exits and next(exits) ~= nil then
         cecho("\n  <yellow>Standard Exits:<reset>\n")
         for dir, dest_id in pairs(exits) do
-            cecho(string.format("    <cyan>%s<reset> -> %s (ID: %d)\n", dir, getRoomName(dest_id) or "unnamed", dest_id))
+            cecho(string.format(
+                "    <cyan>%s<reset> -> %s (ID: %d)\n", dir, getRoomName(dest_id) or "unnamed", dest_id))
         end
     end
     if special_exits and next(special_exits) ~= nil then
         cecho("\n  <yellow>Special Exits:<reset>\n")
         for dest_id, command in pairs(special_exits) do
-            cecho(string.format("    <magenta>%s<reset> -> %s (ID: %d)\n", command, getRoomName(dest_id) or "unnamed", dest_id))
+            cecho(string.format(
+                "    <magenta>%s<reset> -> %s (ID: %d)\n", command, getRoomName(dest_id) or "unnamed", dest_id))
         end
     end
     local room_locked = roomLocked(room_id)
@@ -134,9 +137,13 @@ function f2t_map_manual_set_room_area(room_id, area_name)
     end
     if not area_name or area_name == "" then cecho("\n<red>[map]<reset> Area name cannot be empty\n"); return false end
     local area_id = f2t_map_get_or_create_area(area_name)
-    if not area_id then cecho(string.format("\n<red>[map]<reset> Failed to create area: %s\n", area_name)); return false end
+    if not area_id then
+        cecho(string.format("\n<red>[map]<reset> Failed to create area: %s\n", area_name))
+        return false
+    end
     setRoomArea(room_id, area_id)
-    cecho(string.format("\n<green>[map]<reset> Room %d moved to area: <white>%s<reset> (ID: %d)\n", room_id, area_name, area_id))
+    cecho(string.format(
+        "\n<green>[map]<reset> Room %d moved to area: <white>%s<reset> (ID: %d)\n", room_id, area_name, area_id))
     return true
 end
 
@@ -144,9 +151,13 @@ function f2t_map_manual_set_room_coords(room_id, x, y, z)
     if not room_id or not roomExists(room_id) then
         cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return false
     end
-    if not x or not y or not z then cecho("\n<red>[map]<reset> Coordinates must be numbers (x, y, z)\n"); return false end
+    if not x or not y or not z then
+        cecho("\n<red>[map]<reset> Coordinates must be numbers (x, y, z)\n")
+        return false
+    end
     setRoomCoordinates(room_id, x, y, z)
-    cecho(string.format("\n<green>[map]<reset> Room %d coordinates set to: <white>(%d, %d, %d)<reset>\n", room_id, x, y, z))
+    cecho(string.format(
+        "\n<green>[map]<reset> Room %d coordinates set to: <white>(%d, %d, %d)<reset>\n", room_id, x, y, z))
     return true
 end
 
@@ -170,7 +181,8 @@ function f2t_map_manual_set_room_color(room_id, r, g, b)
         cecho("\n<red>[map]<reset> RGB values must be between 0 and 255\n"); return false
     end
     setRoomBackgroundColor(room_id, r, g, b)
-    cecho(string.format("\n<green>[map]<reset> Room %d color set to: <white>RGB(%d, %d, %d)<reset>\n", room_id, r, g, b))
+    cecho(string.format(
+        "\n<green>[map]<reset> Room %d color set to: <white>RGB(%d, %d, %d)<reset>\n", room_id, r, g, b))
     return true
 end
 
@@ -178,7 +190,10 @@ function f2t_map_manual_set_room_env(room_id, env_id)
     if not room_id or not roomExists(room_id) then
         cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return false
     end
-    if not env_id or type(env_id) ~= "number" then cecho("\n<red>[map]<reset> Environment ID must be a number\n"); return false end
+    if not env_id or type(env_id) ~= "number" then
+        cecho("\n<red>[map]<reset> Environment ID must be a number\n")
+        return false
+    end
     setRoomEnv(room_id, env_id)
     cecho(string.format("\n<green>[map]<reset> Room %d environment set to: <white>%d<reset>\n", room_id, env_id))
     return true
@@ -188,7 +203,10 @@ function f2t_map_manual_set_room_weight(room_id, weight)
     if not room_id or not roomExists(room_id) then
         cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return false
     end
-    if not weight or type(weight) ~= "number" then cecho("\n<red>[map]<reset> Weight must be a number\n"); return false end
+    if not weight or type(weight) ~= "number" then
+        cecho("\n<red>[map]<reset> Weight must be a number\n")
+        return false
+    end
     if weight < 1 then cecho("\n<red>[map]<reset> Weight must be >= 1\n"); return false end
     setRoomWeight(room_id, weight)
     cecho(string.format("\n<green>[map]<reset> Room %d weight set to: <white>%d<reset>\n", room_id, weight))

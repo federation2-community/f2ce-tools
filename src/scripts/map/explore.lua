@@ -59,32 +59,59 @@ end
 -- only needed to reach territory with no rooms mapped yet at all, which a
 -- single named planet can't be (f2t_map_lookup_planet already requires the
 -- planet's area to exist).
-function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags)
-    local nav_result = f2t_map_navigate(planet_name)
+function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
+                                           target_room_name, target_room_exact)
+    local function start_here()
+        return f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback,
+            override_flags, target_room_name, target_room_exact)
+    end
+
+    local function await_arrival()
+        local handler_id
+        handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
+            if F2T_SPEEDWALK_ACTIVE then return end
+            killAnonymousEventHandler(handler_id)
+            local area = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
+            local arrived_planet = area and getRoomAreaName(area)
+            if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
+                cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
+                return
+            end
+            start_here()
+        end)
+    end
+
+    -- Not given suppress_hint: this is exactly the case that should be allowed
+    -- to auto-resolve a totally-unmapped planet via whereis (f2t_map_navigate's
+    -- own guard already refuses to do this while a sweep is already active).
+    local nav_result = f2t_map_navigate(planet_name, {
+        on_result = function(success)
+            -- Only fires for the async (hint-driven) path: whereis/auto-explore
+            -- either got us resolvable (arrival may still be in flight) or didn't.
+            if not success then
+                cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
+                return
+            end
+            if F2T_SPEEDWALK_ACTIVE then await_arrival() else start_here() end
+        end,
+    })
+
     if nav_result == nil then
+        return true -- resolving asynchronously; on_result above continues the pipeline
+    end
+    if not nav_result then
         cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
         return false
     end
-    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
-        return f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
+    if not F2T_SPEEDWALK_ACTIVE then
+        return start_here()
     end
-
-    local handler_id
-    handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        if F2T_SPEEDWALK_ACTIVE then return end
-        killAnonymousEventHandler(handler_id)
-        local area = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
-        local arrived_planet = area and getRoomAreaName(area)
-        if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
-            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
-            return
-        end
-        f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
-    end)
+    await_arrival()
     return true
 end
 
-function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags)
+function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags,
+                                       target_room_name, target_room_exact)
     if not planet_mode or (planet_mode ~= "full" and planet_mode ~= "brief") then
         cecho(string.format("\n<red>[map-explore]<reset> Error: Invalid planet mode '%s'\n", tostring(planet_mode)))
         return false
@@ -97,7 +124,8 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         local area = room and getRoomArea(room)
         local current_planet = area and getRoomAreaName(area)
         if not current_planet or current_planet:lower() ~= planet_name:lower() then
-            return f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags)
+            return f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
+                target_room_name, target_room_exact)
         end
     end
 
@@ -140,9 +168,31 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
             brief_flags_found = brief_flags_found,
             brief_flags_remaining_count = #brief_flags - flags_already_found,
         }
+        if target_room_name and target_room_name ~= "" then
+            brief_fields.target_room_name = target_room_name
+            brief_fields.target_room_exact = target_room_exact and true or false
+            brief_fields.target_room_found_id = nil
+        end
     end
 
     if on_complete_callback then
+        -- Nested (parent sweep already has .active/hooks) or a standalone
+        -- callback-driven call (e.g. f2t_map_navigate's hint resolver, or an
+        -- Akaturi target-room search) that hasn't started anything yet -
+        -- ensure both here too, and unwind them once completion fires, same
+        -- as f2t_map_explore_system_start_with_planets does for system-level.
+        local started_standalone = not F2T_MAP_EXPLORE_STATE.active
+        if started_standalone then
+            F2T_MAP_EXPLORE_STATE.active = true
+            f2t_map_explore_register_safety_hooks()
+            local real_callback = on_complete_callback
+            on_complete_callback = function(...)
+                F2T_MAP_EXPLORE_STATE.active = false
+                f2t_map_clear_nav_owner()
+                if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+                real_callback(...)
+            end
+        end
         F2T_MAP_EXPLORE_STATE.phase = "navigating"
         F2T_MAP_EXPLORE_STATE.planet_mode = planet_mode
         F2T_MAP_EXPLORE_STATE.on_complete_callback = on_complete_callback
@@ -178,11 +228,20 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         if brief_fields.brief_flags_remaining_count == 0 then
             cecho("  <green>All target flags already discovered!<reset>\n\n")
         end
+        if brief_fields.target_room_name then
+            cecho(string.format("  Target room: <yellow>%s<reset>\n", brief_fields.target_room_name))
+        end
     end
 
     if planet_mode == "brief" then
+        if F2T_MAP_EXPLORE_STATE.target_room_name then
+            f2t_map_explore_brief_check_target_room(current_room)
+            if F2T_MAP_EXPLORE_STATE.target_room_found_id then
+                return true
+            end
+        end
         f2t_map_explore_brief_check_room_flags(current_room)
-        if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0 then
+        if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0 and not F2T_MAP_EXPLORE_STATE.target_room_name then
             if on_complete_callback then on_complete_callback()
             else f2t_map_explore_complete()
             end
@@ -219,6 +278,13 @@ function f2t_map_explore_brief_check_room_flags(room_id)
                     end
                 end
                 if effective_remaining == 0 then
+                    -- A target-room search (e.g. Akaturi hunting a specific
+                    -- randomized room name) keeps walking past "all flags
+                    -- found" - the room name, not the flags, is the real goal.
+                    if F2T_MAP_EXPLORE_STATE.target_room_name then
+                        cecho("\n<green>[map-explore]<reset> All target flags found, still hunting for target room\n")
+                        return
+                    end
                     cecho("\n<green>[map-explore]<reset> All target flags found!\n\n")
                     if F2T_MAP_EXPLORE_STATE.system_stats then
                         local sys_stats = F2T_MAP_EXPLORE_STATE.system_stats
@@ -239,6 +305,41 @@ function f2t_map_explore_brief_check_room_flags(room_id)
             end
         end
     end
+end
+
+-- Unlike brief_check_room_flags, a target-room match completes immediately
+-- (no return-to-shuttlepad step) - arriving at the found room is the goal,
+-- not returning to the landing pad. on_complete_callback is called with the
+-- found room_id so the caller (e.g. Akaturi's pickup/delivery search) knows
+-- exactly where it ended up without re-querying the map.
+--
+-- target_room_exact selects exact (case-sensitive) equality, matching
+-- Akaturi's own static search (f2t_akaturi_search_room requires an exact
+-- name since it's matching text the game itself reported). Otherwise this
+-- does the same case-insensitive substring match as f2t_map_search_area,
+-- so `map explore room <text>` behaves like `map search` but walks instead
+-- of only checking rooms already in the local map.
+function f2t_map_explore_brief_check_target_room(room_id)
+    if not F2T_MAP_EXPLORE_STATE.active then return end
+    local target_name = F2T_MAP_EXPLORE_STATE.target_room_name
+    if not target_name or F2T_MAP_EXPLORE_STATE.target_room_found_id then return end
+    local room_name = getRoomName(room_id)
+    if not room_name then return end
+
+    local matched
+    if F2T_MAP_EXPLORE_STATE.target_room_exact then
+        matched = room_name == target_name
+    else
+        matched = string.find(string.lower(room_name), string.lower(target_name), 1, true) ~= nil
+    end
+    if not matched then return end
+
+    F2T_MAP_EXPLORE_STATE.target_room_found_id = room_id
+    cecho(string.format("\n<green>[map-explore]<reset> Found target room: <yellow>%s<reset>!\n\n", room_name))
+
+    local callback = F2T_MAP_EXPLORE_STATE.on_complete_callback
+    if callback then callback(room_id)
+    else f2t_map_explore_complete() end
 end
 
 function f2t_map_explore_brief_return_to_shuttlepad()
@@ -692,6 +793,11 @@ function f2t_map_explore_on_room_change()
     if is_first_visit then
         F2T_MAP_EXPLORE_STATE.visited_rooms[current_room] = true
         F2T_MAP_EXPLORE_STATE.stats.rooms_discovered = F2T_MAP_EXPLORE_STATE.stats.rooms_discovered + 1
+
+        if F2T_MAP_EXPLORE_STATE.target_room_name and F2T_MAP_EXPLORE_STATE.phase == "navigating" then
+            f2t_map_explore_brief_check_target_room(current_room)
+            if F2T_MAP_EXPLORE_STATE.target_room_found_id then return end
+        end
 
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and F2T_MAP_EXPLORE_STATE.phase == "navigating" then
             f2t_map_explore_brief_check_room_flags(current_room)

@@ -348,8 +348,11 @@ end
 
 local function dialogBuyShares(isTreasury, curQty)
     local body = isTreasury
-        and "Buy shares into the company treasury.<br>Reduces external shareholder influence.<br>Cost deducted from company cash."
-        or  string.format("Buy personal shares.<br>You currently hold <b>%s shares</b>.<br>Increases your dividend payout each cycle.",
+        and "Buy shares into the company treasury.<br>Reduces external shareholder influence.<br>" ..
+            "Cost deducted from company cash."
+        or  string.format(
+            "Buy personal shares.<br>You currently hold <b>%s shares</b>.<br>" ..
+            "Increases your dividend payout each cycle.",
             fmtComma(curQty or 0))
     dialogAmount({
         title      = isTreasury and "Buy Treasury Shares" or "Buy Personal Shares",
@@ -382,7 +385,9 @@ local function dialogFreeze()
         return
     end
     dialogConfirm("Freeze Company",
-        string.format("<b>%s</b><br>Pause all factory cycles until unfrozen.<br>Workers remain on idle wages.", c.name or "company"),
+        string.format(
+            "<b>%s</b><br>Pause all factory cycles until unfrozen.<br>Workers remain on idle wages.",
+            c.name or "company"),
         "Freeze",
         function()
             send("freeze company", false)
@@ -932,7 +937,9 @@ local function factoryCols()
                     cell:setToolTip("Click to repair factory (+5% efficiency)")
                     cell:setClickCallback(function()
                         dialogConfirm("Repair Factory",
-                            string.format("<b>Factory #%d — %s</b><br>Efficiency: <b>%d%%</b>  (repair restores +5%%)<br>Cost deducted from company cash.",
+                            string.format(
+                                "<b>Factory #%d — %s</b><br>Efficiency: <b>%d%%</b>  " ..
+                                "(repair restores +5%%)<br>Cost deducted from company cash.",
                                 row.facNum, stripThe(row.planet or "?"), v),
                             "Repair",
                             function()

@@ -203,7 +203,8 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
                     if not found then
                         f2t_debug_log("[hauling/po-queue] No source found for %s, skipping",
                             job.commodity)
-                        cecho(string.format("\n<yellow>[hauling]<reset> No source found for %s deficit on %s, skipping\n",
+                        cecho(string.format(
+                            "\n<yellow>[hauling]<reset> No source found for %s deficit on %s, skipping\n",
                             job.commodity, job.target_planet))
                     end
 
@@ -254,7 +255,8 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
                     if not found then
                         f2t_debug_log("[hauling/po-queue] No destination found for %s, skipping",
                             job.commodity)
-                        cecho(string.format("\n<yellow>[hauling]<reset> No destination found for %s excess on %s, skipping\n",
+                        cecho(string.format(
+                            "\n<yellow>[hauling]<reset> No destination found for %s excess on %s, skipping\n",
                             job.commodity, job.target_planet))
                     end
 
@@ -386,7 +388,9 @@ function f2t_po_hauling_build_queue(planet_exchange_data, owned_planets, callbac
         return
     end
 
-    cecho(string.format("\n<green>[hauling]<reset> Found <orange>%d<reset> deficit(s) and <yellow>%d<reset> excess(es), resolving sources...\n",
+    cecho(string.format(
+        "\n<green>[hauling]<reset> Found <orange>%d<reset> deficit(s) and <yellow>%d<reset> excess(es), " ..
+        "resolving sources...\n",
         #deficits, #excesses))
 
     -- Resolve all sources/destinations

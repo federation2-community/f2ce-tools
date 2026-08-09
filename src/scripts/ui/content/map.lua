@@ -114,7 +114,8 @@ local function buildContentDef()
         apply = function(target)
             applyCount = applyCount + 1
             local tApplyStart = os.clock()
-            f2t_debug_log("[map content] apply() #%d called (epoch=%s)", applyCount, tostring(getEpoch and getEpoch() or os.time()))
+            f2t_debug_log("[map content] apply() #%d called (epoch=%s)",
+                applyCount, tostring(getEpoch and getEpoch() or os.time()))
 
             target.contentBg:echo("")
             target.contentBg:setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
@@ -191,7 +192,8 @@ local function buildContentDef()
         -- delete automatically.
         remove = function(target)
             removeCount = removeCount + 1
-            f2t_debug_log("[map content] remove() #%d called (epoch=%s)", removeCount, tostring(getEpoch and getEpoch() or os.time()))
+            f2t_debug_log("[map content] remove() #%d called (epoch=%s)",
+                removeCount, tostring(getEpoch and getEpoch() or os.time()))
             activeToken = nil
             mapperRelease()
             target._f2tHasMapper = nil

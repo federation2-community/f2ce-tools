@@ -36,7 +36,8 @@ local function renderConsole(mc)
 
     mc:cecho("<ansiCyan><b>  Cargo Hold</b><reset>\n")
     if cur and max then
-        mc:cecho(string.format("  <grey>Hold:<reset> <white>%s<reset>/<grey>%s tons<reset>\n", tostring(cur), tostring(max)))
+        mc:cecho(string.format(
+            "  <grey>Hold:<reset> <white>%s<reset>/<grey>%s tons<reset>\n", tostring(cur), tostring(max)))
     end
     mc:cecho("  <grey>" .. string.rep("─", 34) .. "<reset>\n")
 
@@ -56,7 +57,8 @@ local function renderConsole(mc)
         mc:cecho("\n")
     end
     mc:cecho("  <grey>" .. string.rep("─", 34) .. "<reset>\n")
-    mc:cecho(string.format("  <white>Total:<reset> <ansiCyan>%d tons<reset> <grey>(%d lots)<reset>\n", totalTons, totalLots))
+    mc:cecho(string.format(
+        "  <white>Total:<reset> <ansiCyan>%d tons<reset> <grey>(%d lots)<reset>\n", totalTons, totalLots))
 end
 
 function f2t_cargo_refresh_open()

@@ -5,11 +5,14 @@ function f2t_map_manual_add_exit(from_room, to_room, direction, bidirectional)
         cecho(string.format("\n<red>[map]<reset> Source room %s does not exist\n", tostring(from_room))); return false
     end
     if not to_room or not roomExists(to_room) then
-        cecho(string.format("\n<red>[map]<reset> Destination room %s does not exist\n", tostring(to_room))); return false
+        cecho(string.format("\n<red>[map]<reset> Destination room %s does not exist\n", tostring(to_room)))
+        return false
     end
     if not direction or direction == "" then cecho("\n<red>[map]<reset> Direction required\n"); return false end
 
-    local valid_directions = {"north","south","east","west","northeast","northwest","southeast","southwest","up","down","in","out"}
+    local valid_directions = {
+        "north","south","east","west","northeast","northwest","southeast","southwest","up","down","in","out"
+    }
     direction = string.lower(direction)
     if not f2t_has_value(valid_directions, direction) then
         cecho(string.format("\n<red>[map]<reset> Invalid direction: %s\n", direction))
@@ -26,13 +29,17 @@ function f2t_map_manual_add_exit(from_room, to_room, direction, bidirectional)
     setExit(from_room, to_room, direction)
     local from_name = getRoomName(from_room) or string.format("Room %d", from_room)
     local to_name   = getRoomName(to_room)   or string.format("Room %d", to_room)
-    cecho(string.format("\n<green>[map]<reset> Exit created: <white>%s<reset> --%s--> <white>%s<reset>\n", from_name, direction, to_name))
+    cecho(string.format(
+        "\n<green>[map]<reset> Exit created: <white>%s<reset> --%s--> <white>%s<reset>\n",
+        from_name, direction, to_name))
 
     if bidirectional then
         local reverse_dir = reverse_dir_map[direction]
         if reverse_dir then
             setExit(to_room, from_room, reverse_dir)
-            cecho(string.format("<green>[map]<reset> Reverse exit created: <white>%s<reset> --%s--> <white>%s<reset>\n", to_name, reverse_dir, from_name))
+            cecho(string.format(
+                "<green>[map]<reset> Reverse exit created: <white>%s<reset> --%s--> <white>%s<reset>\n",
+                to_name, reverse_dir, from_name))
         else
             cecho(string.format("\n<yellow>[map]<reset> Warning: No reverse direction for '%s'\n", direction))
         end
@@ -61,10 +68,13 @@ function f2t_map_manual_remove_exit(room_id, direction)
             end
             local current_exits = getRoomExits(data.room_id)
             if not current_exits or not current_exits[data.direction] then
-                cecho(string.format("\n<red>[map]<reset> Exit '%s' no longer exists in room %d\n", data.direction, data.room_id)); return
+                cecho(string.format(
+                    "\n<red>[map]<reset> Exit '%s' no longer exists in room %d\n", data.direction, data.room_id))
+                return
             end
             setExitStub(data.room_id, data.direction, 0)
-            cecho(string.format("\n<green>[map]<reset> Exit removed: <white>%s<reset> (%s)\n", data.direction, data.description))
+            cecho(string.format(
+                "\n<green>[map]<reset> Exit removed: <white>%s<reset> (%s)\n", data.direction, data.description))
         end,
         {room_id = room_id, direction = direction, description = string.format("%s -> %s", room_name, dest_name)}
     )
@@ -129,7 +139,9 @@ function f2t_map_manual_list_exits(room_id)
             local dest_name = getRoomName(dest_id) or "unnamed"
             local dest_hash = getRoomHashByID(dest_id) or "unknown"
             if command:match("^__move_no_op_%d+$") then
-                cecho(string.format("    <magenta>%-30s<reset> <dim_grey>(auto-transit)<reset> -> <white>%s<reset> <dim_grey>[%d | %s]<reset>\n",
+                cecho(string.format(
+                    "    <magenta>%-30s<reset> <dim_grey>(auto-transit)<reset> -> " ..
+                    "<white>%s<reset> <dim_grey>[%d | %s]<reset>\n",
                     command, dest_name, dest_id, dest_hash))
             else
                 cecho(string.format("    <magenta>%-30s<reset> -> <white>%s<reset> <dim_grey>[%d | %s]<reset>\n",

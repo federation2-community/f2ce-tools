@@ -100,7 +100,8 @@ end
 
 function f2t_map_circuit_cmd_stop_set(circuit_id, stop_name, property, value)
     if not circuit_id or not stop_name or not property or not value then
-        cecho("\n<red>[map]<reset> Usage: map special circuit stop set <circuit_id> <stop_name> <property> <value>\n"); return
+        cecho("\n<red>[map]<reset> Usage: map special circuit stop set <circuit_id> <stop_name> <property> <value>\n")
+        return
     end
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     if not current_room then cecho("\n<red>[map]<reset> Cannot determine current location\n"); return end
@@ -152,15 +153,18 @@ function f2t_map_circuit_cmd_connect(circuit_id)
                         addCustomLine(from_room, to_room, command, "dash line", color_table.grey, false)
                         connection_count = connection_count + 1
                     else
-                        cecho(string.format("\n<yellow>[map]<reset> Warning: Stop '%s' not found in map, skipping\n", to_stop.name))
+                        cecho(string.format(
+                            "\n<yellow>[map]<reset> Warning: Stop '%s' not found in map, skipping\n", to_stop.name))
                     end
                 end
             end
         else
-            cecho(string.format("\n<yellow>[map]<reset> Warning: Stop '%s' not found in map, skipping\n", from_stop.name))
+            cecho(string.format(
+                "\n<yellow>[map]<reset> Warning: Stop '%s' not found in map, skipping\n", from_stop.name))
         end
     end
-    cecho(string.format("\n<green>[map]<reset> Created %d circuit connections for '%s'\n", connection_count, circuit_id))
+    cecho(string.format(
+        "\n<green>[map]<reset> Created %d circuit connections for '%s'\n", connection_count, circuit_id))
 end
 
 function f2t_map_circuit_cmd_list()

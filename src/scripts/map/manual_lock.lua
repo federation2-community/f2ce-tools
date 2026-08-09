@@ -40,18 +40,25 @@ function f2t_map_manual_lock_exit(room_id, direction)
     end
     if not direction or direction == "" then cecho("\n<red>[map]<reset> Direction required\n"); return false end
     direction = string.lower(direction)
-    local dir_expand = {n="north",s="south",e="east",w="west",ne="northeast",nw="northwest",se="southeast",sw="southwest",u="up",d="down"}
+    local dir_expand = {
+        n="north", s="south", e="east", w="west", ne="northeast", nw="northwest",
+        se="southeast", sw="southwest", u="up", d="down",
+    }
     direction = dir_expand[direction] or direction
 
     local exits = getRoomExits(room_id)
     if exits and exits[direction] then
         if hasExitLock(room_id, direction) then
-            cecho(string.format("\n<yellow>[map]<reset> Exit '%s' in room %d is already locked\n", direction, room_id)); return true
+            cecho(string.format(
+                "\n<yellow>[map]<reset> Exit '%s' in room %d is already locked\n", direction, room_id))
+            return true
         end
         lockExit(room_id, direction, true)
         local room_name = getRoomName(room_id) or "unnamed"
         local dest_name = getRoomName(exits[direction]) or "unnamed"
-        cecho(string.format("\n<green>[map]<reset> Exit locked: <white>%s<reset> --%s--> <white>%s<reset>\n", room_name, direction, dest_name))
+        cecho(string.format(
+            "\n<green>[map]<reset> Exit locked: <white>%s<reset> --%s--> <white>%s<reset>\n",
+            room_name, direction, dest_name))
         cecho("  <red>Navigation will avoid this exit<reset>\n")
         return true
     end
@@ -82,8 +89,9 @@ function f2t_map_manual_lock_exit(room_id, direction)
         return false
     end
 
-    local system = getRoomUserData(room_id, "fed2_system") or (gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.system)
-    local area   = getRoomUserData(room_id, "fed2_area")   or (gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.area)
+    local gmcp_info = gmcp and gmcp.room and gmcp.room.info
+    local system = getRoomUserData(room_id, "fed2_system") or (gmcp_info and gmcp_info.system)
+    local area   = getRoomUserData(room_id, "fed2_area")   or (gmcp_info and gmcp_info.area)
     if not system or not area then
         cecho("\n<red>[map]<reset> Cannot determine system/area to create placeholder room\n"); return false
     end
@@ -99,7 +107,9 @@ function f2t_map_manual_lock_exit(room_id, direction)
         end
         dest_room_id = createRoomID()
         if not addRoom(dest_room_id) then
-            cecho(string.format("\n<red>[map]<reset> Failed to create placeholder room (ID: %d)\n", dest_room_id)); return false
+            cecho(string.format(
+                "\n<red>[map]<reset> Failed to create placeholder room (ID: %d)\n", dest_room_id))
+            return false
         end
         setRoomArea(dest_room_id, area_id)
         setRoomIDbyHash(dest_room_id, hash)
@@ -115,7 +125,9 @@ function f2t_map_manual_lock_exit(room_id, direction)
     local exit_created = setExit(room_id, dest_room_id, dir_num)
     if not exit_created then
         if has_stub then setExitStub(room_id, dir_num, true) end
-        cecho(string.format("\n<red>[map]<reset> Failed to connect exit to placeholder room %d\n", dest_room_id)); return false
+        cecho(string.format(
+            "\n<red>[map]<reset> Failed to connect exit to placeholder room %d\n", dest_room_id))
+        return false
     end
     lockExit(room_id, direction, true)
     lockRoom(dest_room_id, true)
@@ -123,7 +135,9 @@ function f2t_map_manual_lock_exit(room_id, direction)
 
     local room_name = getRoomName(room_id) or "unnamed"
     local dest_name = getRoomName(dest_room_id) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Exit locked: <white>%s<reset> --%s--> <white>%s<reset>\n", room_name, direction, dest_name))
+    cecho(string.format(
+        "\n<green>[map]<reset> Exit locked: <white>%s<reset> --%s--> <white>%s<reset>\n",
+        room_name, direction, dest_name))
     cecho(string.format("  <yellow>Locked placeholder created for undiscovered room %s<reset>\n", hash))
     cecho("  <red>Navigation will avoid this exit<reset>\n")
     updateMap()
@@ -136,7 +150,10 @@ function f2t_map_manual_death_exit(room_id, direction)
     end
     if not direction or direction == "" then cecho("\n<red>[map]<reset> Direction required\n"); return false end
     direction = string.lower(direction)
-    local dir_expand = {n="north",s="south",e="east",w="west",ne="northeast",nw="northwest",se="southeast",sw="southwest",u="up",d="down"}
+    local dir_expand = {
+        n="north", s="south", e="east", w="west", ne="northeast", nw="northwest",
+        se="southeast", sw="southwest", u="up", d="down",
+    }
     direction = dir_expand[direction] or direction
 
     local exits = getRoomExits(room_id)
@@ -148,7 +165,9 @@ function f2t_map_manual_death_exit(room_id, direction)
         f2t_map_apply_death_room_style(dest_room)
         local room_name = getRoomName(room_id) or "unnamed"
         local dest_name = getRoomName(dest_room) or "unnamed"
-        cecho(string.format("\n<green>[map]<reset> Exit marked dangerous: <white>%s<reset> --%s--> <white>%s<reset>\n", room_name, direction, dest_name))
+        cecho(string.format(
+            "\n<green>[map]<reset> Exit marked dangerous: <white>%s<reset> --%s--> <white>%s<reset>\n",
+            room_name, direction, dest_name))
         cecho("  <red>Destination marked as death/danger room<reset>\n")
         updateMap(); return true
     end
@@ -175,8 +194,9 @@ function f2t_map_manual_death_exit(room_id, direction)
         cecho("\n<dim_grey>Must be standing in this room with GMCP to mark an undiscovered exit as danger.\n")
         return false
     end
-    local system = getRoomUserData(room_id, "fed2_system") or (gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.system)
-    local area   = getRoomUserData(room_id, "fed2_area")   or (gmcp and gmcp.room and gmcp.room.info and gmcp.room.info.area)
+    local gmcp_info = gmcp and gmcp.room and gmcp.room.info
+    local system = getRoomUserData(room_id, "fed2_system") or (gmcp_info and gmcp_info.system)
+    local area   = getRoomUserData(room_id, "fed2_area")   or (gmcp_info and gmcp_info.area)
     if not system or not area then
         cecho("\n<red>[map]<reset> Cannot determine system/area to create placeholder room\n"); return false
     end
@@ -192,7 +212,9 @@ function f2t_map_manual_death_exit(room_id, direction)
         end
         dest_room_id = createRoomID()
         if not addRoom(dest_room_id) then
-            cecho(string.format("\n<red>[map]<reset> Failed to create placeholder room (ID: %d)\n", dest_room_id)); return false
+            cecho(string.format(
+                "\n<red>[map]<reset> Failed to create placeholder room (ID: %d)\n", dest_room_id))
+            return false
         end
         setRoomArea(dest_room_id, area_id)
         setRoomIDbyHash(dest_room_id, hash)
@@ -208,14 +230,18 @@ function f2t_map_manual_death_exit(room_id, direction)
     local exit_created = setExit(room_id, dest_room_id, dir_num)
     if not exit_created then
         if has_stub then setExitStub(room_id, dir_num, true) end
-        cecho(string.format("\n<red>[map]<reset> Failed to connect exit to placeholder room %d\n", dest_room_id)); return false
+        cecho(string.format(
+            "\n<red>[map]<reset> Failed to connect exit to placeholder room %d\n", dest_room_id))
+        return false
     end
     lockExit(room_id, direction, true)
     lockRoom(dest_room_id, true)
     f2t_map_apply_death_room_style(dest_room_id)
     local room_name = getRoomName(room_id) or "unnamed"
     local dest_name = getRoomName(dest_room_id) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Exit marked dangerous: <white>%s<reset> --%s--> <white>%s<reset>\n", room_name, direction, dest_name))
+    cecho(string.format(
+        "\n<green>[map]<reset> Exit marked dangerous: <white>%s<reset> --%s--> <white>%s<reset>\n",
+        room_name, direction, dest_name))
     cecho(string.format("  <yellow>Death placeholder created for undiscovered room %s<reset>\n", hash))
     cecho("  <red>Navigation will avoid this exit and room<reset>\n")
     updateMap(); return true
@@ -240,19 +266,26 @@ function f2t_map_manual_unlock_exit(room_id, direction)
     end
     if not direction or direction == "" then cecho("\n<red>[map]<reset> Direction required\n"); return false end
     direction = string.lower(direction)
-    local dir_expand = {n="north",s="south",e="east",w="west",ne="northeast",nw="northwest",se="southeast",sw="southwest",u="up",d="down"}
+    local dir_expand = {
+        n="north", s="south", e="east", w="west", ne="northeast", nw="northwest",
+        se="southeast", sw="southwest", u="up", d="down",
+    }
     direction = dir_expand[direction] or direction
     local exits = getRoomExits(room_id)
     if not exits or not exits[direction] then
         cecho(string.format("\n<red>[map]<reset> No exit '%s' from room %d\n", direction, room_id)); return false
     end
     if not hasExitLock(room_id, direction) then
-        cecho(string.format("\n<yellow>[map]<reset> Exit '%s' in room %d is not locked\n", direction, room_id)); return true
+        cecho(string.format(
+            "\n<yellow>[map]<reset> Exit '%s' in room %d is not locked\n", direction, room_id))
+        return true
     end
     lockExit(room_id, direction, false)
     local room_name = getRoomName(room_id) or "unnamed"
     local dest_name = getRoomName(exits[direction]) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Exit unlocked: <white>%s<reset> --%s--> <white>%s<reset>\n", room_name, direction, dest_name))
+    cecho(string.format(
+        "\n<green>[map]<reset> Exit unlocked: <white>%s<reset> --%s--> <white>%s<reset>\n",
+        room_name, direction, dest_name))
     return true
 end
 
@@ -306,7 +339,8 @@ function f2t_map_manual_mark_room_unsafe(room_id)
     end
     setRoomUserData(room_id, "f2t_safe", "")
     local room_name = getRoomName(room_id) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Safe mark removed from room: <white>%s<reset> (ID: %d)\n", room_name, room_id))
+    cecho(string.format(
+        "\n<green>[map]<reset> Safe mark removed from room: <white>%s<reset> (ID: %d)\n", room_name, room_id))
     f2t_map_manual_mark_room_death(room_id)
     return true
 end

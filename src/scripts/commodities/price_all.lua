@@ -101,7 +101,9 @@ end
 function f2t_price_get_all_data(callback)
     -- Check prerequisites before starting
     if not f2t_check_rank_requirement("Merchant", "Price checking") then return false end
-    if not f2t_check_tool_requirement("remote-access-cert", "Price checking", "Remote Price Check Service") then return false end
+    if not f2t_check_tool_requirement("remote-access-cert", "Price checking", "Remote Price Check Service") then
+        return false
+    end
 
     if price_all_state.active then
         cecho("\n<yellow>[commodities]<reset> Price all operation already in progress\n")

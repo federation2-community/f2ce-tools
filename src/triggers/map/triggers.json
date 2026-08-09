@@ -81,5 +81,17 @@
   {
     "name": "topology_capture_blank",
     "patterns": [{"pattern": "^$", "type": "regex"}]
+  },
+  {
+    "name": "whereis_found",
+    "patterns": [
+      {"pattern": "^.+ is in the (.+) system in the .+ cartel of the .+ syndicate\\.$", "type": "regex"}
+    ]
+  },
+  {
+    "name": "whereis_not_found",
+    "patterns": [
+      {"pattern": "^I have no record of a planet called .+\\. Perhaps its sun went nova\\?$", "type": "regex"}
+    ]
   }
 ]

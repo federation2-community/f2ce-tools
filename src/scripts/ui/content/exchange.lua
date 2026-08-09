@@ -689,7 +689,8 @@ end
 local function buildExchangeDef()
     return {
         name        = "Exchange",
-        description = "Live board for the exchange you are in: prices (or futures for Traders/Financiers) plus a price ticker.",
+        description =
+            "Live board for the exchange you are in: prices (or futures for Traders/Financiers) plus a price ticker.",
         group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
@@ -806,7 +807,9 @@ end)
 f2t_settings_register("exchange", "console_spam", {
     tab         = "F2CE-Tools/Exchange",
     label       = "Ticker spam to console",
-    description = "Show the +++ exchange ticker announcements in the main console (the Exchange content gets them via GMCP either way)",
+    description =
+        "Show the +++ exchange ticker announcements in the main console " ..
+        "(the Exchange content gets them via GMCP either way)",
     default     = false,
 })
 

@@ -28,7 +28,8 @@ function f2t_map_destination_add(dest_name)
     destinations[dest_name] = hash
     f2t_save_settings()
     local room_name = getRoomName(F2T_MAP_CURRENT_ROOM_ID)
-    cecho(string.format("\n<green>[map]<reset> Destination '<yellow>%s<reset>' saved for <cyan>%s<reset>\n", dest_name, room_name))
+    cecho(string.format(
+        "\n<green>[map]<reset> Destination '<yellow>%s<reset>' saved for <cyan>%s<reset>\n", dest_name, room_name))
     return true
 end
 

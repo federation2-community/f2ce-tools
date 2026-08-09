@@ -86,7 +86,9 @@ local function parseSystemLine(line)
     for planet_name in (planet_str or ""):gmatch("(.-)%([^%)]+%)%s*") do
         planet_name = planet_name:match("^%s*(.-)%s*$")
         if planet_name ~= "" then
-            planets[#planets + 1] = { name = planet_name, system = system_name, cartel = cartel_name, syndicate = syndicate_name }
+            planets[#planets + 1] = {
+                name = planet_name, system = system_name, cartel = cartel_name, syndicate = syndicate_name
+            }
         end
     end
     return system_name, syndicate_name, cartel_name, planets
@@ -223,7 +225,9 @@ local NAV_W      = "5%"
 
 local CSS_BG     = "background-color: rgb(18,18,26); border: none;"
 local CSS_ROW    = "background-color: rgb(22,22,30); border: none; border-bottom: 1px solid rgba(255,255,255,35);"
-local CSS_HEADER = "background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2a2a3a, stop:0.4 #1e1e2a, stop:1 #16161e); border:none;"
+local CSS_HEADER =
+    "background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2a2a3a, stop:0.4 #1e1e2a, stop:1 #16161e); " ..
+    "border:none;"
 local CSS_BTN    = [[
     QLabel{ background-color: rgba(40,40,45,200); border:1px solid rgba(100,100,110,180);
         border-radius:3px; color: rgba(200,200,210,255); font-size:11px; font-weight:bold;
@@ -461,7 +465,8 @@ local function populate(gid)
                                         if g.expanded[skey] or auto_s then
                                             for _, pd in ipairs(sd.planets or {}) do
                                                 if pd.name ~= (sn .. " Space") then
-                                                    local show_p = not searching or g.expanded[skey] or planetMatches(pd, q)
+                                                    local show_p =
+                                                        not searching or g.expanded[skey] or planetMatches(pd, q)
                                                     if show_p then
                                                         local pcur = (pd.name == cur_planet) and (sn == cur_system)
                                                         createRow(inst, inst.content, pd.name, "planet", 3, y, pd, pcur)
@@ -669,20 +674,26 @@ local function buildPanel(target)
     inst.contentW = math.max(50, inst.scroll:get_width() or 220)
 
     -- Permanent state label (loading / empty) and the row container.
-    inst.stateLbl = Geyser.Label:new({ name = gid .. "_gx_state", x = 0, y = 0, width = inst.contentW, height = 2000 }, inst.scroll)
+    inst.stateLbl = Geyser.Label:new(
+        { name = gid .. "_gx_state", x = 0, y = 0, width = inst.contentW, height = 2000 }, inst.scroll)
     inst.stateLbl:setStyleSheet(CSS_BG)
-    inst.stateMsg = Geyser.Label:new({ name = gid .. "_gx_statemsg", x = 0, y = "35%", width = "100%", height = 60 }, inst.stateLbl)
+    inst.stateMsg = Geyser.Label:new(
+        { name = gid .. "_gx_statemsg", x = 0, y = "35%", width = "100%", height = 60 }, inst.stateLbl)
     inst.stateMsg:setStyleSheet("background-color:transparent; color:rgba(190,190,200,210); font-size:11px;")
 
-    inst.content = Geyser.Label:new({ name = gid .. "_gx_content", x = 0, y = 0, width = inst.contentW, height = 2000 }, inst.scroll)
+    inst.content = Geyser.Label:new(
+        { name = gid .. "_gx_content", x = 0, y = 0, width = inst.contentW, height = 2000 }, inst.scroll)
     inst.content:setStyleSheet(CSS_BG)
 
     -- Footer legend
-    local footer = Geyser.Label:new({ name = gid .. "_gx_foot", x = 0, y = "-" .. FOOTER_H, width = "100%", height = FOOTER_H }, C)
+    local footer = Geyser.Label:new(
+        { name = gid .. "_gx_foot", x = 0, y = "-" .. FOOTER_H, width = "100%", height = FOOTER_H }, C)
     footer:setStyleSheet(CSS_HEADER)
-    local legend = Geyser.Label:new({ name = gid .. "_gx_legend", x = "1%", y = 0, width = "98%", height = "100%" }, footer)
+    local legend = Geyser.Label:new(
+        { name = gid .. "_gx_legend", x = "1%", y = 0, width = "98%", height = "100%" }, footer)
     legend:setStyleSheet("background-color:transparent; color:rgba(160,160,170,190); font-size:9px;")
-    legend:echo("<center>🏛️ Syndicate&nbsp;&nbsp;&nbsp;🌌 Cartel&nbsp;&nbsp;&nbsp;⭐ System&nbsp;&nbsp;&nbsp;🌍 Planet</center>")
+    legend:echo(
+        "<center>🏛️ Syndicate&nbsp;&nbsp;&nbsp;🌌 Cartel&nbsp;&nbsp;&nbsp;⭐ System&nbsp;&nbsp;&nbsp;🌍 Planet</center>")
 
     -- No-op until the scrape lands; f2t_galaxy_finish_capture re-runs this
     -- once data is ready, so an early-opened navigator still catches up.

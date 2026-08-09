@@ -183,6 +183,18 @@ elseif subcommand == "explore" then
         -- when no name is given, same as the system/planet/syndicate forms.
         f2t_map_explore_cartel_start(f2t_parse_rest(words, 2))
 
+    elseif first == "room" then
+        -- Walks the current planet room-by-room until a room whose name
+        -- contains this text is found (same case-insensitive substring match
+        -- as `map search`), instead of the flag-based (shuttlepad/exchange/etc)
+        -- search every other form here does.
+        local room_name = f2t_parse_rest(words, 2)
+        if room_name == "" then
+            cecho("\n<red>[map]<reset> Usage: map explore room <text>\n")
+        else
+            f2t_map_explore_planet_start("brief", nil, nil, nil, room_name)
+        end
+
     elseif first == "galaxy" then
         f2t_map_explore_galaxy_start()
 

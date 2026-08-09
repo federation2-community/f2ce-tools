@@ -136,7 +136,8 @@ function f2t_map_special_exit_discovery_complete(to_room_id)
     if success then
         local from_name = getRoomName(from_room) or string.format("Room %d", from_room)
         local to_name   = getRoomName(to_room_id) or string.format("Room %d", to_room_id)
-        cecho(string.format("\n<green>[map]<reset> Special exit created: <white>%s<reset> -> <white>%s<reset>\n", from_name, to_name))
+        cecho(string.format(
+            "\n<green>[map]<reset> Special exit created: <white>%s<reset> -> <white>%s<reset>\n", from_name, to_name))
         if command == "noop" then
             cecho("\n<dim_grey>  Command: (auto-transit, wait for GMCP)<reset>\n")
         else
@@ -224,7 +225,9 @@ function f2t_map_special_list(room_id)
             local dest_name = getRoomName(dest_room_id) or "unnamed"
             local dest_hash = f2t_map_generate_hash_from_room(dest_room_id) or "unknown"
             if command:match("^__move_no_op_%d+$") then
-                cecho(string.format("  <yellow>%s<reset> <dim_grey>(auto-transit)<reset> -> <white>%s<reset> <dim_grey>[%d | %s]<reset>\n",
+                cecho(string.format(
+                    "  <yellow>%s<reset> <dim_grey>(auto-transit)<reset> -> " ..
+                    "<white>%s<reset> <dim_grey>[%d | %s]<reset>\n",
                     command, dest_name, dest_room_id, dest_hash))
             else
                 cecho(string.format("  <yellow>%s<reset> -> <white>%s<reset> <dim_grey>[%d | %s]<reset>\n",

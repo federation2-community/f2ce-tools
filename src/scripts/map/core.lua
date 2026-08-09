@@ -162,7 +162,8 @@ function f2t_map_status()
     for _ in pairs(t.cartels or {})    do car = car + 1 end
     for _ in pairs(t.syndicates or {}) do syn = syn + 1 end
     cecho(string.format(
-        "<yellow>Topology<reset>: <white>%d<reset> system(s), <white>%d<reset> cartel(s), <white>%d<reset> syndicate(s)\n",
+        "<yellow>Topology<reset>: <white>%d<reset> system(s), <white>%d<reset> cartel(s), " ..
+        "<white>%d<reset> syndicate(s)\n",
         sys, car, syn))
     cecho(string.format("<yellow>Last topology sync<reset>: <white>%s<reset>\n",
         t.synced_at and os.date("%Y-%m-%d %H:%M:%S", t.synced_at) or "never"))

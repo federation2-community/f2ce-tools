@@ -154,7 +154,6 @@ function f2t_stamina_check_low_stamina(percent)
         return
     end
 
-    local threshold = f2t_settings_get("stamina", "threshold")
     if percent > threshold then
         return
     end
@@ -172,7 +171,8 @@ function f2t_stamina_check_low_stamina(percent)
 
         -- Component mode: auto-pause, navigate, buy food, resume.
         f2t_debug_log("[stamina] Using COMPONENT mode")
-        cecho(string.format("\n<yellow>[stamina]<reset> Low stamina detected: %d%% (threshold: %d%%)\n", percent, threshold))
+        cecho(string.format(
+            "\n<yellow>[stamina]<reset> Low stamina detected: %d%% (threshold: %d%%)\n", percent, threshold))
         f2t_stamina_start_food_trip()
         return
     end
@@ -366,9 +366,20 @@ function f2t_stamina_phase_navigate_to_food()
     f2t_debug_log("[stamina] Navigating to food source: %s", food_source)
     cecho(string.format("\n<cyan>[stamina]<reset> Navigating to food source: %s\n", food_source))
 
-    local success = f2t_map_navigate(food_source)
+    local success = f2t_map_navigate(food_source, {
+        on_result = function(ok)
+            if F2T_STAMINA_STATE.current_phase ~= "navigating_to_food" then return end
+            if not ok then
+                f2t_stamina_abort_food_trip("could not find path to food source")
+            end
+            -- ok: a real speedwalk is now in flight; completion is picked up by
+            -- the GMCP handler, same as any other in-flight speedwalk.
+        end,
+    })
 
-    if not success then
+    -- success == nil means a hint-driven auto-explore is in flight (handled by
+    -- on_result above, not here) - only a definite false is an immediate abort.
+    if success == false then
         f2t_stamina_abort_food_trip("could not find path to food source")
         return
     end
@@ -397,7 +408,8 @@ function f2t_stamina_phase_buy_food()
         return
     end
 
-    f2t_debug_log("[stamina] Buying food (stamina: %d%%, attempt %d/%d)", percent, F2T_STAMINA_STATE.buy_attempts, F2T_STAMINA_MAX_BUY_ATTEMPTS)
+    f2t_debug_log("[stamina] Buying food (stamina: %d%%, attempt %d/%d)",
+        percent, F2T_STAMINA_STATE.buy_attempts, F2T_STAMINA_MAX_BUY_ATTEMPTS)
 
     send("buy food")   -- automatically consumed, +10 stamina
 
@@ -418,7 +430,7 @@ function f2t_stamina_phase_navigate_back()
     f2t_debug_log("[stamina] Navigating back to: %s", F2T_STAMINA_STATE.return_location)
     cecho(string.format("\n<cyan>[stamina]<reset> Returning to original location\n"))
 
-    local success = f2t_map_navigate(F2T_STAMINA_STATE.return_location)
+    local success = f2t_map_navigate(F2T_STAMINA_STATE.return_location, {suppress_hint = true})
 
     if not success then
         cecho("\n<yellow>[stamina]<reset> Failed to navigate back, resuming at current location\n")
@@ -449,7 +461,9 @@ function f2t_stamina_show_standalone_prompt(percent, threshold)
 
     cecho("\n")
     cecho("<yellow>╔════════════════════════════════════════╗<reset>\n")
-    cecho(string.format("<yellow>║<reset>  <white>LOW STAMINA:<reset> <red>%d%%<reset> (threshold: %d%%)      <yellow>║<reset>\n", percent, threshold))
+    cecho(string.format(
+        "<yellow>║<reset>  <white>LOW STAMINA:<reset> <red>%d%%<reset> (threshold: %d%%)      <yellow>║<reset>\n",
+        percent, threshold))
     cecho("<yellow>║<reset>                                        <yellow>║<reset>\n")
     cecho("<yellow>║<reset>  Would you like to go refill?          <yellow>║<reset>\n")
     cecho("<yellow>║<reset>  Type <green>yes<reset> or <red>no<reset>                       <yellow>║<reset>\n")
@@ -469,7 +483,8 @@ function f2t_stamina_show_standalone_prompt(percent, threshold)
         f2t_stamina_prompt_timeout()
     end)
 
-    f2t_debug_log("[stamina] Standalone prompt shown, waiting for 'yes' or 'no' (timeout: %ds)", F2T_STAMINA_PROMPT_TIMEOUT)
+    f2t_debug_log(
+        "[stamina] Standalone prompt shown, waiting for 'yes' or 'no' (timeout: %ds)", F2T_STAMINA_PROMPT_TIMEOUT)
 end
 
 function f2t_stamina_prompt_accept()

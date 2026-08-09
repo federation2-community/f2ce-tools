@@ -237,14 +237,24 @@ function f2t_hauling_phase_po_navigate_to_buy()
         job.buy_planet))
     f2t_debug_log("[hauling/po] Navigating to buy: %s", destination)
 
-    local nav_result = f2t_map_navigate(destination)
+    local nav_result = f2t_map_navigate(destination, {
+        on_result = function(success)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            if not success then
+                cecho(string.format(
+                    "\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
+                f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
+                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
+                f2t_hauling_phase_po_next_job()
+            end
+            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
+            -- handler picks up its completion normally.
+        end,
+    })
 
-    if nav_result == nil then
-        cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
-        f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
-        F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-        f2t_hauling_phase_po_next_job()
-    elseif nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling/po] Already at buy location")
         f2t_hauling_transition("po_buying")
     end
@@ -384,14 +394,24 @@ function f2t_hauling_phase_po_bundled_buy_navigate()
         job.bundled_buy_planet))
     f2t_debug_log("[hauling/po] Navigating to bundled buy: %s", dest)
 
-    local nav_result = f2t_map_navigate(dest)
+    local nav_result = f2t_map_navigate(dest, {
+        on_result = function(success)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            if not success then
+                cecho(string.format(
+                    "\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
+                    job.bundled_buy_planet))
+                f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
+                f2t_hauling_transition("po_navigating_to_sell")
+            end
+            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
+            -- handler picks up its completion normally.
+        end,
+    })
 
-    if nav_result == nil then
-        cecho(string.format("\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
-            job.bundled_buy_planet))
-        f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
-        f2t_hauling_transition("po_navigating_to_sell")
-    elseif nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
         -- Set phase to prevent GMCP handler re-entry during async buy
         F2T_HAULING_STATE.current_phase = "po_buying"
         f2t_hauling_phase_po_bundled_buy()
@@ -448,15 +468,25 @@ function f2t_hauling_phase_po_navigate_to_sell()
         job.sell_planet))
     f2t_debug_log("[hauling/po] Navigating to sell: %s", destination)
 
-    local nav_result = f2t_map_navigate(destination)
+    local nav_result = f2t_map_navigate(destination, {
+        on_result = function(success)
+            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                return
+            end
+            if not success then
+                cecho(string.format(
+                    "\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
+                f2t_debug_log("[hauling/po] Navigation to sell location failed, skipping job")
+                -- We have cargo but can't sell - skip to next job
+                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
+                f2t_hauling_phase_po_next_job()
+            end
+            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
+            -- handler picks up its completion normally.
+        end,
+    })
 
-    if nav_result == nil then
-        cecho(string.format("\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
-        f2t_debug_log("[hauling/po] Navigation to sell location failed, skipping job")
-        -- We have cargo but can't sell - skip to next job
-        F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-        f2t_hauling_phase_po_next_job()
-    elseif nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling/po] Already at sell location")
         f2t_hauling_transition("po_selling")
     end

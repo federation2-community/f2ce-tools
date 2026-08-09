@@ -160,9 +160,11 @@ function f2t_map_resolve_location(location)
 
             if #matching_rooms == 0 then
                 if flag == "orbit" then
-                    return nil, string.format("No orbit mapped for '%s' - try 'map explore %s' to discover it", area_name, area_name)
+                    return nil, string.format(
+                        "No orbit mapped for '%s' - try 'map explore %s' to discover it", area_name, area_name)
                 else
-                    return nil, string.format("No %s found in '%s' - try 'map explore %s' to discover one", flag, search_area_name, area_name)
+                    return nil, string.format(
+                        "No %s found in '%s' - try 'map explore %s' to discover one", flag, search_area_name, area_name)
                 end
             end
 
@@ -209,14 +211,17 @@ function f2t_map_resolve_location(location)
                 end
             end
             if target_id then return target_id, nil end
-            return nil, string.format("No orbit mapped for '%s' - try 'map explore %s' to discover it", single_arg, system_name)
+            return nil, string.format(
+                "No orbit mapped for '%s' - try 'map explore %s' to discover it", single_arg, system_name)
 
         elseif planet_dest == "exchange" then
             local planet_area_id = f2t_map_get_area_id(single_arg)
             if planet_area_id then
                 target_id = f2t_map_find_room_with_flag(planet_area_id, "exchange")
                 if target_id then return target_id, nil end
-                return nil, string.format("No exchange mapped on '%s' - try 'map explore %s' to discover one", single_arg, single_arg)
+                local err_msg = string.format(
+                    "No exchange mapped on '%s' - try 'map explore %s' to discover one", single_arg, single_arg)
+                return nil, err_msg, {kind = "planet", name = single_arg, flag = "exchange"}
             end
             return nil, string.format("Planet '%s' is not in your map yet - explore it first", single_arg)
 
@@ -225,7 +230,9 @@ function f2t_map_resolve_location(location)
             if planet_area_id then
                 target_id = f2t_map_find_room_with_flag(planet_area_id, "shuttlepad")
                 if target_id then return target_id, nil end
-                return nil, string.format("No shuttlepad mapped on '%s' - try 'map explore %s' to discover one", single_arg, single_arg)
+                local err_msg = string.format(
+                    "No shuttlepad mapped on '%s' - try 'map explore %s' to discover one", single_arg, single_arg)
+                return nil, err_msg, {kind = "planet", name = single_arg, flag = "shuttlepad"}
             end
             return nil, string.format("Planet '%s' is not in your map yet - explore it first", single_arg)
         end
@@ -237,7 +244,9 @@ function f2t_map_resolve_location(location)
         local space_area_id = f2t_map_get_area_id(space_area)
         target_id = f2t_map_find_room_with_flag(space_area_id, "link")
         if target_id then return target_id, nil end
-        return nil, string.format("No link room mapped in '%s' - try 'map explore %s' to discover it", space_area, single_arg)
+        local err_msg = string.format(
+            "No link room mapped in '%s' - try 'map explore %s' to discover it", space_area, single_arg)
+        return nil, err_msg, {kind = "system", name = single_arg}
     end
 
     -- Flag in current area
@@ -283,15 +292,22 @@ function f2t_map_resolve_location(location)
     if #matching_rooms == 0 then
         if string.find(single_arg, " ", 1, true) then
             return nil, string.format(
-                "'%s' not found in your map - may be a real location you haven't explored yet, or an invalid destination/flag\nUse: nav <area> <flag>   valid flags: exchange, courier (ac), shuttlepad, bar, hospital, insure, repair, shipyard, weapons, link, orbit\nIf this is a real location, explore there manually first to add it to your map",
+                "'%s' not found in your map - may be a real location you haven't explored yet, " ..
+                "or an invalid destination/flag\n" ..
+                "Use: nav <area> <flag>   valid flags: exchange, courier (ac), shuttlepad, bar, " ..
+                "hospital, insure, repair, shipyard, weapons, link, orbit\n" ..
+                "If this is a real location, explore there manually first to add it to your map",
                 location)
         elseif KNOWN_FLAGS[single_arg] then
-            local area_display = (search_area_name and search_area_name ~= "") and ("'" .. search_area_name .. "'") or "this area"
+            local area_display =
+                (search_area_name and search_area_name ~= "") and ("'" .. search_area_name .. "'") or "this area"
             return nil, string.format("No %s found in %s - try 'map explore' to discover one", single_arg, area_display)
         else
-            return nil, string.format(
-                "'%s' not found - not a mapped planet, system, or navigation flag\nIf this is a real location, explore there manually first to add it to your map",
+            local err_msg = string.format(
+                "'%s' not found - not a mapped planet, system, or navigation flag\n" ..
+                "If this is a real location, explore there manually first to add it to your map",
                 location)
+            return nil, err_msg, {kind = "whereis_pending", name = location}
         end
     end
 

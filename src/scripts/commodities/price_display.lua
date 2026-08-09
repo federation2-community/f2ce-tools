@@ -7,7 +7,9 @@ function f2t_price_display_commodity(commodity, analysis)
 
     -- Display summary
     if #analysis.top_sell > 0 and #analysis.top_buy > 0 then
-        cecho(string.format("<dim_grey>Avg Buy: <white>%dig/ton<reset>  <dim_grey>Avg Sell: <white>%dig/ton<reset>  <dim_grey>Profit: <white>%dig/ton<reset>  <dim_grey>Margin: <white>%.1f%%<reset>\n",
+        cecho(string.format(
+            "<dim_grey>Avg Buy: <white>%dig/ton<reset>  <dim_grey>Avg Sell: <white>%dig/ton<reset>  " ..
+            "<dim_grey>Profit: <white>%dig/ton<reset>  <dim_grey>Margin: <white>%.1f%%<reset>\n",
             analysis.avg_sell_price,
             analysis.avg_buy_price,
             analysis.profit,
@@ -60,7 +62,9 @@ function f2t_price_display_commodity(commodity, analysis)
     -- Display profit summary
     if analysis.profit > 0 then
         local profit_per_lot = analysis.profit * 75
-        cecho(string.format("\n<green>Projected Profit:<reset> <white>%dig/ton<reset> (<white>%dig<reset> per 75-ton lot, <white>%.1f%%<reset> margin)\n",
+        cecho(string.format(
+            "\n<green>Projected Profit:<reset> <white>%dig/ton<reset> " ..
+            "(<white>%dig<reset> per 75-ton lot, <white>%.1f%%<reset> margin)\n",
             analysis.profit, profit_per_lot, analysis.margin))
     elseif analysis.profit == 0 then
         cecho("\n<yellow>No profit opportunity detected<reset>\n")

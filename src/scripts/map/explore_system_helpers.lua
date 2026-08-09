@@ -4,7 +4,9 @@ function f2t_map_explore_system_check_room_for_planets(room_id)
     if not F2T_MAP_EXPLORE_STATE.active then return end
     if not F2T_MAP_EXPLORE_STATE.system_mode or F2T_MAP_EXPLORE_STATE.system_mode ~= "brief" then return end
     if F2T_MAP_EXPLORE_STATE.system_phase ~= "exploring_space" then return end
-    if not F2T_MAP_EXPLORE_STATE.expected_planets or not F2T_MAP_EXPLORE_STATE.expected_planets_remaining then return end
+    if not F2T_MAP_EXPLORE_STATE.expected_planets or not F2T_MAP_EXPLORE_STATE.expected_planets_remaining then
+        return
+    end
 
     local planet_name = getRoomUserData(room_id, "fed2_planet")
     if not planet_name or planet_name == "" then return end

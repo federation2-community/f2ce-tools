@@ -43,6 +43,7 @@ f2t_register_help("map", {
         {cmd="map explore cartel [name]", desc="Explore all systems in cartel, traveling there first"},
         {cmd="map explore syndicate [name]", desc="Explore all cartels in a syndicate, traveling there first"},
         {cmd="map explore galaxy", desc="Explore all cartels in galaxy"},
+        {cmd="map explore room <text>", desc="Walk current planet until a room name contains this text"},
         {cmd="", desc=""},
         {cmd="Galaxy Topology:", desc=""},
         {cmd="map topology", desc="Show syndicates, cartels, and beacon builds"},
@@ -180,6 +181,7 @@ f2t_register_help("map explore", {
         {cmd="map explore cartel [name]", desc="Explore all systems in cartel, traveling there first"},
         {cmd="map explore syndicate [name]", desc="Explore all cartels in a syndicate, traveling there first"},
         {cmd="map explore galaxy", desc="Explore all cartels in galaxy"},
+        {cmd="map explore room <text>", desc="Walk current planet until a room name contains this text"},
         {cmd="", desc=""},
         {cmd="map explore stop", desc="Stop exploration"},
         {cmd="map explore pause", desc="Pause exploration"},
@@ -191,6 +193,7 @@ f2t_register_help("map explore", {
         "map explore Earth                # Explore Earth (auto-detect planet)",
         "map explore Coffee               # Explore Coffee (auto-detect system)",
         "map explore full                 # Full exploration of current area",
+        "map explore room Cave            # Hunt current planet for any room name containing 'Cave'",
         "map explore stop                 # Stop and show statistics",
     },
 })

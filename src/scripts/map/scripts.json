@@ -30,6 +30,7 @@
   {"name": "circuit_builder"},
   {"name": "circuit_movement"},
   {"name": "di_system_capture"},
+  {"name": "whereis_capture"},
   {"name": "explore_query"},
   {"name": "explore_bfs"},
   {"name": "explore_navigation"},

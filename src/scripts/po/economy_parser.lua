@@ -17,7 +17,9 @@ function f2t_po_parse_exchange_buffer(buffer)
 
         -- Match line 1: commodity data ending with "Efficiency:"
         local name, value, spread, stock_cur, stock_min, stock_max =
-            line1:match("^%s+(.-):%s+value%s+(%d+)ig/ton%s+Spread:%s+(%d+)%%%s+Stock:%s+current%s+(%-?%d+)/min%s+(%-?%d+)/max%s+(%-?%d+)%s+Efficiency:")
+            line1:match(
+                "^%s+(.-):%s+value%s+(%d+)ig/ton%s+Spread:%s+(%d+)%%%s+Stock:%s+current%s+" ..
+                "(%-?%d+)/min%s+(%-?%d+)/max%s+(%-?%d+)%s+Efficiency:")
 
         if name and i + 1 <= #buffer then
             -- Match line 2: efficiency and net

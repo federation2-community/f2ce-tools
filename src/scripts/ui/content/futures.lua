@@ -32,7 +32,8 @@ local C_MA = "#ffa366"   -- suspended-row text: warm/bright so it stays legible 
 -- Every cell background carries its own QToolTip rule — without one, a cell's
 -- own dark background can bleed into the native tooltip box (black text on a
 -- black/dark-red tooltip, unreadable) instead of Qt/OS tooltip defaults.
-local TOOLTIP_CSS = "QToolTip{background-color:#1d2030;color:#e8ebf5;border:1px solid rgba(255,255,255,0.18);padding:3px;}"
+local TOOLTIP_CSS =
+    "QToolTip{background-color:#1d2030;color:#e8ebf5;border:1px solid rgba(255,255,255,0.18);padding:3px;}"
 
 local BG_NORMAL    = "background-color:transparent; border:none; padding:0;" .. TOOLTIP_CSS
 local BG_OWNED     = "background-color:rgba(25,25,50,160); border:none; padding:0;" .. TOOLTIP_CSS
@@ -109,7 +110,8 @@ local function spanState(align, row, text, normalColor)
         return span(align, C_MA, text)
     elseif row.owned then
         return string.format(
-            "<p style='text-align:%s;margin:0;padding:0 3px;'><span style='%scolor:%s;text-decoration:line-through;'>%s</span></p>",
+            "<p style='text-align:%s;margin:0;padding:0 3px;'>" ..
+            "<span style='%scolor:%s;text-decoration:line-through;'>%s</span></p>",
             align, SF, C_GR, text)
     end
     return span(align, normalColor, text)
@@ -508,7 +510,8 @@ local function refreshMarket(gid)
                 " <span style='font-size:9px;color:#888888;'>live</span>", planet or "?"))
         else
             inst.hdr:echo(
-                "<span style='font-size:9px;color:#888888;padding-left:6px;'>No exchange data — visit an exchange.</span>")
+                "<span style='font-size:9px;color:#888888;padding-left:6px;'>" ..
+                "No exchange data — visit an exchange.</span>")
         end
     end
     f2tTableSetData(inst.tableId, f2tFuturesMarketRows())
@@ -722,7 +725,8 @@ local function refreshOwned(gid)
         else
             local plColor = totalPl > 0 and C_G or (totalPl < 0 and C_R or C_GR)
             inst.hdr:echo(string.format(
-                "<span style='font-size:9px;color:#888888;padding-left:6px;'>%d contract%s &nbsp; Total P&amp;L:</span>" ..
+                "<span style='font-size:9px;color:#888888;padding-left:6px;'>" ..
+                "%d contract%s &nbsp; Total P&amp;L:</span>" ..
                 " <span style='font-size:9px;color:%s;'>%s</span>",
                 #rows, #rows ~= 1 and "s" or "", plColor, fmtIgSigned(totalPl)))
         end
