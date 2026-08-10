@@ -566,7 +566,7 @@ Mux.registerWorkspace("f2ce-tools", {
                     zoomable = false
                 },
                 b = {
-                    activeTabName = "Hauling",
+                    activeTabName = "Missions",
                     anchorable = true,
                     bordered = false,
                     closeable = false,
@@ -583,6 +583,37 @@ Mux.registerWorkspace("f2ce-tools", {
                     splittable = false,
                     swappable = false,
                     tabs = {
+                        {
+                            _activeContent = "fed2_missions",
+                            closeable = false,
+                            contentState = {},
+                            contentable = false,
+                            movable = true,
+                            name = "Missions",
+                            nameAlign = "center",
+                            propertiesButton = false,
+                            renamable = false,
+                            rules = {
+                                {
+                                    act = "mux.overlay.disconnected.show",
+                                    actElse = "mux.overlay.disconnected.hide",
+                                    cond = {
+                                        ref = "disconnected"
+                                    },
+                                    enabled = true,
+                                    id = "r30"
+                                },
+                                {
+                                    act = "mux.overlay.connecting.show",
+                                    actElse = "mux.overlay.connecting.hide",
+                                    cond = {
+                                        ref = "connecting"
+                                    },
+                                    enabled = true,
+                                    id = "r31"
+                                }
+                            }
+                        },
                         {
                             _activeContent = "fed2_hauling_jobs",
                             closeable = false,
