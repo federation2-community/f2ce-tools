@@ -22,12 +22,12 @@ function f2t_map_get_route_info(origin, destination)
                 total_moves=0, space_moves=0, success=true}
     end
 
-    local success, cost = getPath(origin_room_id, dest_room_id)
+    local success = getPath(origin_room_id, dest_room_id)
     if not success then return nil, "No path found between origin and destination" end
 
     local total_moves = #speedWalkDir
     local space_moves = 0
-    for i, room_id in ipairs(speedWalkPath) do
+    for _, room_id in ipairs(speedWalkPath) do
         if room_id and getRoomUserData(room_id, "fed2_flag_space") == "true" then
             space_moves = space_moves + 1
         end

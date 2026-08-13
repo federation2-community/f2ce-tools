@@ -238,7 +238,7 @@ end
 -- @param commodity: Commodity name from trigger
 -- @param revenue_per_ton: Revenue per ton from trigger
 -- @param revenue_total: Total revenue for this lot from trigger
-function f2t_bulk_sell_success(commodity, revenue_per_ton, revenue_total)
+function f2t_bulk_sell_success(_commodity, revenue_per_ton, revenue_total)
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
     end

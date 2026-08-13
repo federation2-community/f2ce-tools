@@ -98,9 +98,8 @@ function f2t_map_manual_lock_exit(room_id, direction)
 
     local hash = string.format("%s.%s.%d", system, area, gmcp_fed2_num)
     local dest_room_id = getRoomIDbyHash(hash)
-    if dest_room_id and dest_room_id > 0 then
-        -- placeholder already exists
-    else
+    -- else: placeholder already exists at dest_room_id, nothing to create
+    if not (dest_room_id and dest_room_id > 0) then
         local area_id = getRoomArea(room_id)
         if not area_id or area_id <= 0 then
             cecho("\n<red>[map]<reset> Cannot determine area ID to create placeholder room\n"); return false

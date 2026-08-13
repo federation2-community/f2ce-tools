@@ -86,7 +86,7 @@ local function buildCols()
             sortable      = true,
             sort_value    = function(row) return tonumber(row.basePrice) or 0 end,
             scrollbox_pct = 40,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format(
                     "<span style='%scolor:#73de94;'>%s ig</span>",
                     CELL_FONT, tostring(v or "")))

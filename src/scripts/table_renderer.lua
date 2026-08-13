@@ -103,7 +103,7 @@ end
 
 -- ── Width calculation ─────────────────────────────────────────────────────────
 
-local function calc_min(col, data)
+local function calc_min(col, _data)
     if col.width then return col.width end
     return math.max(col.min_width or 0, #col.header)
 end
@@ -150,7 +150,7 @@ function f2t_calculate_column_widths(columns, data, max_width, footer_row)
     local final = {}
     local flex = {}
     local fixed_total = spacing
-    for i, col in ipairs(columns) do
+    for i, _ in ipairs(columns) do
         if fixed[i] then final[i] = desired[i]; fixed_total = fixed_total + desired[i]
         else table.insert(flex, i)
         end
@@ -183,7 +183,7 @@ function f2t_render_row(row, columns, widths)
     cecho(table.concat(parts, " ") .. "\n")
 end
 
-function f2t_calculate_aggregations(data, aggregations, columns)
+function f2t_calculate_aggregations(data, aggregations, _columns)
     if not aggregations then return nil end
     local agg_row = {}
     for _, agg in ipairs(aggregations) do

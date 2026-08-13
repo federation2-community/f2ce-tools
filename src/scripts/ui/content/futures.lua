@@ -571,7 +571,7 @@ local function ownedCols()
             sortable      = true,
             sort_value    = function(r) return (r.exchange or ""):lower() end,
             scrollbox_pct = 19,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 cell:echo(span("left", C_CY, tostring(v or "?")))
                 cell:setToolTip("Navigate to " .. tostring(v or "?") .. " exchange")
@@ -586,7 +586,7 @@ local function ownedCols()
             sortable      = true,
             sort_value    = function(r) return (r.commodity or ""):lower() end,
             scrollbox_pct = 19,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 local icon = f2tCommodityIconPrefix and f2tCommodityIconPrefix(v) or ""
                 cell:echo(span("left", C_W, icon .. tostring(v or "?")))
@@ -599,7 +599,7 @@ local function ownedCols()
             sortable      = true,
             sort_value    = function(r) return r.position end,
             scrollbox_pct = 5,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 local isLong = (v == "long")
                 cell:echo(span("center", isLong and C_CY or C_Y, isLong and "L" or "S"))
@@ -613,7 +613,7 @@ local function ownedCols()
             sortable      = true,
             sort_value    = function(r) return r.cost or 0 end,
             scrollbox_pct = 10,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 cell:echo(span("right", C_GR, fmtIg(tonumber(v))))
                 cell:setClickCallback(function() end)
@@ -642,7 +642,7 @@ local function ownedCols()
             default_sort  = "asc",
             sort_value    = function(r) return r.pl or 0 end,
             scrollbox_pct = 12,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 local n = tonumber(v) or 0
                 local color = n > 0 and C_G or (n < 0 and C_R or C_GR)
@@ -671,7 +671,7 @@ local function ownedCols()
             label         = "M",
             sortable      = false,
             scrollbox_pct = 5,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:setStyleSheet(BG_NORMAL)
                 local icons = { ok = {"✓", C_G}, warn = {"!", C_Y}, call = {"✗", C_R}, danger = {"✗", C_R} }
                 local tips  = {

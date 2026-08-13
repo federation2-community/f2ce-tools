@@ -173,7 +173,7 @@ end
 
 -- Navigation / info
 
-function f2t_galaxy_nav_to(kind, name)
+function f2t_galaxy_nav_to(_kind, name)
     expandAlias("nav " .. name)
     f2t_galaxy_hide_nav()
 end

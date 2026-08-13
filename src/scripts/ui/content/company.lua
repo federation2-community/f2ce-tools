@@ -891,7 +891,7 @@ local function factoryCols()
             sortable      = true,
             sort_value    = function(r) return tonumber(r.facNum) or 0 end,
             scrollbox_pct = 8,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format(
                     "<span style='%scolor:#00cccc;text-decoration:underline;'>%s</span>", CELL_FONT, v))
                 cell:setToolTip("di factory #" .. tostring(v))
@@ -918,7 +918,7 @@ local function factoryCols()
             sortable      = true,
             sort_value    = function(r) return r.outputShort:lower() end,
             scrollbox_pct = 24,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format("<span style='%scolor:#888888;'>%s</span>", CELL_FONT, v))
             end,
         },
@@ -1020,7 +1020,7 @@ local function depotCols()
             label         = "Depots",
             sortable      = false,
             scrollbox_pct = 100,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format("<span style='%scolor:#00cccc;'>%s</span>", CELL_FONT, v))
                 cell:setToolTip("Click to repair depot on " .. tostring(v))
                 cell:setClickCallback(function()
@@ -1185,7 +1185,7 @@ local function shareholderCols()
             sortable      = true,
             sort_value    = function(r) return r.divPay or 0 end,
             scrollbox_pct = 22,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 local n = tonumber(v) or 0
                 if n > 0 then
                     cell:echo(string.format(
@@ -1408,7 +1408,7 @@ local function portfolioCols()
             default_sort  = "desc",
             sort_value    = function(r) return r.quantity or 0 end,
             scrollbox_pct = 30,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format("<span style='%scolor:#ffffff;'>%s</span>", CELL_FONT, fmtComma(v)))
             end,
         },

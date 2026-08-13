@@ -290,18 +290,26 @@ function f2t_map_resolve_location(location)
     end
 
     if #matching_rooms == 0 then
-        if string.find(single_arg, " ", 1, true) then
-            return nil, string.format(
+        -- A bare recognized-flag word (e.g. "exchange" with no area prefix) means
+        -- "find one in my current area" - there's no place name here to ask
+        -- whereis about, so this is the one case that stays hint-ineligible.
+        if KNOWN_FLAGS[single_arg] then
+            local area_display =
+                (search_area_name and search_area_name ~= "") and ("'" .. search_area_name .. "'") or "this area"
+            return nil, string.format("No %s found in %s - try 'map explore' to discover one", single_arg, area_display)
+        elseif string.find(single_arg, " ", 1, true) then
+            -- Reached here without matching the "<area> <flag>" pattern above, so
+            -- this multi-word string is presumably a multi-word place name (Fed2
+            -- has plenty, e.g. "Tia Maria") rather than an area+flag typo - still
+            -- worth asking whereis about before giving up.
+            local err_msg = string.format(
                 "'%s' not found in your map - may be a real location you haven't explored yet, " ..
                 "or an invalid destination/flag\n" ..
                 "Use: nav <area> <flag>   valid flags: exchange, courier (ac), shuttlepad, bar, " ..
                 "hospital, insure, repair, shipyard, weapons, link, orbit\n" ..
                 "If this is a real location, explore there manually first to add it to your map",
                 location)
-        elseif KNOWN_FLAGS[single_arg] then
-            local area_display =
-                (search_area_name and search_area_name ~= "") and ("'" .. search_area_name .. "'") or "this area"
-            return nil, string.format("No %s found in %s - try 'map explore' to discover one", single_arg, area_display)
+            return nil, err_msg, {kind = "whereis_pending", name = location}
         else
             local err_msg = string.format(
                 "'%s' not found - not a mapped planet, system, or navigation flag\n" ..

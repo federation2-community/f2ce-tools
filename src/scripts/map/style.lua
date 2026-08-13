@@ -170,8 +170,6 @@ function f2t_map_get_flag_env(flag)
     return entry and entry.env or nil
 end
 
-function f2t_map_get_flag_color(flag) return nil end
-
 local ENV_COLOR_RGB = {
     [257]={200,50,50}, [258]={50,160,50}, [259]={185,165,30}, [260]={50,100,200},
     [261]={120,0,30},  [262]={30,170,170},[263]={40,130,40},  [265]={120,0,0},

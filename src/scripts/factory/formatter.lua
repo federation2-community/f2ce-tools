@@ -55,7 +55,7 @@ function f2t_factory_display_table()
     f2t_factory_prepare_for_display(factories)
 
     -- dim_grey colour for any cell of a missing-factory row
-    local function missing_color(val, row)
+    local function missing_color(_val, row)
         if row.missing then return "dim_grey" end
         return nil
     end
@@ -74,7 +74,7 @@ function f2t_factory_display_table()
             {
                 header = "St", field = "status", width = 2,
                 formatter = function(val, row) if row.missing then return "-" end return val:sub(1, 1) end,
-                color_fn  = function(val, row)
+                color_fn  = function(_val, row)
                     if row.missing then return "dim_grey" end
                     return row.status == "Running" and "green" or "yellow"
                 end,

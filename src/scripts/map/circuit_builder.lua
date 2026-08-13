@@ -35,7 +35,7 @@ function f2t_map_circuit_cmd_set(circuit_id, property, value)
     end
     if property == "vehicle_room" then
         local room_num = tonumber(value)
-        local hash = nil
+        local hash
         if room_num then
             if not roomExists(room_num) then
                 cecho(string.format("\n<red>[map]<reset> Room %d does not exist in map\n", room_num)); return

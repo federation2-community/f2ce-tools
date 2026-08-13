@@ -233,7 +233,7 @@ local function priceCols()
             default_sort  = "asc",
             sort_value    = function(r) return (r.name or ""):lower() end,
             scrollbox_pct = 26,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 local icon = iconsEnabled() and COMMOD_ICONS[v] or nil
                 local text = icon and (icon .. " " .. tostring(v or "")) or tostring(v or "")
                 cell:echo(spanRaw("left", coloredSpan(C_NM, text)))
@@ -254,7 +254,7 @@ local function priceCols()
             sortable      = true,
             sort_value    = function(r) return r.base or 0 end,
             scrollbox_pct = 14,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 local n = tonumber(v)
                 cell:echo(spanRaw("right", coloredSpan(C_GR, n and tostring(math.floor(n)) or "n/a")))
                 cell:setToolTip("Base price — exchange prices drift toward it over time")
@@ -309,7 +309,7 @@ local function priceCols()
             sortable      = true,
             sort_value    = function(r) return r.stock or 0 end,
             scrollbox_pct = 20,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 local n = tonumber(v) or 0
                 cell:echo(spanRaw("right", coloredSpan(C_GR, fmtIg(n))))
                 cell:setToolTip("Stock on hand — high stock pushes prices down, low pulls them up")

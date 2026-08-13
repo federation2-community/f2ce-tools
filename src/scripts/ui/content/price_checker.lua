@@ -187,7 +187,7 @@ local function buildCols()
             sortable      = true,
             sort_value    = function(r) return r.system:lower() end,
             scrollbox_pct = 22,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format(
                     "<span style='%scolor:#ffffff;'>%s</span>", CELL_FONT, v or ""))
                 cell:setToolTip("Jump to " .. tostring(v))
@@ -215,7 +215,7 @@ local function buildCols()
             sortable      = true,
             sort_value    = function(r) return r.action end,
             scrollbox_pct = 16,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 -- The exchange is buying → the player can SELL there, and vice versa.
                 local html
                 if v == "buying" then
@@ -239,7 +239,7 @@ local function buildCols()
             sortable      = true,
             sort_value    = function(r) return r.quantity or 0 end,
             scrollbox_pct = 14,
-            render_label  = function(v, row, cell)
+            render_label  = function(v, _row, cell)
                 cell:echo(string.format(
                     "<span style='%scolor:#ffffff;'>%s</span>", CELL_FONT, tostring(v or "")))
             end,

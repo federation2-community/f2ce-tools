@@ -177,7 +177,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
             else
                 -- Fall back to cartel price check
                 f2t_debug_log("[hauling/po-queue] No owned source for %s, checking cartel", job.commodity)
-                f2t_price_check_commodity(job.commodity, function(commodity_name, parsed_data, analysis)
+                f2t_price_check_commodity(job.commodity, function(_commodity_name, _parsed_data, analysis)
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                         return
                     end
@@ -229,7 +229,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
             else
                 -- Fall back to cartel price check
                 f2t_debug_log("[hauling/po-queue] No owned destination for %s, checking cartel", job.commodity)
-                f2t_price_check_commodity(job.commodity, function(commodity_name, parsed_data, analysis)
+                f2t_price_check_commodity(job.commodity, function(_commodity_name, _parsed_data, analysis)
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                         return
                     end
