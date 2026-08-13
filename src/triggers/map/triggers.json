@@ -55,6 +55,13 @@
     "patterns": [{"pattern": "Your routine is suddenly interrupted by the appearance", "type": "substring"}]
   },
   {
+    "name": "speedwalk_no_ship",
+    "patterns": [{
+      "pattern": "You don't have a space ship",
+      "type": "substring"
+    }]
+  },
+  {
     "name": "speedwalk_out_of_fuel",
     "patterns": [{"pattern": "^You have run out of fuel, and are unable to move\\.$", "type": "regex"}]
   },

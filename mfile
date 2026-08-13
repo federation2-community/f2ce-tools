@@ -11,5 +11,9 @@
   },
   "author": "tmtocloud",
   "description": "F2CE-Tools — Mudlet package for Federation 2 Community Edition.",
-  "title": "f2ce-tools"
+  "title": "f2ce-tools",
+  "devServer": {
+    "host": "test.federation2.com",
+    "port": "30003"
+  }
 }
