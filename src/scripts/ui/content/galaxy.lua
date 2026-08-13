@@ -41,6 +41,13 @@ function f2t_galaxy_scrape()
         return
     end
     if F2T_GALAXY.loading then return end
+    -- Refresh the connection flag from the live API before gating. On
+    -- mudlet-web the websocket link doesn't always raise sysConnectionEvent, so
+    -- the cached F2T_CONNECTED can be stale-false even while getConnectionInfo()
+    -- reports connected — which silently killed the scrape (and the refresh
+    -- button) on the web client. Re-checking keeps the gate accurate on both
+    -- desktop and web, and still bails when genuinely offline.
+    if f2t_check_connection then f2t_check_connection() end
     if F2T_CONNECTED == false then
         f2t_debug_log("[galaxy] scrape skipped (offline)")
         return
@@ -864,6 +871,7 @@ function f2tRegisterGalaxy()
     -- Only scrape here for a genuine hot-reload with no index yet; normal
     -- login schedules via f2tCharacterChanged. Guarding on `loaded` avoids a
     -- redundant re-scrape if this registrar re-runs after a mid-session install.
+    if f2t_check_connection then f2t_check_connection() end
     if not F2T_GALAXY.loaded and F2T_CONNECTED ~= false and F2T_LOGGED_IN then
         f2t_galaxy_schedule_scrape(3)
     end
