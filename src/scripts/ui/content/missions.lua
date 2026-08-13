@@ -248,6 +248,21 @@ local function buildCols(gid)
     }
 end
 
+-- ── Resize ─────────────────────────────────────────────────────────────────
+
+-- contentLabel is pixel-sized, so unlike the percentage-based header bar it
+-- doesn't self-correct once the pane settles into its real on-screen size.
+local function applyResize(gid, target)
+    local inst = instances[gid]
+    if not inst then return end
+    local newCw = math.max(100, target.content:get_width() - SB_W)
+    if newCw ~= inst.contentW then
+        inst.contentW = newCw
+        inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
+        f2tTableOnResize(inst.tableId, newCw)
+    end
+end
+
 -- ── Refresh ────────────────────────────────────────────────────────────────
 
 local function refreshInstance(gid)
@@ -371,6 +386,12 @@ local function buildContent(target)
     }
 
     refreshInstance(gid)
+
+    -- A tab restored from a saved workspace layout at profile load can apply()
+    -- before the pane settles into its real on-screen size, leaving contentW
+    -- wrong until something forces a fresh layout (e.g. moving the tab). One
+    -- tick is enough for Qt/Geyser to settle, so re-check the width then.
+    tempTimer(0, function() applyResize(gid, target) end)
 end
 
 local function buildMissionsDef()
@@ -393,16 +414,7 @@ local function buildMissionsDef()
                 instances[target._gid] = nil
             end
         end,
-        resize = function(target)
-            local inst = instances[target._gid]
-            if not inst then return end
-            local newCw = math.max(100, target.content:get_width() - SB_W)
-            if newCw ~= inst.contentW then
-                inst.contentW = newCw
-                inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
-                f2tTableOnResize(inst.tableId, newCw)
-            end
-        end,
+        resize = function(target) applyResize(target._gid, target) end,
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
