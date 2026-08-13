@@ -448,7 +448,7 @@ Mux.registerWorkspace("f2ce-tools", {
                                         bg = "#303030",
                                         fg = "#ffffff",
                                         fontSize = 14,
-                                        label = "🔭 Galaxy",
+                                        label = "🔭",
                                         shape = "square",
                                         width = 1
                                     }
