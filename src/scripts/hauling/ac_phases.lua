@@ -27,6 +27,42 @@ function f2t_hauling_phase_ac_fetch_jobs()
         return false
     end
 
+    -- Resume any contract already outstanding (e.g. accepted before 'haul
+    -- start' was run) instead of selecting a new one from the board -- the
+    -- game refuses "ac <id>" for any other job while one is uncompleted.
+    local existing = f2t_ac_get_current_job()
+    if existing then
+        F2T_HAULING_STATE.ac_job = existing
+        F2T_HAULING_STATE.ac_accept_sent = true
+        F2T_HAULING_STATE.ac_collect_sent = existing.collected and true or false
+        F2T_HAULING_STATE.ac_deliver_sent = false
+
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Resuming uncompleted contract: %d tons of %s from %s to %s\n",
+            existing.quantity or 0, existing.commodity or "?", existing.source, existing.destination))
+        f2t_debug_log("[hauling/ac] Resuming existing contract %s -> %s (collected=%s)",
+            existing.source, existing.destination, tostring(existing.collected))
+
+        local current_planet = f2t_ac_get_current_planet()
+        if not existing.collected then
+            if current_planet == existing.source then
+                F2T_HAULING_STATE.current_phase = "ac_accepting_job"
+                return f2t_hauling_phase_ac_accept_job()
+            else
+                F2T_HAULING_STATE.current_phase = "ac_navigating_to_source"
+                return f2t_hauling_phase_ac_navigate_to_source()
+            end
+        else
+            if current_planet == existing.destination then
+                F2T_HAULING_STATE.current_phase = "ac_delivering"
+                return f2t_hauling_phase_ac_deliver()
+            else
+                F2T_HAULING_STATE.current_phase = "ac_navigating_to_dest"
+                return f2t_hauling_phase_ac_navigate_to_dest()
+            end
+        end
+    end
+
     -- Check if we've reached 500 credits (stop condition)
     if f2t_ac_has_enough_credits() then
         local credits = f2t_ac_get_hauling_credits()

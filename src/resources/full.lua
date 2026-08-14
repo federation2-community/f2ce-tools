@@ -121,52 +121,6 @@ Mux.registerWorkspace("f2ce-tools", {
             zoomable = false
         },
         {
-            activeContent = "fed2_cargo",
-            anchor = {
-                alongH = 1177,
-                h = {
-                    myEdge = "top",
-                    ref = "output",
-                    targetEdge = "top"
-                }
-            },
-            anchorable = true,
-            atAnchor = true,
-            closeable = false,
-            contentState = {},
-            contentable = false,
-            convertible = false,
-            floatH = 117,
-            floatW = 248,
-            floatX = 1692,
-            floatY = 57,
-            floating = true,
-            hidden = true,
-            id = "pane_9",
-            mainConsoleHost = false,
-            minimizable = false,
-            movable = false,
-            name = "Cargo",
-            nameAlign = "center",
-            renamable = false,
-            resizable = false,
-            rules = {
-                {
-                    act = "mux.showSelf",
-                    actElse = "mux.hideSelf",
-                    cond = {
-                        ref = "ShipHasCargo"
-                    },
-                    enabled = true,
-                    id = "r15"
-                }
-            },
-            showAnchorElement = false,
-            showTitlebar = false,
-            type = "pane",
-            zoomable = false
-        },
-        {
             activeContent = "fed2_galaxy",
             anchor = {
                 alongV = 23.950000000001,
@@ -186,7 +140,7 @@ Mux.registerWorkspace("f2ce-tools", {
             },
             contentable = false,
             convertible = false,
-            floatH = 954,
+            floatH = 1125,
             floatW = 495,
             floatX = 1550,
             floatY = 81,
@@ -220,6 +174,51 @@ Mux.registerWorkspace("f2ce-tools", {
             },
             showAnchorElement = false,
             showTitlebar = true,
+            type = "pane",
+            zoomable = false
+        },
+        {
+            activeContent = "fed2_cargo",
+            anchor = {
+                alongH = 952.99999999999,
+                h = {
+                    myEdge = "top",
+                    ref = "output",
+                    targetEdge = "top"
+                }
+            },
+            anchorable = true,
+            atAnchor = true,
+            closeable = false,
+            contentState = {},
+            contentable = false,
+            convertible = false,
+            floatH = 138,
+            floatW = 332,
+            floatX = 1468,
+            floatY = 57,
+            floating = true,
+            id = "pane_9",
+            mainConsoleHost = false,
+            minimizable = false,
+            movable = false,
+            name = "Cargo",
+            nameAlign = "center",
+            renamable = false,
+            resizable = false,
+            rules = {
+                {
+                    act = "mux.showSelf",
+                    actElse = "mux.hideSelf",
+                    cond = {
+                        ref = "ShipHasCargo"
+                    },
+                    enabled = true,
+                    id = "r15"
+                }
+            },
+            showAnchorElement = false,
+            showTitlebar = false,
             type = "pane",
             zoomable = false
         }
@@ -448,7 +447,7 @@ Mux.registerWorkspace("f2ce-tools", {
                                         bg = "#303030",
                                         fg = "#ffffff",
                                         fontSize = 14,
-                                        label = "🔭 Galaxy",
+                                        label = "🔭",
                                         shape = "square",
                                         width = 1
                                     }
@@ -468,7 +467,6 @@ Mux.registerWorkspace("f2ce-tools", {
                             name = "Galaxy",
                             nameAlign = "center",
                             renamable = false,
-                            resizable = false,
                             showTitlebar = false,
                             splittable = false,
                             swappable = false,
@@ -476,7 +474,7 @@ Mux.registerWorkspace("f2ce-tools", {
                             zoomable = false
                         },
                         direction = "h",
-                        ratio = 0.93320235756385,
+                        ratio = 0.96201702685004,
                         type = "split"
                     },
                     b = {
@@ -566,7 +564,7 @@ Mux.registerWorkspace("f2ce-tools", {
                     zoomable = false
                 },
                 b = {
-                    activeTabName = "Missions",
+                    activeTabName = "Hauling",
                     anchorable = true,
                     bordered = false,
                     closeable = false,
@@ -694,7 +692,8 @@ Mux.registerWorkspace("f2ce-tools", {
                                     enabled = true,
                                     id = "r15"
                                 }
-                            }
+                            },
+                            visible = false
                         },
                         {
                             activeTabName = "Overview",
@@ -758,28 +757,6 @@ Mux.registerWorkspace("f2ce-tools", {
                                     renamable = false
                                 },
                                 {
-                                    _activeContent = "fed2_company_portfolio",
-                                    closeable = false,
-                                    contentState = {},
-                                    contentable = false,
-                                    movable = false,
-                                    name = "Investment",
-                                    nameAlign = "center",
-                                    propertiesButton = false,
-                                    renamable = false,
-                                    rules = {
-                                        {
-                                            act = "mux.showSelf",
-                                            actElse = "mux.hideSelf",
-                                            cond = {
-                                                ref = "FinancierRank"
-                                            },
-                                            enabled = true,
-                                            id = "r11"
-                                        }
-                                    }
-                                },
-                                {
                                     _activeContent = "fed2_company_factories",
                                     closeable = false,
                                     contentState = {},
@@ -801,9 +778,33 @@ Mux.registerWorkspace("f2ce-tools", {
                                         }
                                     },
                                     visible = false
+                                },
+                                {
+                                    _activeContent = "fed2_company_portfolio",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Investment",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false,
+                                    rules = {
+                                        {
+                                            act = "mux.showSelf",
+                                            actElse = "mux.hideSelf",
+                                            cond = {
+                                                ref = "FinancierRank"
+                                            },
+                                            enabled = true,
+                                            id = "r11"
+                                        }
+                                    },
+                                    visible = false
                                 }
                             },
-                            tabsLocked = true
+                            tabsLocked = true,
+                            visible = false
                         }
                     },
                     tabsLocked = true,
