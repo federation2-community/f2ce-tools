@@ -118,7 +118,16 @@ f2t_register_help("f2t settings", {
         {cmd = "Component settings:", desc = "use <component> settings, e.g. 'factory settings'"},
         {cmd = "", desc = "or open the Muxlet settings UI (grouped under F2CE-Tools)"}
     },
-    examples = {
+    examples = f2t_is_web() and {
+        -- The update-check settings are desktop-only: on web the client installs
+        -- and upgrades f2ce-tools itself, so init.lua never registers those rows
+        -- and naming them here would document a command that answers "Unknown
+        -- setting".
+        "f2t settings                            # List system settings",
+        "",
+        "factory settings                        # Factory component settings",
+        "price settings set results_count 10     # Commodities component settings"
+    } or {
         "f2t settings                            # List system settings",
         "f2t settings set update_check_enabled false  # Stop checking for updates",
         "f2t settings clear update_check_enabled # Reset to default",

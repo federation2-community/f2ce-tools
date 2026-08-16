@@ -137,4 +137,8 @@ end
 -- namespace but their own "F2CE-Tools/Update" tab, via Mux.configureHost's
 -- updateSettingsNamespace/updateSettingsTab (see init.lua) — see Muxlet's
 -- update.lua for that logic.
+--
+-- On web none of that registers: init.lua withholds updateRepo there because the
+-- page installs and upgrades the package itself, silently. So the "f2t"
+-- namespace is empty on web and no Update tab appears.
 

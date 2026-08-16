@@ -156,9 +156,18 @@ function f2tInit()
 
     -- Muxlet's own host default is false; opt in once, first time seen unset,
     -- so a later user choice is never overridden.
-    local updateSettings = Mux.settings._data["f2t"]
-    if not (updateSettings and updateSettings["update_check_enabled"] ~= nil) then
-        Mux.settings.set("f2t", "update_check_enabled", true)
+    --
+    -- Desktop only. On web the page, not Muxlet, owns the package lifecycle:
+    -- mudlet-web installs and upgrades f2ce-tools silently at load from the
+    -- version its build pinned, so an in-client check can only ask the user to
+    -- approve something the page already decided. bootHostOpts leaves updateRepo
+    -- unset on web, which means the "f2t" update rows are never registered and
+    -- this key does not exist there — Mux.settings.set would no-op anyway.
+    if not f2t_is_web() then
+        local updateSettings = Mux.settings._data["f2t"]
+        if not (updateSettings and updateSettings["update_check_enabled"] ~= nil) then
+            Mux.settings.set("f2t", "update_check_enabled", true)
+        end
     end
 
     afterLogin(function()
@@ -193,11 +202,16 @@ end
 -- time — not re-asserted every session, which would silently fight a BYOW
 -- user's choice of Muxlet's blank "default" workspace.
 local function bootHostOpts()
-    return {
+    local opts = {
         suppressWelcome = true,   -- f2ce-tools shows its own onboarding (f2tShowModeSelect)
         autoStart       = false,  -- f2ce-tools exclusively decides when Mux.fullStart() runs
         quietStart      = true,   -- f2ce-tools prints its own startup output
-        checkForUpdates = false,  -- irrelevant once updateRepo is set below, kept for older Muxlets
+
+        -- Turns off Muxlet's own self-polling. On desktop that is belt-and-braces
+        -- (updateRepo below supersedes it), but on web it is the load-bearing
+        -- half: without updateRepo, Muxlet reverts to polling for its OWN
+        -- releases and would offer to update away from the version we pin.
+        checkForUpdates = false,
 
         -- Fed2 negotiates GMCP during the telnet handshake, long before the
         -- Login:/Password: prompts, so Muxlet's default "GMCP means ready" marks
@@ -209,25 +223,42 @@ local function bootHostOpts()
         connectedOnGmcp       = false,
         connectedAfterSeconds = 180,
 
-        -- Let Muxlet's own update system check f2ce-tools' releases instead of
-        -- (only) its own, and offer to bump Muxlet first if a newer release
-        -- needs it — same two values already computed above for the boot gate.
-        -- pinMuxletVersion = true makes that boot gate an exact pin instead of
-        -- a floor: if F2T_REQUIRED_MUXLET is ever set OLDER than what's
-        -- installed, Mux.bootHost downgrades rather than treating it as fine.
-        updateRepo              = "federation2-community/f2ce-tools",
-        requiredMuxletVersion   = F2T_REQUIRED_MUXLET,
-        requiredMuxletUrl       = MUXLET_URL,
-        pinMuxletVersion        = true,
-        -- Keep the "f2t" namespace (so "f2t settings set update_check_enabled
-        -- false" etc. keeps working), but give it its own dedicated "Update"
-        -- sub-tab under the existing "F2CE-Tools" top-level tab — the same
-        -- shape Muxlet's own "Muxlet/Update" tab has, just moved here instead
-        -- of living lumped into General.
-        updateSettingsNamespace = "f2t",
-        updateSettingsTab       = "F2CE-Tools/Update",
-        onReady                 = f2tInit,
+        -- The Muxlet dependency gate — a different mechanism from the release
+        -- checking below, and one that applies on web too. Mux.ensureVersion
+        -- installs/upgrades/downgrades Muxlet itself without asking, which is
+        -- what we want everywhere. pinMuxletVersion = true makes it an exact pin
+        -- instead of a floor: if F2T_REQUIRED_MUXLET is ever set OLDER than
+        -- what's installed, Mux.bootHost downgrades rather than treating the
+        -- newer install as fine.
+        requiredMuxletVersion = F2T_REQUIRED_MUXLET,
+        requiredMuxletUrl     = MUXLET_URL,
+        pinMuxletVersion      = true,
+
+        onReady = f2tInit,
     }
+
+    -- Desktop only: let Muxlet's update system poll f2ce-tools' releases and
+    -- offer newer builds, bumping Muxlet first when one needs it.
+    --
+    -- Never on web. There the client already installs and upgrades f2ce-tools
+    -- silently on every page load, at the version its build pinned, so a second
+    -- update path can only interrupt with a dialog to approve what has already
+    -- happened — and "Update Now" would install a build the page did not choose,
+    -- which the next reload overwrites anyway. Silent is also the whole premise
+    -- of the web onboarding (see f2t_is_web's other uses).
+    --
+    -- The settings rows follow updateRepo: keep the "f2t" namespace (so
+    -- "f2t settings set update_check_enabled false" keeps working) but give them
+    -- their own "Update" sub-tab under the existing "F2CE-Tools" top-level tab,
+    -- the same shape Muxlet's own "Muxlet/Update" tab has, rather than lumping
+    -- them into General. On web the rows are simply never registered.
+    if not f2t_is_web() then
+        opts.updateRepo              = "federation2-community/f2ce-tools"
+        opts.updateSettingsNamespace = "f2t"
+        opts.updateSettingsTab       = "F2CE-Tools/Update"
+    end
+
+    return opts
 end
 
 -- ── Boot ──────────────────────────────────────────────────────────────────────
