@@ -61,8 +61,41 @@ end
 -- planet's area to exist).
 function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
                                            target_room_name, target_room_exact)
+    -- Mark the sweep active (for a standalone, callback-driven caller) before
+    -- navigating. f2t_map_navigate()'s hint guard only refuses to launch a
+    -- second hint-driven explore while F2T_MAP_EXPLORE_STATE.active is
+    -- already true. Without this, a planet whose area partially exists but
+    -- isn't fully explored (a "planet" hint, not "whereis_pending") recurses
+    -- straight back into f2t_map_explore_planet_start on retry - via
+    -- f2t_map_navigate_explore_hint, which always supplies a callback - with
+    -- active still false every time: infinite synchronous recursion, stack
+    -- overflow. Gated on on_complete_callback like
+    -- f2t_map_explore_system_start_with_planets does, so a plain top-level
+    -- call with no callback still falls through to
+    -- f2t_map_explore_init_area's own state reset on arrival instead of
+    -- this also claiming the standalone slot.
+    local guard_active = not F2T_MAP_EXPLORE_STATE.active and on_complete_callback ~= nil
+    local function cleanup()
+        if guard_active then
+            F2T_MAP_EXPLORE_STATE.active = false
+            f2t_map_clear_nav_owner()
+            if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+        end
+    end
+
+    local effective_callback = on_complete_callback
+    if guard_active then
+        F2T_MAP_EXPLORE_STATE.active = true
+        f2t_map_explore_register_safety_hooks()
+        local real_callback = on_complete_callback
+        effective_callback = function(...)
+            cleanup()
+            real_callback(...)
+        end
+    end
+
     local function start_here()
-        return f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback,
+        return f2t_map_explore_planet_start(planet_mode, planet_name, effective_callback,
             override_flags, target_room_name, target_room_exact)
     end
 
@@ -75,39 +108,70 @@ function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_
             local arrived_planet = area and getRoomAreaName(area)
             if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
                 cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
+                cleanup()
                 return
             end
             start_here()
         end)
     end
 
-    -- Not given suppress_hint: this is exactly the case that should be allowed
-    -- to auto-resolve a totally-unmapped planet via whereis (f2t_map_navigate's
-    -- own guard already refuses to do this while a sweep is already active).
-    local nav_result = f2t_map_navigate(planet_name, {
+    local function proceed(nav_result)
+        if nav_result == nil then
+            return true -- resolving asynchronously; on_result below continues the pipeline
+        end
+        if not nav_result then
+            cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
+            cleanup()
+            return false
+        end
+        if not F2T_SPEEDWALK_ACTIVE then
+            return start_here()
+        end
+        await_arrival()
+        return true
+    end
+
+    -- f2t_map_process_special_exits (exit.lua) eagerly stubs a planet's area
+    -- from GMCP alone the moment a "board"/"orbit" hash is seen from its
+    -- system-space orbit room - before anyone has ever landed there - and
+    -- wires a "board" special exit straight to that stub room. So a planet's
+    -- area can exist with a single, completely unflagged room: not a
+    -- corrupt/leftover state, just "known to be there, never physically
+    -- visited". f2t_map_navigate(planet_name) alone can never reach that,
+    -- since resolve_location's planet branch only ever looks for a
+    -- shuttlepad-flagged room - the very flag that can only get set by
+    -- actually walking in via that stub. Reach the stub directly by room ID
+    -- (getPath() will route across the "board" special exit) so Layer-1
+    -- exploration can take over for real once we're actually standing there.
+    local planet_area_id = f2t_map_get_area_id(planet_name)
+    if planet_area_id then
+        local known_room_id = f2t_map_find_room_with_flag(planet_area_id, "shuttlepad")
+        if not known_room_id then
+            local area_rooms = getAreaRooms(planet_area_id)
+            known_room_id = area_rooms and (area_rooms[0] or area_rooms[1])
+        end
+        if known_room_id then
+            return proceed(f2t_map_navigate(tostring(known_room_id)))
+        end
+    end
+
+    -- Nothing mapped on this planet at all yet (no stub, no shuttlepad):
+    -- fall back to the name-based resolver, which can self-heal a totally
+    -- unknown planet via whereis (f2t_map_navigate's own active guard, set
+    -- above, stops this from recursing into another hint-driven explore of
+    -- the same planet).
+    return proceed(f2t_map_navigate(planet_name, {
         on_result = function(success)
             -- Only fires for the async (hint-driven) path: whereis/auto-explore
             -- either got us resolvable (arrival may still be in flight) or didn't.
             if not success then
                 cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
+                cleanup()
                 return
             end
             if F2T_SPEEDWALK_ACTIVE then await_arrival() else start_here() end
         end,
-    })
-
-    if nav_result == nil then
-        return true -- resolving asynchronously; on_result above continues the pipeline
-    end
-    if not nav_result then
-        cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
-        return false
-    end
-    if not F2T_SPEEDWALK_ACTIVE then
-        return start_here()
-    end
-    await_arrival()
-    return true
+    }))
 end
 
 function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags,
@@ -417,12 +481,14 @@ function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
         return
     end
 
+    -- Navigate by room ID, not by re-guessing current_system through the
+    -- generic name resolver - see f2t_map_area_entry_room().
     local current_system = current_room and getRoomUserData(current_room, "fed2_system")
-    local link_destination = current_system and (current_system .. " Space link") or "link"
+    local target_room_id = current_system and f2t_map_system_space_entry_room(current_system)
     cecho(string.format("  <dim_grey>Navigating to link to jump to %s<reset>\n", target))
     f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
     F2T_MAP_EXPLORE_STATE.phase = "explore_travel_jumping"
-    local nav_result = f2t_map_navigate(link_destination)
+    local nav_result = f2t_map_navigate(target_room_id and tostring(target_room_id) or "link")
     if nav_result == nil then
         cecho(string.format("  <red>Error:<reset> Cannot navigate to a link room to reach %s\n", target))
         f2t_map_explore_travel_finish(false)

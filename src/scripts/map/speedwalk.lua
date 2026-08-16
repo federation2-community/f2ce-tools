@@ -341,8 +341,15 @@ function f2t_map_speedwalk_recompute_path(silent)
         f2t_map_speedwalk_stop(); return false
     end
     if #speedWalkDir == 0 then
-        cecho("\n<green>[map]<reset> Already at destination\n")
-        f2t_map_speedwalk_stop(); return true
+        -- Already there, not stopped: this recompute can fire after the final
+        -- step of a route lands us at a link-flagged room (see the "refresh
+        -- jump data" check in f2t_map_speedwalk_on_room_change), so 0 steps
+        -- remaining here often means the walk just genuinely finished.
+        -- f2t_map_speedwalk_stop() sets result "stopped" - indistinguishable
+        -- downstream from a real user interruption - so callers like
+        -- explore's escape handler wrongly treat a completed arrival as a
+        -- failure and pause instead of continuing.
+        f2t_map_speedwalk_complete(); return true
     end
     F2T_SPEEDWALK_DIR              = speedWalkDir
     F2T_SPEEDWALK_PATH             = speedWalkPath

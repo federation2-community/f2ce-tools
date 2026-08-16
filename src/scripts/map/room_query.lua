@@ -14,6 +14,32 @@ function f2t_map_find_room_with_flag(area_id, flag)
     return nil
 end
 
+-- Room to land in when navigating into a known area: its link room if
+-- mapped, otherwise any other known room in the area. Takes an area id
+-- directly so callers who already resolved a system's space area don't have
+-- to re-resolve it by name through f2t_map_resolve_location().
+function f2t_map_area_entry_room(area_id)
+    if not area_id then return nil end
+    local link_room = f2t_map_find_room_with_flag(area_id, "link")
+    if link_room then return link_room end
+    local area_rooms = getAreaRooms(area_id)
+    return area_rooms and (area_rooms[0] or area_rooms[1])
+end
+
+-- Room to land in when navigating into system_name's own space area, resolved
+-- purely from area/system data - never through f2t_map_resolve_location().
+-- That resolver checks planet names before system names, so a system whose
+-- name collides with an unrelated planet elsewhere in the galaxy (Fed2 reuses
+-- names across planets/systems/cartels/syndicates) would silently resolve to
+-- the wrong place. Callers that already know a system's space area id should
+-- use f2t_map_area_entry_room() directly instead of re-resolving here.
+function f2t_map_system_space_entry_room(system_name)
+    local space_area_name = f2t_map_get_system_space_area_actual(system_name)
+    local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
+    if not space_area_id then return nil, space_area_name end
+    return f2t_map_area_entry_room(space_area_id), space_area_name
+end
+
 function f2t_map_find_all_rooms_with_flag(area_id, flag)
     if not area_id or not flag then return {} end
     local results = {}

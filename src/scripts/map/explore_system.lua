@@ -136,9 +136,14 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
         end
 
         if space_area_id then
+            -- Navigate by room ID within the already-resolved space area, not by
+            -- re-guessing system_name through the generic name resolver - a
+            -- system name can collide with an unrelated planet of the same name
+            -- elsewhere in the galaxy, and that resolver checks planets first.
+            local target_room_id = f2t_map_area_entry_room(space_area_id)
             cecho(string.format("\n<green>[map-explore]<reset> Navigating to %s...\n", space_area_name))
             f2t_map_explore_await_arrival("system", system_name, retry, give_up)
-            local nav_result = f2t_map_navigate(system_name)
+            local nav_result = target_room_id and f2t_map_navigate(tostring(target_room_id))
             if nav_result == nil then
                 cecho(string.format("\n<red>[map-explore]<reset> Cannot navigate to %s\n", space_area_name))
                 f2t_map_explore_travel_finish(false)

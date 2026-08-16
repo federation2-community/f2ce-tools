@@ -177,9 +177,12 @@ function f2t_map_explore_cartel_next_system()
         else
             -- In the right system but on a planet: get to its space link first
             -- (a plain walk, not a jump - reuse the same arrival verification).
+            -- Navigate by room ID, not by re-guessing system_name through the
+            -- generic name resolver - see f2t_map_area_entry_room().
             cecho(string.format("  <dim_grey>Navigating to %s space...<reset>\n", system_name))
             f2t_map_explore_await_arrival("system", system_name, on_system_reached, on_system_unreachable)
-            local nav_result = f2t_map_navigate(system_name .. " Space link")
+            local target_room_id = f2t_map_area_entry_room(space_area_id)
+            local nav_result = target_room_id and f2t_map_navigate(tostring(target_room_id))
             if nav_result == nil then
                 cecho(string.format("  <red>Error:<reset> Cannot navigate to %s space link, skipping\n", system_name))
                 f2t_map_explore_travel_finish(false)
