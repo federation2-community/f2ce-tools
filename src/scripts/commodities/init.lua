@@ -39,7 +39,45 @@ F2T_BULK_STATE = {
     total_cost    = 0,   -- Total cost of cargo being sold
     total_revenue = 0,   -- Total revenue from sales
     lots_sold     = 0,   -- Number of lots sold (for averaging)
+
+    watchdogTimerId = nil,  -- Timer guarding against an unanswered buy/sell command
 }
+
+-- ── Bulk operation watchdog ───────────────────────────────────────────────────
+-- A bulk operation only advances when a response trigger fires, so any reply the
+-- triggers do not recognise would otherwise stall the caller (and any hauling
+-- state machine driving it) forever. Fail the operation instead.
+F2T_BULK_WATCHDOG_SECONDS = 15
+
+function f2t_bulk_watchdog_stop()
+    if F2T_BULK_STATE.watchdogTimerId then
+        killTimer(F2T_BULK_STATE.watchdogTimerId)
+        F2T_BULK_STATE.watchdogTimerId = nil
+    end
+end
+
+function f2t_bulk_watchdog_start()
+    f2t_bulk_watchdog_stop()
+
+    local command = F2T_BULK_STATE.command
+    F2T_BULK_STATE.watchdogTimerId = tempTimer(F2T_BULK_WATCHDOG_SECONDS, function()
+        F2T_BULK_STATE.watchdogTimerId = nil
+        if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= command then
+            return
+        end
+
+        local reason = string.format("No recognised response to '%s %s' after %d seconds",
+            command, string.lower(F2T_BULK_STATE.commodity or "?"), F2T_BULK_WATCHDOG_SECONDS)
+        f2t_debug_log("[bulk] Watchdog fired: %s", reason)
+        cecho(string.format("\n<yellow>[bulk-%s]<reset> %s, aborting\n", command, reason))
+
+        if command == "buy" then
+            f2t_bulk_buy_error(reason)
+        else
+            f2t_bulk_sell_error(reason)
+        end
+    end)
+end
 
 -- ── Help ──────────────────────────────────────────────────────────────────────
 f2t_register_help("price", {

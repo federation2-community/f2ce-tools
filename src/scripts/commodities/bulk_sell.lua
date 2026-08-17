@@ -232,6 +232,7 @@ function f2t_bulk_sell_next()
 
     f2t_debug_log("[bulk-sell] Sending sell command (%d remaining)", F2T_BULK_STATE.remaining)
     send(string.format("sell %s", string.lower(F2T_BULK_STATE.commodity)), false)
+    f2t_bulk_watchdog_start()
 end
 
 -- Handle successful sell
@@ -242,6 +243,8 @@ function f2t_bulk_sell_success(_commodity, revenue_per_ton, revenue_total)
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
     end
+
+    f2t_bulk_watchdog_stop()
 
     F2T_BULK_STATE.remaining = F2T_BULK_STATE.remaining - 1
     if F2T_BULK_STATE.commodity_queue then
@@ -284,6 +287,8 @@ function f2t_bulk_sell_error(reason)
         return
     end
 
+    f2t_bulk_watchdog_stop()
+
     f2t_debug_log("[bulk-sell] ERROR: %s", reason)
 
     -- Only show user feedback in user mode
@@ -308,6 +313,8 @@ function f2t_bulk_sell_finish()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
     end
+
+    f2t_bulk_watchdog_stop()
 
     local sold = F2T_BULK_STATE.total - F2T_BULK_STATE.remaining
     local tons = sold * 75
@@ -384,6 +391,8 @@ function f2t_bulk_sell_finish_all()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
     end
+
+    f2t_bulk_watchdog_stop()
 
     local total_sold = F2T_BULK_STATE.total_sold
     local total_tons = total_sold * 75

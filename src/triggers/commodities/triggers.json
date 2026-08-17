@@ -30,7 +30,7 @@
     "name": "buy_success",
     "patterns": [
       {
-        "pattern": "^75 tons of .+ have been purchased at a cost of \\d+ig and loaded onto your spaceship\\.$",
+        "pattern": "^75 tons of .+ have been purchased at a cost of [\\d,]+ig",
         "type": "regex"
       }
     ]
@@ -102,7 +102,7 @@
     "name": "sell_success",
     "patterns": [
       {
-        "pattern": "^75 tons of (.+) sold to the exchange for (\\d+)ig$",
+        "pattern": "^75 tons of (.+) sold to the exchange for ([\\d,]+)ig",
         "type": "regex"
       }
     ]

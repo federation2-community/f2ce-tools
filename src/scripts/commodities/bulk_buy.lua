@@ -106,6 +106,7 @@ function f2t_bulk_buy_next()
 
     f2t_debug_log("[bulk-buy] Sending buy command (%d remaining)", F2T_BULK_STATE.remaining)
     send(string.format("buy %s", string.lower(F2T_BULK_STATE.commodity)), false)
+    f2t_bulk_watchdog_start()
 end
 
 -- Handle successful buy
@@ -113,6 +114,8 @@ function f2t_bulk_buy_success()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" then
         return
     end
+
+    f2t_bulk_watchdog_stop()
 
     F2T_BULK_STATE.remaining = F2T_BULK_STATE.remaining - 1
     f2t_debug_log("[bulk-buy] Buy successful (%d remaining)", F2T_BULK_STATE.remaining)
@@ -144,6 +147,8 @@ function f2t_bulk_buy_error(reason)
         return
     end
 
+    f2t_bulk_watchdog_stop()
+
     f2t_debug_log("[bulk-buy] ERROR: %s", reason)
 
     -- Only show user feedback in user mode
@@ -159,6 +164,8 @@ function f2t_bulk_buy_finish()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" then
         return
     end
+
+    f2t_bulk_watchdog_stop()
 
     local bought = F2T_BULK_STATE.total - F2T_BULK_STATE.remaining
     local tons = bought * 75
