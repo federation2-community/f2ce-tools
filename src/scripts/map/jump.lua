@@ -1,6 +1,14 @@
 -- Two layers keep the jump graph correct:
---   1. gmcp.room.info.jumps is exact ground truth for the link room you are
---      standing in: applied directly to that room's special exits on entry.
+--   1. gmcp.room.info.jumps lists the jump destinations available to you
+--      from the link room you are standing in right now: merged into that
+--      room's special exits on entry, never used to blank out what's
+--      already mapped there. The list is a snapshot of what's offered to
+--      you at this moment (rank/standing/permit-gated), not a complete
+--      enumeration of every edge that has ever been legal from this room -
+--      an edge missing from one snapshot is not proof it's gone, so it's
+--      left alone. Only the game's own explicit refusal (see
+--      jump_no_direct_link.lua) or a destination room that no longer exists
+--      is good enough evidence to remove an edge.
 --   2. The same payload feeds the topology model (topology.lua), which
 --      derives every OTHER link room's exits so getPath() plans over the
 --      legal jump graph galaxy-wide, not just where you last stood.
@@ -11,35 +19,30 @@
 -- getSpecialExits(room_id) is keyed by DESTINATION ROOM NUMBER, with each
 -- value a table of command strings leading there — NOT keyed by command
 -- text. getSpecialExitsSwap(room_id) is the one keyed by command string
--- (confirmed via direct testing: its keys are the "jump ___" text). Collect
--- matching commands first, then remove them in a separate pass — calling
--- removeSpecialExit while iterating the same table with pairs() is unsafe
--- and can silently skip entries.
-local function clearJumpExits(room_id)
-    if not room_id or not roomExists(room_id) then return end
-    local to_remove = {}
-    for command, _ in pairs(getSpecialExitsSwap(room_id) or {}) do
-        if type(command) == "string" and string.match(command, "^jump ") then
-            table.insert(to_remove, command)
-        end
-    end
-    for _, command in ipairs(to_remove) do
-        removeSpecialExit(room_id, command)
-    end
-end
-
+-- (confirmed via direct testing: its keys are the "jump ___" text).
 function f2t_map_apply_gmcp_jumps(room_id, jumps)
     if not room_id or not roomExists(room_id) or not jumps then return end
-    clearJumpExits(room_id)
+    local existing = getSpecialExitsSwap(room_id) or {}
     local created_count, total = 0, 0
     local missing_dests = {}
     for _, category in ipairs({"inter_syndicate", "intra_syndicate", "local"}) do
         for _, dest_system in ipairs(jumps[category] or {}) do
             total = total + 1
-            if f2t_map_create_jump_special_exit(room_id, dest_system) then
+            local command = string.format("jump %s", dest_system)
+            local existing_dest = existing[command]
+            if existing_dest and roomExists(existing_dest) then
+                -- Already mapped and still points somewhere real: leave it.
                 created_count = created_count + 1
             else
-                table.insert(missing_dests, dest_system)
+                if existing_dest then
+                    -- Points at a room that's gone - that's actual staleness.
+                    removeSpecialExit(room_id, command)
+                end
+                if f2t_map_create_jump_special_exit(room_id, dest_system) then
+                    created_count = created_count + 1
+                else
+                    table.insert(missing_dests, dest_system)
+                end
             end
         end
     end

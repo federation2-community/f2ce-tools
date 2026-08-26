@@ -271,13 +271,14 @@ function f2t_map_speedwalk_on_room_change()
             end
             -- A route is planned once, up front, using whatever's cached
             -- for every room along it — including rooms not yet visited
-            -- this session, whose "jump ___" exits could be stale or
-            -- leftover from before. GMCP just refreshed this room's real
-            -- jump destinations on arrival (see apply_gmcp_jumps in
-            -- jump.lua), but nothing re-consults that before continuing
-            -- unless we do it here: silently recompute the remaining route
-            -- against the data we just received, rather than blindly
-            -- trusting whatever the original plan assumed for this room.
+            -- this session, whose "jump ___" exits could be incomplete.
+            -- GMCP just merged this room's currently-offered jump
+            -- destinations on arrival (see apply_gmcp_jumps in jump.lua,
+            -- additive only — it never removes a previously-mapped edge),
+            -- but nothing re-consults that before continuing unless we do
+            -- it here: silently recompute the remaining route against the
+            -- data we just received, in case it now offers a better plan
+            -- than what the original one assumed for this room.
             -- Blind walks (jump chains into unmapped territory) have no
             -- destination room id; recomputing would abort them, so only
             -- re-verify planned routes.

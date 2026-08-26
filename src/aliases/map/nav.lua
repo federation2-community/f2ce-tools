@@ -69,5 +69,5 @@ elseif subcommand == "info" then
     f2t_map_show_route_info(origin, destination)
 
 else
-    f2t_map_navigate(args, {interactive = true})
+    f2t_map_navigate(args, {interactive = true, compensate_incomplete_map = true})
 end
