@@ -180,23 +180,64 @@ function f2t_map_navigate_whereis_fallback(destination, opts)
     end)
 end
 
+-- jump/j only works from a link-flagged room ("You jump up and down, but
+-- nothing happens." is the game's own response to trying it anywhere else).
+-- whereis's suggested command assumes you're already standing in one, but
+-- the fallback can trigger from anywhere in the system's space area. Get to
+-- the current system's link room first using the ordinary, already-reliable
+-- local map (never whereis - that stretch is exactly what the map already
+-- knows) before acting on the hint.
+function f2t_map_navigate_ensure_at_link_room(on_ready)
+    local current_room = F2T_MAP_CURRENT_ROOM_ID
+    if current_room and f2t_map_room_has_flag(current_room, "link") then
+        on_ready(true)
+        return
+    end
+    local current_system = f2t_get_current_system()
+    local link_room = current_system and f2t_map_find_link_room_in_system(current_system)
+    if not link_room or not roomExists(link_room) or link_room == current_room then
+        on_ready(false)
+        return
+    end
+    cecho("\n<dim_grey>[map] Moving to this system's link room before jumping...<reset>\n")
+    if not f2t_map_navigate(tostring(link_room)) then
+        on_ready(false)
+        return
+    end
+    local function poll()
+        if F2T_SPEEDWALK_ACTIVE then
+            tempTimer(0.5, poll)
+            return
+        end
+        on_ready(F2T_SPEEDWALK_LAST_RESULT == "completed" and F2T_MAP_CURRENT_ROOM_ID == link_room)
+    end
+    tempTimer(0.5, poll)
+end
+
 function f2t_map_navigate_follow_whereis_hop(destination, route_command, opts, hop_count)
-    local room_before = F2T_MAP_CURRENT_ROOM_ID
-    cecho(string.format("\n<yellow>[map]<reset> Following whereis: <white>%s<reset>\n", route_command))
-    send(route_command)
-    local timeout_seconds = f2t_settings_get("map", "speedwalk_timeout") or 3
-    tempTimer(timeout_seconds, function()
-        if F2T_MAP_CURRENT_ROOM_ID == room_before then
-            cecho("\n<red>[map]<reset> Whereis-guided move didn't change location, stopping\n")
+    f2t_map_navigate_ensure_at_link_room(function(ready)
+        if not ready then
+            cecho("\n<red>[map]<reset> Couldn't reach a link room to act on whereis's suggestion, stopping\n")
             if opts.on_result then opts.on_result(false) end
             return
         end
-        local result = f2t_map_navigate(destination, {
-            suppress_hint             = true,
-            compensate_incomplete_map = true,
-            whereis_hops              = hop_count,
-            on_result                 = opts.on_result,
-        })
-        if result ~= nil and opts.on_result then opts.on_result(result == true) end
+        local room_before = F2T_MAP_CURRENT_ROOM_ID
+        cecho(string.format("\n<yellow>[map]<reset> Following whereis: <white>%s<reset>\n", route_command))
+        send(route_command)
+        local timeout_seconds = f2t_settings_get("map", "speedwalk_timeout") or 3
+        tempTimer(timeout_seconds, function()
+            if F2T_MAP_CURRENT_ROOM_ID == room_before then
+                cecho("\n<red>[map]<reset> Whereis-guided move didn't change location, stopping\n")
+                if opts.on_result then opts.on_result(false) end
+                return
+            end
+            local result = f2t_map_navigate(destination, {
+                suppress_hint             = true,
+                compensate_incomplete_map = true,
+                whereis_hops              = hop_count,
+                on_result                 = opts.on_result,
+            })
+            if result ~= nil and opts.on_result then opts.on_result(result == true) end
+        end)
     end)
 end
