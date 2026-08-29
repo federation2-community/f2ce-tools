@@ -13,12 +13,13 @@
 --   suppress_hint - skip hint handling entirely, behave like plain failure.
 --   compensate_incomplete_map - when getPath() finds no route through
 --                   locally-mapped rooms to an otherwise-known destination,
---                   fall back to the game's own `whereis` for the next hop
---                   (and to auto-exploring the destination system once
---                   whereis runs out of hops to suggest) rather than just
---                   failing. Off by default: many callers pass room ids/
---                   hashes rather than real place names, for which asking
---                   `whereis` wouldn't make sense.
+--                   fall back to ordinary local pathing toward the
+--                   destination system's link room, then to auto-exploring
+--                   the remaining gap (asking `whereis` only as a last
+--                   resort, for the system name) rather than just failing.
+--                   Off by default: many callers pass room ids/hashes rather
+--                   than real place names, for which asking `whereis`
+--                   wouldn't make sense.
 
 function f2t_map_navigate(destination, opts)
     opts = opts or {}
@@ -49,7 +50,7 @@ function f2t_map_navigate(destination, opts)
     local success = getPath(current_room_id, target_id)
     if not success then
         if opts.compensate_incomplete_map then
-            f2t_map_navigate_whereis_fallback(destination, opts)
+            f2t_map_navigate_compensate(destination, target_id, opts)
             return nil
         end
         local current_area = getRoomArea(current_room_id)
@@ -140,104 +141,102 @@ function f2t_map_navigate_explore_hint(destination, hint, opts)
     timer_id = tempTimer(180, function() finish(false) end)
 end
 
--- ── Whereis-guided fallback ──────────────────────────────────────────────────
--- getPath() only knows rooms/exits this map has actually recorded. A known,
--- valid destination can still be unreachable through it purely because
--- nobody has walked (and thus mapped) the connecting stretch yet - Fed2
--- planets sit arbitrarily deep behind their system's link room, and that
--- depth isn't explored for its own sake. Rather than surface that as a dead
--- end, ask the game's own `whereis` for the next hop and follow it: it knows
--- the legal jump graph regardless of what our map has recorded. Once whereis
--- runs out of hops to suggest (you're in the right system, just not at the
--- exact room), fall back to auto-exploring that system to fill the gap.
--- Bounded by hop count so a stuck/looping suggestion can't spin forever.
+-- ── Compensating for an incomplete map ──────────────────────────────────────
+-- getPath() only knows rooms/exits this map has actually recorded, and it's
+-- all-or-nothing: it won't hand back a route that gets partway there even
+-- when most of the journey - the jump chain into the destination's system -
+-- is already well mapped and has worked before. So always try ordinary local
+-- pathing to the destination system's link room first; that's the reliable
+-- part, and it's just getPath()/doSpeedWalk doing their normal job, nothing
+-- game-text-driven about it. `whereis` only enters the picture as a last
+-- resort, and only ever to learn the destination's system NAME - never to
+-- have its suggested command text parsed or sent. That text isn't meant to
+-- be executed verbatim (this game has no ";"-style command chaining, client
+-- or server side) and once the system name is known, ordinary local pathing
+-- to that system's link room already does the job more reliably anyway.
 
-local F2T_MAP_WHEREIS_FALLBACK_MAX_HOPS = 8
-
-function f2t_map_navigate_whereis_fallback(destination, opts)
+function f2t_map_navigate_compensate(destination, target_id, opts)
     opts = opts or {}
-    local hop_count = (opts.whereis_hops or 0) + 1
-    if hop_count > F2T_MAP_WHEREIS_FALLBACK_MAX_HOPS then
-        cecho("\n<red>[map]<reset> No path found to destination (gave up chaining whereis hops)\n")
-        if opts.on_result then opts.on_result(false) end
+    local target_area_id = target_id and roomExists(target_id) and getRoomArea(target_id)
+    local target_system   = target_area_id and getAreaUserData(target_area_id, "fed2_system")
+    if target_system and target_system ~= "" then
+        f2t_map_navigate_reach_system(destination, target_id, target_system, opts)
+        return
+    end
+    f2t_map_navigate_whereis_for_system(destination, target_id, opts)
+end
+
+-- Ordinary getPath()/speedwalk to a known system's link room. If we're
+-- already standing at it, the gap is purely the ground-level stretch beyond
+-- it (a planet's shuttlepad, reached via "board" from its orbit - system
+-- exploration alone never lands), so hand that straight to the same
+-- confirm-then-explore flow used for any unmapped destination
+-- (f2t_map_navigate_handle_hint), scoped to just that planet's own area
+-- rather than sweeping the whole system.
+function f2t_map_navigate_reach_system(destination, target_id, system_name, opts)
+    local current_room_id = F2T_MAP_CURRENT_ROOM_ID
+    local link_room = f2t_map_find_link_room_in_system(system_name)
+    if link_room and link_room == current_room_id then
+        local hint = f2t_map_navigate_target_hint(target_id, system_name)
+        f2t_map_navigate_handle_hint(destination, hint, "No path found to destination", opts)
+        return
+    end
+    if not link_room or not roomExists(link_room) or not getPath(current_room_id, link_room) then
+        f2t_map_navigate_whereis_for_system(destination, target_id, opts)
         return
     end
     cecho(string.format(
-        "\n<dim_grey>[map] No mapped route yet - checking whereis for the next step toward '%s'...<reset>\n",
-        destination))
-    f2t_map_whereis_lookup(destination, function(system_name, route_command)
-        if not system_name then
-            cecho("\n<red>[map]<reset> No path found to destination\n")
-            if opts.on_result then opts.on_result(false) end
-            return
-        end
-        if route_command and route_command ~= "" then
-            f2t_map_navigate_follow_whereis_hop(destination, route_command, opts, hop_count)
-        else
-            f2t_map_navigate_explore_hint(destination, {kind = "system", name = system_name},
-                "No path found to destination", opts)
-        end
-    end)
-end
-
--- jump/j only works from a link-flagged room ("You jump up and down, but
--- nothing happens." is the game's own response to trying it anywhere else).
--- whereis's suggested command assumes you're already standing in one, but
--- the fallback can trigger from anywhere in the system's space area. Get to
--- the current system's link room first using the ordinary, already-reliable
--- local map (never whereis - that stretch is exactly what the map already
--- knows) before acting on the hint.
-function f2t_map_navigate_ensure_at_link_room(on_ready)
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
-    if current_room and f2t_map_room_has_flag(current_room, "link") then
-        on_ready(true)
-        return
-    end
-    local current_system = f2t_get_current_system()
-    local link_room = current_system and f2t_map_find_link_room_in_system(current_system)
-    if not link_room or not roomExists(link_room) or link_room == current_room then
-        on_ready(false)
-        return
-    end
-    cecho("\n<dim_grey>[map] Moving to this system's link room before jumping...<reset>\n")
-    if not f2t_map_navigate(tostring(link_room)) then
-        on_ready(false)
-        return
-    end
+        "\n<dim_grey>[map] No mapped route to the exact destination yet - heading to %s's link room first...<reset>\n",
+        system_name))
+    doSpeedWalk()
     local function poll()
         if F2T_SPEEDWALK_ACTIVE then
             tempTimer(0.5, poll)
             return
         end
-        on_ready(F2T_SPEEDWALK_LAST_RESULT == "completed" and F2T_MAP_CURRENT_ROOM_ID == link_room)
+        if F2T_SPEEDWALK_LAST_RESULT ~= "completed" then
+            cecho("\n<red>[map]<reset> No path found to destination\n")
+            if opts.on_result then opts.on_result(false) end
+            return
+        end
+        local result = f2t_map_navigate(destination, {
+            suppress_hint             = true,
+            compensate_incomplete_map = true,
+            on_result                 = opts.on_result,
+        })
+        if result ~= nil and opts.on_result then opts.on_result(result == true) end
     end
     tempTimer(0.5, poll)
 end
 
-function f2t_map_navigate_follow_whereis_hop(destination, route_command, opts, hop_count)
-    f2t_map_navigate_ensure_at_link_room(function(ready)
-        if not ready then
-            cecho("\n<red>[map]<reset> Couldn't reach a link room to act on whereis's suggestion, stopping\n")
+-- Last resort: the destination's system isn't known locally at all, or
+-- local pathing can't reach its link room through the mapped jump graph.
+-- Ask whereis purely for the system's name, then hand off to the same
+-- confirm-then-explore flow as any other unmapped destination.
+function f2t_map_navigate_whereis_for_system(destination, target_id, opts)
+    cecho(string.format(
+        "\n<dim_grey>[map] No mapped route yet - checking whereis for '%s'...<reset>\n", destination))
+    f2t_map_whereis_lookup(destination, function(system_name)
+        if not system_name then
+            cecho("\n<red>[map]<reset> No path found to destination\n")
             if opts.on_result then opts.on_result(false) end
             return
         end
-        local room_before = F2T_MAP_CURRENT_ROOM_ID
-        cecho(string.format("\n<yellow>[map]<reset> Following whereis: <white>%s<reset>\n", route_command))
-        send(route_command)
-        local timeout_seconds = f2t_settings_get("map", "speedwalk_timeout") or 3
-        tempTimer(timeout_seconds, function()
-            if F2T_MAP_CURRENT_ROOM_ID == room_before then
-                cecho("\n<red>[map]<reset> Whereis-guided move didn't change location, stopping\n")
-                if opts.on_result then opts.on_result(false) end
-                return
-            end
-            local result = f2t_map_navigate(destination, {
-                suppress_hint             = true,
-                compensate_incomplete_map = true,
-                whereis_hops              = hop_count,
-                on_result                 = opts.on_result,
-            })
-            if result ~= nil and opts.on_result then opts.on_result(result == true) end
-        end)
+        local hint = f2t_map_navigate_target_hint(target_id, system_name)
+        f2t_map_navigate_handle_hint(destination, hint, "No path found to destination", opts)
     end)
+end
+
+-- Picks the right scope of exploration to fill the gap: the target's own
+-- planet-surface area when that's distinct from the system's space area (a
+-- planet's shuttlepad, say), or the system space area itself when the target
+-- lives there directly (an orbit room, or the link room).
+function f2t_map_navigate_target_hint(target_id, system_name)
+    local target_area_id   = target_id and roomExists(target_id) and getRoomArea(target_id)
+    local target_area_name = target_area_id and getRoomAreaName(target_area_id)
+    local space_area_name  = f2t_map_get_system_space_area_actual(system_name)
+    if target_area_name and target_area_name ~= space_area_name then
+        return {kind = "planet", name = target_area_name, flag = F2T_MAP_PLANET_NAV_DEFAULT or "shuttlepad"}
+    end
+    return {kind = "system", name = system_name}
 end

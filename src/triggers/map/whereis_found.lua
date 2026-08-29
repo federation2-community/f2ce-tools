@@ -6,4 +6,4 @@ deleteLine()
 
 local system_name = matches[2]
 
-f2t_map_whereis_capture_system(system_name)
+f2t_map_whereis_capture_complete(system_name)

@@ -100,11 +100,5 @@
     "patterns": [
       {"pattern": "^I have no record of a planet called .+\\. Perhaps its sun went nova\\?$", "type": "regex"}
     ]
-  },
-  {
-    "name": "whereis_route_hint",
-    "patterns": [
-      {"pattern": "^From .+ to .+: (.+)$", "type": "regex"}
-    ]
   }
 ]
