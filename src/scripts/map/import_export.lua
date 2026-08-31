@@ -34,10 +34,9 @@ function f2t_map_save_json_headless(file_path)
     local total_rooms = 0
 
     for area_name, area_id in pairs(area_table) do
-        local room_ids = getAreaRooms(area_id) or {}
         local rooms_out = {}
 
-        for _, rid in pairs(room_ids) do
+        for _, rid in ipairs(f2t_map_area_room_list(area_id)) do
             if roomExists(rid) then
                 local x, y, z = getRoomCoordinates(rid)
                 local room = {
@@ -384,16 +383,37 @@ function f2t_map_import_file(file_path)
     for _ in pairs(getRooms()) do new_room_count = new_room_count + 1 end
 
     -- The imported map carries its own topology model (map userdata) or at
-    -- least area cartel data: reload and re-derive the jump graph from it.
-    F2T_MAP_TOPOLOGY = {systems = {}, cartels = {}, syndicates = {}, synced_at = nil}
+    -- least area cartel data: start from that rather than the outgoing map's.
+    F2T_MAP_TOPOLOGY = {systems = {}, cartels = {}, syndicates = {},
+        closed = {}, exiled = {}, refused = {}, synced_at = nil}
     F2T_MAP_TOPOLOGY_LOADED = false
     f2t_map_topology_load()
-    f2t_map_topology_request_rebuild()
 
     if F2T_MAP_ENABLED and f2t_map_sync then
         tempTimer(0.5, function() f2t_map_sync() end)
     end
 
+    -- A bundled or shared map arrives with whoever built it's jump exits baked
+    -- in, and those are only legal for their beacons and cartel memberships:
+    -- walking one yourself just draws "There isn't a direct link", once per
+    -- bad edge, for as long as your patience holds. Re-deriving fixes it in
+    -- one pass - but the rebuild can only strike an edge out once the model
+    -- can place its destination, and a freshly imported model can place
+    -- almost nothing. So sync from the game first and let that drive the
+    -- rebuild; offline, re-derive from whatever the import's own area data
+    -- gave us and leave the rest to the first arrival at each link room.
+    if F2T_CONNECTED ~= false and f2t_map_topology_sync then
+        cecho("\n<cyan>[map]<reset> Re-deriving jump routes for your own syndicate...\n")
+        tempTimer(1.5, function()
+            f2t_map_topology_sync(function(ok)
+                if not ok then f2t_map_topology_request_rebuild() end
+            end)
+        end)
+    else
+        f2t_map_topology_request_rebuild()
+    end
+
+    raiseEvent("f2tMapDataChanged")
     return true, new_room_count
 end
 
@@ -433,8 +453,7 @@ function f2t_map_import()
     local areas = getAreaTable()
     local current_area_count = 0
     for _, area_id in pairs(areas) do
-        local area_rooms = getAreaRooms(area_id)
-        if area_rooms and next(area_rooms) ~= nil then current_area_count = current_area_count + 1 end
+        if #f2t_map_area_room_list(area_id) > 0 then current_area_count = current_area_count + 1 end
     end
 
     cecho("\n<cyan>[map]<reset> Import Summary:\n")

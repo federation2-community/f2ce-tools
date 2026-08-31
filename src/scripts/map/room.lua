@@ -50,17 +50,27 @@ end
 function f2t_map_store_room_metadata(room_id, room_data)
     if not room_id or not roomExists(room_id) or not room_data then return false end
 
-    if room_data.system  then setRoomUserData(room_id, "fed2_system",  room_data.system) end
-    if room_data.cartel  then setRoomUserData(room_id, "fed2_cartel",  room_data.cartel) end
-    if room_data.area    then setRoomUserData(room_id, "fed2_area",    room_data.area)   end
-    if room_data.num     then setRoomUserData(room_id, "fed2_num",     tostring(room_data.num)) end
+    if room_data.system   then setRoomUserData(room_id, "fed2_system",   room_data.system)   end
+    if room_data.cartel   then setRoomUserData(room_id, "fed2_cartel",   room_data.cartel)   end
+    if room_data.syndicate and room_data.syndicate ~= "" then
+        setRoomUserData(room_id, "fed2_syndicate", room_data.syndicate)
+    end
+    if room_data.area     then setRoomUserData(room_id, "fed2_area",     room_data.area)     end
+    if room_data.num      then setRoomUserData(room_id, "fed2_num",      tostring(room_data.num)) end
 
-    -- Keep the area's cartel current too: systems change cartels, and the
-    -- cartel-scoped route BFS and topology bootstrap read area userdata.
+    -- Keep the area's cartel/syndicate current too: systems change cartels,
+    -- and the cartel-scoped route BFS and topology bootstrap read area
+    -- userdata.
     if room_data.cartel then
         local area_id = getRoomArea(room_id)
         if area_id and getAreaUserData(area_id, "fed2_cartel") ~= room_data.cartel then
             setAreaUserData(area_id, "fed2_cartel", room_data.cartel)
+        end
+    end
+    if room_data.syndicate and room_data.syndicate ~= "" then
+        local area_id = getRoomArea(room_id)
+        if area_id and getAreaUserData(area_id, "fed2_syndicate") ~= room_data.syndicate then
+            setAreaUserData(area_id, "fed2_syndicate", room_data.syndicate)
         end
     end
 

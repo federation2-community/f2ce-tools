@@ -7,7 +7,7 @@
 -- wherever the chain starts.
 
 F2T_MAP_EXPLORE_CARTEL_CAPTURE = F2T_MAP_EXPLORE_CARTEL_CAPTURE or {
-    active = false, cartel_name = nil, lines = {}, in_members = false, timer_id = nil,
+    active = false, cartel_name = nil, lines = {}, in_members = false,
 }
 
 function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
@@ -63,18 +63,16 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
 end
 
 function f2t_map_explore_cartel_capture_start(cartel_name)
+    f2t_capture_close("cartel_roster")
     F2T_MAP_EXPLORE_CARTEL_CAPTURE = {
-        active = true, cartel_name = cartel_name, lines = {}, in_members = false, timer_id = nil,
+        active = true, cartel_name = cartel_name, lines = {}, in_members = false,
     }
     send(string.format("display cartel %s", cartel_name), false)
     f2t_map_explore_cartel_reset_timer()
 end
 
 function f2t_map_explore_cartel_reset_timer()
-    if F2T_MAP_EXPLORE_CARTEL_CAPTURE.timer_id then
-        killTimer(F2T_MAP_EXPLORE_CARTEL_CAPTURE.timer_id)
-    end
-    F2T_MAP_EXPLORE_CARTEL_CAPTURE.timer_id = tempTimer(0.5, function()
+    f2t_capture_arm("cartel_roster", function()
         if F2T_MAP_EXPLORE_CARTEL_CAPTURE.active then
             f2t_map_explore_cartel_capture_complete()
         end
@@ -84,6 +82,7 @@ end
 function f2t_map_explore_cartel_capture_complete()
     local system_names = F2T_MAP_EXPLORE_CARTEL_CAPTURE.lines
     local cartel_name = F2T_MAP_EXPLORE_CARTEL_CAPTURE.cartel_name
+    f2t_capture_close("cartel_roster")
     F2T_MAP_EXPLORE_CARTEL_CAPTURE = {active = false}
 
     if #system_names == 0 then
@@ -95,18 +94,9 @@ function f2t_map_explore_cartel_capture_complete()
     -- The roster is the authoritative accepted-member list: feed the model.
     local topology_changed = false
     for _, system_name in ipairs(system_names) do
-        if F2T_MAP_TOPOLOGY.systems[system_name] ~= cartel_name then
-            F2T_MAP_TOPOLOGY.systems[system_name] = cartel_name
-            topology_changed = true
-        end
+        if f2t_map_topology_learn(system_name, cartel_name, nil) then topology_changed = true end
     end
-    if topology_changed then
-        if F2T_MAP_TOPOLOGY.cartels[cartel_name] == nil then
-            F2T_MAP_TOPOLOGY.cartels[cartel_name] = false
-        end
-        f2t_map_topology_save()
-        f2t_map_topology_request_rebuild()
-    end
+    f2t_map_topology_commit(topology_changed)
 
     table.sort(system_names, function(a, b)
         if a == cartel_name then return true end

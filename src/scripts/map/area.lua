@@ -27,6 +27,20 @@ function f2t_map_get_or_create_area(area_name, area_data)
     return area_id
 end
 
+-- Rooms of an area as a plain 1-based array. getAreaRooms() can hand back a
+-- zero-indexed entry, which a bare ipairs() walk silently drops - the source
+-- of "find one" and "find all" disagreeing about the same area. Every caller
+-- goes through here so the shape is normalised in one place.
+function f2t_map_area_room_list(area_id)
+    if not area_id then return {} end
+    local rooms = getAreaRooms(area_id)
+    if not rooms then return {} end
+    local list = {}
+    if rooms[0] then list[1] = rooms[0] end
+    for _, room_id in ipairs(rooms) do list[#list + 1] = room_id end
+    return list
+end
+
 function f2t_map_get_area_id(area_name)
     if not area_name or area_name == "" then return nil end
     local areas = getAreaTable()

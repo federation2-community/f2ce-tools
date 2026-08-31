@@ -3,21 +3,8 @@
 function f2t_map_search_area(area_id, search_text)
     if not area_id or not search_text or search_text == "" then return {} end
     local results = {}
-    local room_ids = getAreaRooms(area_id)
-    if not room_ids then return results end
     local search_lower = string.lower(search_text)
-    if room_ids[0] then
-        local room_name = getRoomName(room_ids[0])
-        if room_name and string.find(string.lower(room_name), search_lower, 1, true) then
-            table.insert(results, {
-                room_id = room_ids[0], name = room_name,
-                hash = f2t_map_generate_hash_from_room(room_ids[0]),
-                system = getRoomUserData(room_ids[0], "fed2_system"),
-                area   = getRoomUserData(room_ids[0], "fed2_area"),
-            })
-        end
-    end
-    for _, room_id in ipairs(room_ids) do
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
         local room_name = getRoomName(room_id)
         if room_name and string.find(string.lower(room_name), search_lower, 1, true) then
             table.insert(results, {
@@ -78,9 +65,8 @@ function f2t_map_search_planet_or_system(location, search_text)
         local all_areas = getAreaTable()
         for area_name, area_id in pairs(all_areas) do
             if area_name ~= space_area then
-                local area_rooms = getAreaRooms(area_id)
-                if area_rooms and next(area_rooms) then
-                    local sample_room = area_rooms[0] or area_rooms[1] or area_rooms[next(area_rooms)]
+                local sample_room = f2t_map_area_room_list(area_id)[1]
+                if sample_room then
                     local room_system = getRoomUserData(sample_room, "fed2_system")
                     if room_system and string.lower(room_system) == search_lower then
                         for _, result in ipairs(f2t_map_search_area(area_id, search_text)) do

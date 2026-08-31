@@ -54,13 +54,9 @@ end
 function f2t_map_lookup_planet(planet_name)
     local area_id = f2t_map_get_area_id(planet_name)
     if not area_id then return nil end
-    local area_rooms = getAreaRooms(area_id)
-    if area_rooms then
-        local sample_room = area_rooms[0] or area_rooms[1] or area_rooms[next(area_rooms)]
-        if sample_room then
-            local system = getRoomUserData(sample_room, "fed2_system")
-            return {name = planet_name, system = system}
-        end
+    local sample_room = f2t_map_area_room_list(area_id)[1]
+    if sample_room then
+        return {name = planet_name, system = getRoomUserData(sample_room, "fed2_system")}
     end
     return {name = planet_name}
 end

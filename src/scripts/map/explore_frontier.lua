@@ -46,12 +46,6 @@ function f2t_map_explore_remove_from_frontier(room_id)
     return removed_count
 end
 
-function f2t_map_explore_get_exit_destination(room_id, direction)
-    local exits = getRoomExits(room_id)
-    if not exits then return nil end
-    return exits[direction]
-end
-
 function f2t_map_explore_has_frontier()
     return #F2T_MAP_EXPLORE_STATE.frontier_stack > 0
 end
@@ -74,19 +68,22 @@ function f2t_map_explore_recompute_frontier()
     local reference_room = is_brief and F2T_MAP_EXPLORE_STATE.starting_room_id or current_room
 
     local candidates = {}
-    local rooms_in_area = getAreaRooms(area_id)
-    if not rooms_in_area then F2T_MAP_EXPLORE_STATE.frontier_stack = {}; return end
-
-    for _, room_id in pairs(rooms_in_area) do
-        local stubs = getExitStubs(room_id)
-        if stubs then
-            for _, stub_dir_num in pairs(stubs) do
-                local direction = f2t_map_explore_direction_number_to_name(stub_dir_num)
-                if direction and f2t_map_explore_is_exit_valid(room_id, direction) then
-                    local success, weight = getPath(reference_room, room_id)
-                    if success then
-                        table.insert(candidates, {room_id=room_id, direction=direction, distance=weight})
-                    end
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        local directions = {}
+        for _, stub_dir_num in pairs(getExitStubs(room_id) or {}) do
+            local direction = f2t_map_explore_direction_number_to_name(stub_dir_num)
+            if direction and f2t_map_explore_is_exit_valid(room_id, direction) then
+                directions[#directions + 1] = direction
+            end
+        end
+        -- One pathfind per room rather than one per stub: every stub in a room
+        -- is the same distance away, and a four-stub room used to run the same
+        -- Dijkstra four times.
+        if #directions > 0 then
+            local success, weight = getPath(reference_room, room_id)
+            if success then
+                for _, direction in ipairs(directions) do
+                    table.insert(candidates, {room_id=room_id, direction=direction, distance=weight})
                 end
             end
         end

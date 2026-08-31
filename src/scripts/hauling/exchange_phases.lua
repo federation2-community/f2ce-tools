@@ -390,7 +390,7 @@ function f2t_hauling_remove_current_commodity()
                 F2T_HAULING_STATE.current_phase = "dumping_cargo"
                 F2T_HAULING_STATE.dump_location = dump_location
 
-                if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+                if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
                     tempTimer(0.5, function()
                         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                             return
@@ -509,7 +509,7 @@ function f2t_hauling_find_next_dump_location()
             F2T_HAULING_STATE.current_phase = "dumping_cargo"
             F2T_HAULING_STATE.dump_location = next_dump
 
-            if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+            if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
                 tempTimer(0.5, function()
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                         return
@@ -574,7 +574,7 @@ function f2t_hauling_phase_navigate_to_buy()
     })
 
     -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
-    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Already at buy location, waiting for GMCP update")
         tempTimer(0.5, function()
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -711,7 +711,7 @@ function f2t_hauling_phase_navigate_to_sell()
     })
 
     -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
-    if nav_result == true and not F2T_SPEEDWALK_ACTIVE then
+    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Already at sell location, waiting for GMCP update")
         tempTimer(0.5, function()
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then

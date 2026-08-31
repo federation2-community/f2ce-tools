@@ -212,3 +212,224 @@ function f2t_map_manual_set_room_weight(room_id, weight)
     cecho(string.format("\n<green>[map]<reset> Room %d weight set to: <white>%d<reset>\n", room_id, weight))
     return true
 end
+
+-- `map room ...`, including the `set` sub-ladder. Kept beside the room
+-- functions it drives rather than in the alias file, where it was one of
+-- three 200-plus line branches making that file unnavigable.
+function f2t_map_room_command(args)
+    local rest = args:match("^room%s*(.*)") or ""
+
+    if f2t_handle_help("map room", rest) then return end
+
+    if rest == "" then
+        f2t_show_registered_help("map room")
+        return
+    end
+
+    local words = f2t_parse_words(rest)
+    local room_subcmd = words[1]
+
+    if room_subcmd == "add" then
+        local system = words[2]
+        local area = words[3]
+        local num = tonumber(words[4])
+        local name = string.match(rest, "^add%s+%S+%s+%S+%s+%S+%s+(.+)$")
+
+        if not system or not area or not num then
+            cecho("\n<red>[map]<reset> Usage: map room add <system> <area> <num> [name]\n")
+            f2t_show_help_hint("map room")
+            return
+        end
+
+        f2t_map_manual_create_room(system, area, num, name)
+
+    elseif room_subcmd == "delete" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_delete_room(room_id)
+
+    elseif room_subcmd == "info" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_room_info(room_id)
+
+    elseif room_subcmd == "set" then
+        local property = words[2]
+
+        if not property then
+            cecho("\n<red>[map]<reset> Usage: map room set <property> [room_id] <value...>\n")
+            f2t_show_help_hint("map room")
+            return
+        end
+
+        if property == "name" then
+            local room_id, name
+            local potential_room = tonumber(words[3])
+
+            if potential_room and words[4] then
+                room_id = potential_room
+                name = f2t_parse_rest(words, 4)
+            else
+                room_id = F2T_MAP_CURRENT_ROOM_ID
+                name = f2t_parse_rest(words, 3)
+            end
+
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            if not name or name == "" then
+                cecho("\n<red>[map]<reset> Usage: map room set name [room_id] <name>\n")
+                return
+            end
+            f2t_map_manual_set_room_name(room_id, name)
+
+        elseif property == "area" then
+            local room_id, area, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success or not area then
+                cecho("\n<red>[map]<reset> Usage: map room set area [room_id] <area>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            f2t_map_manual_set_room_area(room_id, area)
+
+        elseif property == "coords" then
+            local room_id, coord_args, success = f2t_map_parse_optional_room_and_args(words, 3, 3)
+            if not success then
+                cecho("\n<red>[map]<reset> Usage: map room set coords [room_id] <x> <y> <z>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            local x, y, z = tonumber(coord_args[1]), tonumber(coord_args[2]), tonumber(coord_args[3])
+            if not x or not y or not z then
+                cecho("\n<red>[map]<reset> Coordinates must be numbers\n")
+                return
+            end
+            f2t_map_manual_set_room_coords(room_id, x, y, z)
+
+        elseif property == "symbol" then
+            local room_id, symbol, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success or not symbol then
+                cecho("\n<red>[map]<reset> Usage: map room set symbol [room_id] <char>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            f2t_map_manual_set_room_symbol(room_id, symbol)
+
+        elseif property == "color" then
+            local room_id, color_args, success = f2t_map_parse_optional_room_and_args(words, 3, 3)
+            if not success then
+                cecho("\n<red>[map]<reset> Usage: map room set color [room_id] <r> <g> <b>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            local r, g, b = tonumber(color_args[1]), tonumber(color_args[2]), tonumber(color_args[3])
+            if not r or not g or not b then
+                cecho("\n<red>[map]<reset> Color values must be numbers\n")
+                return
+            end
+            f2t_map_manual_set_room_color(room_id, r, g, b)
+
+        elseif property == "env" then
+            local room_id, env_str, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success or not env_str then
+                cecho("\n<red>[map]<reset> Usage: map room set env [room_id] <env_id>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            local env_id = tonumber(env_str)
+            if not env_id then
+                cecho("\n<red>[map]<reset> Environment ID must be a number\n")
+                return
+            end
+            f2t_map_manual_set_room_env(room_id, env_id)
+
+        elseif property == "weight" then
+            local room_id, weight_str, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success or not weight_str then
+                cecho("\n<red>[map]<reset> Usage: map room set weight [room_id] <weight>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            local weight = tonumber(weight_str)
+            if not weight then
+                cecho("\n<red>[map]<reset> Weight must be a number\n")
+                return
+            end
+            f2t_map_manual_set_room_weight(room_id, weight)
+
+        else
+            cecho(string.format("\n<red>[map]<reset> Unknown property: %s\n", property))
+            cecho("\n<dim_grey>Available: name, area, coords, symbol, color, env, weight<reset>\n")
+        end
+
+    elseif room_subcmd == "lock" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_lock_room(room_id)
+
+    elseif room_subcmd == "unlock" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_unlock_room(room_id)
+
+    elseif room_subcmd == "death" then
+        local room_id = tonumber(words[2])
+        if not room_id then
+            cecho("\n<red>[map]<reset> Usage: map room death <room_id>\n")
+            cecho("\n<dim_grey>A room ID is required (you cannot be standing in a death room)<reset>\n")
+            return
+        end
+        f2t_map_manual_mark_room_death(room_id)
+
+    elseif room_subcmd == "safe" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_mark_room_safe(room_id)
+
+    elseif room_subcmd == "unsafe" then
+        local room_id, error_shown = f2t_map_parse_optional_room_id(words, 2)
+        if not room_id then
+            if not error_shown then cecho("\n<red>[map]<reset> No current room. Please specify room_id\n") end
+            return
+        end
+        f2t_map_manual_mark_room_unsafe(room_id)
+
+    else
+        cecho(string.format("\n<red>[map]<reset> Unknown room command: %s\n", room_subcmd))
+        f2t_show_help_hint("map room")
+    end
+end

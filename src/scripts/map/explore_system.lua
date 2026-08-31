@@ -32,10 +32,20 @@ function f2t_map_explore_system_start(system_mode, system_name, on_complete_call
             "\n<green>[map-explore]<reset> Starting system exploration: <white>%s<reset> (<cyan>brief mode<reset>)\n",
             system_name))
         cecho("  <dim_grey>Capturing expected planet list...<reset>\n")
-        f2t_map_di_system_capture_start(system_name, function(expected_planet_names, planets_without_exchange)
-            f2t_map_explore_system_start_with_planets(system_mode, system_name,
-                expected_planet_names, planets_without_exchange, on_complete_callback)
-        end)
+        f2t_map_di_system_capture_start(system_name,
+            function(expected_planet_names, planets_without_exchange, no_such_system)
+                -- The game says there is no such star system. Sweeping "space"
+                -- for it would only walk to a link room and jump at a name
+                -- that does not exist, so stop while it is still cheap.
+                if no_such_system then
+                    cecho(string.format(
+                        "\n<red>[map-explore]<reset> There is no star system called '%s'\n", system_name))
+                    if on_complete_callback then on_complete_callback() end
+                    return
+                end
+                f2t_map_explore_system_start_with_planets(system_mode, system_name,
+                    expected_planet_names, planets_without_exchange, on_complete_callback)
+            end)
         return true
     end
 
@@ -67,7 +77,7 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
             local space_area_check_id = space_area_check and f2t_map_get_area_id(space_area_check)
             local known_count = 0
             if space_area_check_id then
-                for _, room_id in pairs(getAreaRooms(space_area_check_id) or {}) do
+                for _, room_id in ipairs(f2t_map_area_room_list(space_area_check_id)) do
                     local room_planet = getRoomUserData(room_id, "fed2_planet")
                     if room_planet and expected_planets_set[room_planet]
                        and not expected_planets_found_set[room_planet] then
@@ -96,13 +106,7 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     -- below only ever fires for the call that actually flipped .active on.
     local started_standalone = not F2T_MAP_EXPLORE_STATE.active
     if started_standalone and on_complete_callback then
-        local real_callback = on_complete_callback
-        on_complete_callback = function(...)
-            F2T_MAP_EXPLORE_STATE.active = false
-            f2t_map_clear_nav_owner()
-            if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
-            real_callback(...)
-        end
+        on_complete_callback = f2t_map_explore_wrap_release(on_complete_callback)
     end
 
     -- Not there yet: travel first, then retry with the same (already-captured)
@@ -112,11 +116,7 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
         -- runs while F2T_MAP_EXPLORE_STATE.active is true; a nested call
         -- already has that (and its own safety hooks) from the parent sweep,
         -- but a standalone call hasn't started yet, so ensure both here too.
-        if started_standalone then
-            F2T_MAP_EXPLORE_STATE.active = true
-            F2T_MAP_EXPLORE_STATE.mode = "system"
-            f2t_map_explore_register_safety_hooks()
-        end
+        if started_standalone then f2t_map_explore_claim_run("system") end
 
         local function retry()
             f2t_map_explore_system_start_with_planets(system_mode, system_name,
@@ -127,10 +127,8 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
             -- Only tear down if we set active ourselves; a nested call must
             -- leave the parent sweep's state alone so it can move on.
             if started_standalone then
-                f2t_map_clear_nav_owner()
-                if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+                f2t_map_explore_release_run()
                 f2t_map_explore_brief_mode_restore()
-                F2T_MAP_EXPLORE_STATE.active = false
                 F2T_MAP_EXPLORE_STATE.mode = nil
             end
         end
@@ -144,9 +142,16 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
             cecho(string.format("\n<green>[map-explore]<reset> Navigating to %s...\n", space_area_name))
             f2t_map_explore_await_arrival("system", system_name, retry, give_up)
             local nav_result = target_room_id and f2t_map_navigate(tostring(target_room_id))
-            if nav_result == nil then
-                cecho(string.format("\n<red>[map-explore]<reset> Cannot navigate to %s\n", space_area_name))
-                f2t_map_explore_travel_finish(false)
+            -- A plain point-to-point path can miss a route that only exists by
+            -- jumping (the destination system is already mapped, just not
+            -- connected to here by ordinary exits) - fall back to the
+            -- jump-capable travel path instead of stalling. nav_result is a
+            -- status string ("failed"/"walking"/"arrived"), never nil, so the
+            -- previous `== nil` check here never actually fired.
+            if not f2t_map_navigate_ok(nav_result) then
+                cecho(string.format(
+                    "  <dim_grey>No direct path to %s - trying to jump there instead<reset>\n", space_area_name))
+                f2t_map_explore_travel_to("system", system_name, retry, give_up)
             end
         else
             cecho(string.format("\n<green>[map-explore]<reset> %s not yet mapped, traveling there...\n", system_name))
@@ -172,11 +177,7 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
         -- Nested (parent sweep already has .active/hooks) or a standalone call
         -- that was already sitting in the target system space, so the
         -- travel branch above never ran: either way, ensure both here too.
-        if started_standalone then
-            F2T_MAP_EXPLORE_STATE.active = true
-            F2T_MAP_EXPLORE_STATE.mode = "system"
-            f2t_map_explore_register_safety_hooks()
-        end
+        if started_standalone then f2t_map_explore_claim_run("system") end
         F2T_MAP_EXPLORE_STATE.phase = "navigating"
         F2T_MAP_EXPLORE_STATE.system_name = system_name
         F2T_MAP_EXPLORE_STATE.system_mode = system_mode
@@ -254,7 +255,7 @@ function f2t_map_explore_system_space_complete()
     if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and F2T_MAP_EXPLORE_STATE.expected_planets_found then
         for planet_name, _ in pairs(F2T_MAP_EXPLORE_STATE.expected_planets_found) do
             local orbit_room_id = nil
-            for _, room_id in pairs(getAreaRooms(space_area_id) or {}) do
+            for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
                 if getRoomUserData(room_id, "fed2_planet") == planet_name then
                     orbit_room_id = room_id
                     break
@@ -268,7 +269,7 @@ function f2t_map_explore_system_space_complete()
         end
     else
         local seen = {}
-        for _, room_id in pairs(getAreaRooms(space_area_id) or {}) do
+        for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
             local planet_name = getRoomUserData(room_id, "fed2_planet")
             if planet_name and planet_name ~= "" and not seen[planet_name] then
                 seen[planet_name] = true
@@ -380,7 +381,7 @@ function f2t_map_explore_system_brief_next_planet()
     F2T_MAP_EXPLORE_STATE.phase = "navigating_to_orbit"
     F2T_MAP_EXPLORE_STATE.brief_target_planet = planet.name
 
-    local success = f2t_map_navigate(tostring(planet.orbit_room_id))
+    local success = f2t_map_navigate_ok(f2t_map_navigate(tostring(planet.orbit_room_id)))
     if not success then
         cecho(string.format("  <yellow>Warning:<reset> Cannot navigate to orbit for '%s', skipping...\n", planet.name))
         F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped = F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped + 1
@@ -432,7 +433,7 @@ function f2t_map_explore_system_return_to_link_and_complete()
     local link_room = nil
     local space_area_id = F2T_MAP_EXPLORE_STATE.space_area_id
     if space_area_id then
-        link_room = f2t_map_find_room_with_flag(space_area_id, "link")
+        link_room = f2t_map_find_link_room(space_area_id)
     end
     if not link_room then
         f2t_map_explore_system_call_callback()

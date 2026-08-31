@@ -189,7 +189,7 @@ function f2t_hauling_phase_ac_navigate_to_source()
     cecho(string.format("\n<cyan>[hauling]<reset> Navigating to AC room at %s...\n", job.source))
     local result = f2t_map_navigate(hash)
 
-    if result == true then
+    if f2t_map_navigate_ok(result) then
         -- Map says we're already there, but verify by checking planet
         local verify_planet = f2t_ac_get_current_planet()
         if verify_planet == job.source then
@@ -399,7 +399,7 @@ function f2t_hauling_phase_ac_navigate_to_dest()
     cecho(string.format("\n<cyan>[hauling]<reset> Navigating to AC room at %s...\n", job.destination))
     local result = f2t_map_navigate(hash)
 
-    if result == true then
+    if f2t_map_navigate_ok(result) then
         -- Map says we're already there, but verify by checking planet
         local verify_planet = f2t_ac_get_current_planet()
         if verify_planet == job.destination then

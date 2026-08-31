@@ -613,7 +613,7 @@ function f2t_hauling_resume()
 
         -- Navigate to the stored destination
         local result = f2t_map_navigate(destination)
-        if result == true then
+        if f2t_map_navigate_ok(result) then
             f2t_debug_log("[hauling] Already at destination, continuing phase")
             -- Already there, restart phase
         else

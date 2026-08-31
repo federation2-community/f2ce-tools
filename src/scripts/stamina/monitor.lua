@@ -366,7 +366,7 @@ function f2t_stamina_phase_navigate_to_food()
     f2t_debug_log("[stamina] Navigating to food source: %s", food_source)
     cecho(string.format("\n<cyan>[stamina]<reset> Navigating to food source: %s\n", food_source))
 
-    local success = f2t_map_navigate(food_source, {
+    f2t_map_navigate(food_source, {
         on_result = function(ok)
             if F2T_STAMINA_STATE.current_phase ~= "navigating_to_food" then return end
             if not ok then
@@ -377,13 +377,7 @@ function f2t_stamina_phase_navigate_to_food()
         end,
     })
 
-    -- success == nil means a hint-driven auto-explore is in flight (handled by
-    -- on_result above, not here) - only a definite false is an immediate abort.
-    if success == false then
-        f2t_stamina_abort_food_trip("could not find path to food source")
-        return
-    end
-
+    -- Every outcome, sync or async, arrives through on_result above.
     -- Completion is picked up by the GMCP handler, not here.
 end
 
@@ -430,7 +424,8 @@ function f2t_stamina_phase_navigate_back()
     f2t_debug_log("[stamina] Navigating back to: %s", F2T_STAMINA_STATE.return_location)
     cecho(string.format("\n<cyan>[stamina]<reset> Returning to original location\n"))
 
-    local success = f2t_map_navigate(F2T_STAMINA_STATE.return_location, {suppress_hint = true})
+    local success = f2t_map_navigate_ok(
+        f2t_map_navigate(F2T_STAMINA_STATE.return_location, {suppress_hint = true}))
 
     if not success then
         cecho("\n<yellow>[stamina]<reset> Failed to navigate back, resuming at current location\n")

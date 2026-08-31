@@ -153,3 +153,339 @@ function f2t_map_manual_list_exits(room_id)
     end
     cecho("\n")
 end
+
+-- `map exit ...`, including the `stub` sub-ladder. Kept beside the exit
+-- functions it drives rather than in the alias file.
+function f2t_map_exit_command(args)
+    local current_room = f2t_map_ensure_current_room(args)
+    if not current_room then return end
+
+    local rest = args:match("^exit%s*(.*)") or ""
+    if f2t_handle_help("map exit", rest) then return end
+
+    if rest == "" then
+        f2t_show_registered_help("map exit")
+        return
+    end
+
+    local words = f2t_parse_words(rest)
+    local exit_subcmd = words[1]
+
+    if exit_subcmd == "special" then
+        local dest_or_remove = words[2]
+
+        if f2t_handle_help("map exit special", dest_or_remove) then return end
+
+        if not dest_or_remove then
+            f2t_show_registered_help("map exit special")
+            return
+        end
+
+        if dest_or_remove == "list" then
+            local room_id = current_room
+            if words[3] then
+                room_id = tonumber(words[3])
+                if not room_id then
+                    cecho("\n<red>[map]<reset> Invalid room ID: must be a number\n")
+                    return
+                end
+            end
+
+            if not roomExists(room_id) then
+                cecho(string.format("\n<red>[map]<reset> Room %d does not exist\n", room_id))
+                return
+            end
+
+            local room_name = getRoomName(room_id)
+            local exits = f2t_map_special_get_all_exits(room_id)
+            cecho(string.format("\n<green>[map]<reset> Special exits for room %d (<white>%s<reset>)\n",
+                room_id, room_name or "unnamed"))
+
+            if exits and next(exits) ~= nil then
+                for command, dest_room_id in pairs(exits) do
+                    local dest_name = getRoomName(dest_room_id) or "unnamed"
+                    local dest_hash = f2t_map_generate_hash_from_room(dest_room_id) or "unknown"
+                    if command:match("^__move_no_op_%d+$") then
+                        cecho(string.format(
+                            "  <yellow>%s<reset> <dim_grey>(auto-transit)<reset> -> <white>%s<reset>"
+                            .. " <dim_grey>[%d | %s]<reset>\n",
+                            command, dest_name, dest_room_id, dest_hash))
+                    else
+                        cecho(string.format("  <yellow>%s<reset> -> <white>%s<reset> <dim_grey>[%d | %s]<reset>\n",
+                            command, dest_name, dest_room_id, dest_hash))
+                    end
+                end
+            else
+                cecho("\n<dim_grey>No special exits configured for this room.<reset>\n")
+            end
+
+        elseif dest_or_remove == "reverse" then
+            local command = string.match(rest, "^special%s+reverse%s+(.+)$")
+            local success, error_msg, from_room, to_room, used_command =
+                f2t_map_special_reverse_exit(current_room, command)
+
+            if success then
+                local from_name = getRoomName(from_room) or string.format("Room %d", from_room)
+                local to_name = getRoomName(to_room) or string.format("Room %d", to_room)
+                cecho(string.format(
+                    "\n<green>[map]<reset> Reverse special exit created: <white>%s<reset> -> <white>%s<reset>\n",
+                    from_name, to_name))
+                if used_command == "noop" then
+                    cecho("\n<dim_grey>  Command: (auto-transit, wait for GMCP)<reset>\n")
+                else
+                    cecho(string.format("\n<dim_grey>  Command: %s<reset>\n", used_command))
+                end
+            else
+                cecho(string.format("\n<red>[map]<reset> Error: %s\n", error_msg or "Failed to create reverse exit"))
+            end
+
+        elseif dest_or_remove == "remove" then
+            if #words < 3 then
+                cecho("\n<red>[map]<reset> Usage: map exit special remove <command>\n")
+                cecho("\n<red>[map]<reset> Usage: map exit special remove <room_id> <command>\n")
+                return
+            end
+
+            local room_id, command
+            if tonumber(words[3]) ~= nil then
+                room_id = tonumber(words[3])
+                command = string.match(rest, "^special%s+remove%s+%d+%s+(.+)$")
+            else
+                room_id = current_room
+                command = string.match(rest, "^special%s+remove%s+(.+)$")
+            end
+
+            if not command then
+                cecho("\n<red>[map]<reset> Invalid command\n")
+                return
+            end
+
+            local success = f2t_map_special_remove_exit(room_id, command)
+            if success then
+                cecho(string.format("\n<green>[map]<reset> Special exit removed: <yellow>%s<reset>\n", command))
+            else
+                cecho(string.format("\n<yellow>[map]<reset> No special exit found for command: %s\n", command))
+            end
+
+        else
+            local second_is_number = tonumber(dest_or_remove) ~= nil
+            local third_is_number = words[3] and tonumber(words[3]) ~= nil
+
+            if not second_is_number then
+                local command = string.match(rest, "^special%s+(.+)$")
+                if not command then
+                    cecho("\n<red>[map]<reset> Invalid command\n")
+                    return
+                end
+                f2t_map_special_exit_discovery_start(current_room, command)
+
+            elseif second_is_number and third_is_number then
+                local source_room_id = tonumber(words[2])
+                local dest_room_id = tonumber(words[3])
+                local command = string.match(rest, "^special%s+%d+%s+%d+%s+(.+)$")
+                if not command then
+                    cecho("\n<red>[map]<reset> Missing command\n")
+                    return
+                end
+                local success = f2t_map_special_set_exit(source_room_id, dest_room_id, command)
+                if success then
+                    local from_name = getRoomName(source_room_id) or string.format("Room %d", source_room_id)
+                    local to_name = getRoomName(dest_room_id) or string.format("Room %d", dest_room_id)
+                    cecho(string.format(
+                        "\n<green>[map]<reset> Special exit created: <white>%s<reset> -> <white>%s<reset>\n",
+                        from_name, to_name))
+                    if command == "noop" then
+                        cecho("\n<dim_grey>  Command: (auto-transit, wait for GMCP)<reset>\n")
+                    else
+                        cecho(string.format("\n<dim_grey>  Command: %s<reset>\n", command))
+                    end
+                else
+                    cecho("\n<red>[map]<reset> Failed to create special exit\n")
+                end
+
+            else
+                local source_room_id = current_room
+                local dest_room_id = tonumber(words[2])
+                if not dest_room_id then
+                    cecho("\n<red>[map]<reset> Invalid room ID: must be a number\n")
+                    return
+                end
+                local command = string.match(rest, "^special%s+%d+%s+(.+)$")
+                if not command then
+                    cecho("\n<red>[map]<reset> Missing command\n")
+                    return
+                end
+                local success = f2t_map_special_set_exit(source_room_id, dest_room_id, command)
+                if success then
+                    local from_name = getRoomName(source_room_id) or string.format("Room %d", source_room_id)
+                    local to_name = getRoomName(dest_room_id) or string.format("Room %d", dest_room_id)
+                    cecho(string.format(
+                        "\n<green>[map]<reset> Special exit created: <white>%s<reset> -> <white>%s<reset>\n",
+                        from_name, to_name))
+                    if command == "noop" then
+                        cecho("\n<dim_grey>  Command: (auto-transit, wait for GMCP)<reset>\n")
+                    else
+                        cecho(string.format("\n<dim_grey>  Command: %s<reset>\n", command))
+                    end
+                else
+                    cecho("\n<red>[map]<reset> Failed to create special exit\n")
+                end
+            end
+        end
+
+    elseif exit_subcmd == "add" then
+        if #words < 4 then
+            cecho("\n<red>[map]<reset> Usage: map exit add <from_room_id> <to_room_id> <direction>\n")
+            return
+        end
+        local from_room = tonumber(words[2])
+        local to_room = tonumber(words[3])
+        local direction = words[4]
+        if not from_room or not to_room then
+            cecho("\n<red>[map]<reset> Room IDs must be numbers\n")
+            return
+        end
+        f2t_map_manual_add_exit(from_room, to_room, direction, false)
+
+    elseif exit_subcmd == "remove" then
+        if #words < 3 then
+            cecho("\n<red>[map]<reset> Usage: map exit remove <room_id> <direction>\n")
+            return
+        end
+        local room_id = tonumber(words[2])
+        local direction = words[3]
+        if not room_id then
+            cecho("\n<red>[map]<reset> Room ID must be a number\n")
+            return
+        end
+        f2t_map_manual_remove_exit(room_id, direction)
+
+    elseif exit_subcmd == "list" then
+        local room_id
+        if words[2] then
+            room_id = tonumber(words[2])
+            if not room_id then
+                cecho("\n<red>[map]<reset> Room ID must be a number\n")
+                return
+            end
+        else
+            room_id = current_room
+        end
+        f2t_map_manual_list_exits(room_id)
+
+    elseif exit_subcmd == "lock" then
+        local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 2)
+        if not success then
+            cecho("\n<red>[map]<reset> Usage: map exit lock [room_id] <direction>\n")
+            return
+        end
+        if not room_id then
+            cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+            return
+        end
+        f2t_map_manual_lock_exit(room_id, direction)
+
+    elseif exit_subcmd == "unlock" then
+        if words[2] == "all" then
+            local area_name = table.concat(words, " ", 3)
+            local area_id = (area_name ~= "") and f2t_map_get_area_id(area_name)
+                or (current_room and getRoomArea(current_room))
+            if not area_id then
+                cecho("\n<red>[map]<reset> Usage: map exit unlock all [area]\n")
+                return
+            end
+            f2t_map_manual_unlock_area_exits(area_id)
+            return
+        end
+        local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 2)
+        if not success then
+            cecho("\n<red>[map]<reset> Usage: map exit unlock [room_id] <direction>\n")
+            return
+        end
+        if not room_id then
+            cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+            return
+        end
+        f2t_map_manual_unlock_exit(room_id, direction)
+
+    elseif exit_subcmd == "death" then
+        local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 2)
+        if not success then
+            cecho("\n<red>[map]<reset> Usage: map exit death [room_id] <direction>\n")
+            return
+        end
+        if not room_id then
+            cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+            return
+        end
+        f2t_map_manual_death_exit(room_id, direction)
+
+    elseif exit_subcmd == "stub" then
+        local stub_subcmd = words[2]
+
+        if f2t_handle_help("map exit stub", stub_subcmd) then return end
+
+        if not stub_subcmd then
+            f2t_show_registered_help("map exit stub")
+            return
+        end
+
+        if stub_subcmd == "create" then
+            local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success then
+                cecho("\n<red>[map]<reset> Usage: map exit stub create [room_id] <direction>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            f2t_map_manual_create_stub(room_id, direction)
+
+        elseif stub_subcmd == "delete" then
+            local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success then
+                cecho("\n<red>[map]<reset> Usage: map exit stub delete [room_id] <direction>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            f2t_map_manual_delete_stub(room_id, direction)
+
+        elseif stub_subcmd == "connect" then
+            local room_id, direction, success = f2t_map_parse_optional_room_and_arg(words, 3)
+            if not success then
+                cecho("\n<red>[map]<reset> Usage: map exit stub connect [room_id] <direction>\n")
+                return
+            end
+            if not room_id then
+                cecho("\n<red>[map]<reset> No current room. Please specify room_id\n")
+                return
+            end
+            f2t_map_manual_connect_stub(room_id, direction)
+
+        elseif stub_subcmd == "list" then
+            local room_id
+            if words[3] then
+                room_id = tonumber(words[3])
+                if not room_id then
+                    cecho("\n<red>[map]<reset> Room ID must be a number\n")
+                    return
+                end
+            else
+                room_id = current_room
+            end
+            f2t_map_manual_list_stubs(room_id)
+
+        else
+            cecho(string.format("\n<red>[map]<reset> Unknown stub command: %s\n", stub_subcmd))
+            f2t_show_help_hint("map exit stub")
+        end
+
+    else
+        cecho(string.format("\n<red>[map]<reset> Unknown exit subcommand: %s\n", exit_subcmd))
+        f2t_show_help_hint("map exit")
+    end
+end

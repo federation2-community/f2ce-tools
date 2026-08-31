@@ -21,11 +21,11 @@ function f2t_map_whereis_lookup(planet_name, callback)
     send(string.format("whereis %s", planet_name), false)
 end
 
-function f2t_map_whereis_capture_complete(system_name)
+function f2t_map_whereis_capture_complete(system_name, cartel_name, syndicate_name)
     local callback = F2T_MAP_WHEREIS_CAPTURE.callback
     if F2T_MAP_WHEREIS_CAPTURE.timer_id then killTimer(F2T_MAP_WHEREIS_CAPTURE.timer_id) end
     F2T_MAP_WHEREIS_CAPTURE = {active = false}
-    if callback then callback(system_name) end
+    if callback then callback(system_name, cartel_name, syndicate_name) end
 end
 
 f2t_debug_log("[map] Loaded whereis_capture.lua")

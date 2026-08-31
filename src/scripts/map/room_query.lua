@@ -2,16 +2,96 @@
 
 function f2t_map_find_room_with_flag(area_id, flag)
     if not area_id then return nil end
-    local area_rooms = getAreaRooms(area_id)
-    if not area_rooms then return nil end
     local flag_key = string.format("fed2_flag_%s", flag)
-    if area_rooms[0] and getRoomUserData(area_rooms[0], flag_key) == "true" then
-        return area_rooms[0]
-    end
-    for _, room_id in ipairs(area_rooms) do
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
         if getRoomUserData(room_id, flag_key) == "true" then return room_id end
     end
     return nil
+end
+
+-- The interstellar link room of an area. A system has exactly one server-side
+-- (Galaxy::FindLink resolves a single link per star), but a map can hold more
+-- than one room flagged "link" for it - a stale duplicate from an earlier
+-- import, or a room whose flag was never cleared - and picking the wrong one
+-- points every "jump <system>" exit at a room the game never puts you in.
+-- Prefer whichever GMCP last confirmed us standing in: apply_gmcp_jumps
+-- stamps fed2_jump_synced_at on arrival, so the freshest stamp is the room
+-- the game actually uses.
+function f2t_map_find_link_room(area_id)
+    if not area_id then return nil end
+    local best, best_stamp = nil, nil
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        if getRoomUserData(room_id, "fed2_flag_link") == "true" then
+            local stamp = tonumber(getRoomUserData(room_id, "fed2_jump_synced_at"))
+            if not best or (stamp and (not best_stamp or stamp > best_stamp)) then
+                best, best_stamp = room_id, stamp
+            end
+        end
+    end
+    return best
+end
+
+-- Prefer a room the map can actually reach from where we stand. A map can
+-- hold a stranded duplicate of a whole system (see f2t_map_find_link_room),
+-- and every one of its rooms answers a name lookup just as readily as the
+-- live one - which is how a nav ends up planning a route out through a system
+-- it has no business visiting, to get back into a copy of the one it is
+-- already in.
+local function preferReachable(candidates)
+    if #candidates < 2 then return candidates[1] end
+    local here = F2T_MAP_CURRENT_ROOM_ID
+    if here then
+        for _, room_id in ipairs(candidates) do
+            if room_id == here or getPath(here, room_id) then return room_id end
+        end
+    end
+    return candidates[1]
+end
+
+-- The room in a system's space area that orbits a given planet, which is
+-- where its "board" link down to the surface hangs off.
+function f2t_map_find_orbit_room(space_area_name, planet_name)
+    local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
+    if not space_area_id or not planet_name then return nil end
+    local candidates = {}
+    for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
+        local planet = getRoomUserData(room_id, "fed2_planet")
+        if planet and string.lower(planet) == string.lower(planet_name) then
+            candidates[#candidates + 1] = room_id
+        end
+    end
+    return preferReachable(candidates)
+end
+
+-- A planet's shuttlepad. The room the orbit's "board" exit leads to is that
+-- room by definition, so prefer it over a flag search: a map can carry an
+-- older, orphaned shuttlepad room for the same planet (an import whose room
+-- numbers no longer match, say) that nothing connects to, and a flag search
+-- has no way to tell the two apart.
+function f2t_map_find_shuttlepad_room(planet_name)
+    local planet_area_id = f2t_map_get_area_id(planet_name)
+    if not planet_area_id then return nil end
+
+    local planet = f2t_map_lookup_planet(planet_name)
+    local space_area_name = planet and planet.system
+        and f2t_map_get_system_space_area_actual(planet.system)
+    local orbit_room = f2t_map_find_orbit_room(space_area_name, planet_name)
+    if orbit_room then
+        -- getSpecialExits() is {[destRoomId] = {command = true, ...}}, but the
+        -- value shape has varied across Mudlet versions, so check it.
+        for dest_room_id, commands in pairs(getSpecialExits(orbit_room) or {}) do
+            if type(commands) == "table" and roomExists(dest_room_id)
+                and getRoomArea(dest_room_id) == planet_area_id then
+                for command in pairs(commands) do
+                    if type(command) == "string" and string.lower(command) == "board" then
+                        return dest_room_id
+                    end
+                end
+            end
+        end
+    end
+
+    return preferReachable(f2t_map_find_all_rooms_with_flag(planet_area_id, "shuttlepad"))
 end
 
 -- Room to land in when navigating into a known area: its link room if
@@ -20,10 +100,9 @@ end
 -- to re-resolve it by name through f2t_map_resolve_location().
 function f2t_map_area_entry_room(area_id)
     if not area_id then return nil end
-    local link_room = f2t_map_find_room_with_flag(area_id, "link")
+    local link_room = f2t_map_find_link_room(area_id)
     if link_room then return link_room end
-    local area_rooms = getAreaRooms(area_id)
-    return area_rooms and (area_rooms[0] or area_rooms[1])
+    return f2t_map_area_room_list(area_id)[1]
 end
 
 -- Room to land in when navigating into system_name's own space area, resolved
@@ -43,10 +122,8 @@ end
 function f2t_map_find_all_rooms_with_flag(area_id, flag)
     if not area_id or not flag then return {} end
     local results = {}
-    local room_ids = getAreaRooms(area_id)
-    if not room_ids then return results end
     local flag_key = string.format("fed2_flag_%s", flag)
-    for _, room_id in ipairs(room_ids) do
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
         if getRoomUserData(room_id, flag_key) == "true" then
             table.insert(results, room_id)
         end
@@ -77,6 +154,50 @@ function f2t_map_room_has_flag(room_id, flag)
     return getRoomUserData(room_id, string.format("fed2_flag_%s", flag)) == "true"
 end
 
+-- Room flags a destination string may name, and the shorthands for them.
+-- Module scope because the destination grammar ("<place> <flag>") is parsed
+-- outside the resolver too - see f2t_map_whereis_subject in navigate.lua.
+F2T_MAP_KNOWN_FLAGS = {
+    shuttlepad=true, exchange=true, bar=true, courier=true, link=true,
+    orbit=true, weapons=true, repair=true, shipyard=true, hospital=true, insure=true,
+}
+F2T_MAP_FLAG_SHORTCUTS = {ex="exchange", sp="shuttlepad", ac="courier"}
+
+-- The canonical flag a word names, or nil when it names no flag at all.
+function f2t_map_canonical_flag(word)
+    if not word or word == "" then return nil end
+    word = string.lower(word)
+    if F2T_MAP_FLAG_SHORTCUTS[word] then return F2T_MAP_FLAG_SHORTCUTS[word] end
+    return F2T_MAP_KNOWN_FLAGS[word] and word or nil
+end
+
+-- Split a destination into its place part and the flag it asks for, when it
+-- has one: "mars exchange" -> "mars", "exchange". A bare flag word is all
+-- flag and no place.
+function f2t_map_split_place_and_flag(location)
+    if not location or location == "" then return nil, nil end
+    local words = {}
+    for word in string.gmatch(location, "%S+") do table.insert(words, word) end
+    if #words == 0 then return nil, nil end
+    local flag = f2t_map_canonical_flag(words[#words])
+    if not flag then return location, nil end
+    if #words == 1 then return nil, flag end
+    table.remove(words, #words)
+    return table.concat(words, " "), flag
+end
+
+-- The hint that lets f2t_map_navigate self-heal a "<place> <flag>" miss the
+-- same way it already does a bare name. Without it the flag form fails hard,
+-- which matters now that anything wanting a system says so as "<name> link".
+local function flagHint(place, flag)
+    -- link_only: the destination is that system's interstellar link, so
+    -- arriving there is the whole job. Nothing on the far side needs
+    -- discovering, and the jump chain that reaches it is derived from the
+    -- topology model rather than walked.
+    if flag == "link" then return {kind = "system", name = place, link_only = true} end
+    return {kind = "planet", name = place, flag = flag}
+end
+
 function f2t_map_resolve_location(location)
     if not location or location == "" then
         return nil, "No location specified"
@@ -86,11 +207,8 @@ function f2t_map_resolve_location(location)
     local arg = string.lower(location)
     local target_id = nil
 
-    local KNOWN_FLAGS = {
-        shuttlepad=true, exchange=true, bar=true, courier=true, link=true,
-        orbit=true, weapons=true, repair=true, shipyard=true, hospital=true, insure=true,
-    }
-    local FLAG_SHORTCUTS = {ex="exchange", sp="shuttlepad", ac="courier"}
+    local KNOWN_FLAGS = F2T_MAP_KNOWN_FLAGS
+    local FLAG_SHORTCUTS = F2T_MAP_FLAG_SHORTCUTS
 
     -- Saved destination
     local dest_hash = f2t_map_destination_get(arg)
@@ -132,6 +250,17 @@ function f2t_map_resolve_location(location)
             local area_name = table.concat(words, " ")
             local search_area_name = area_name
 
+            -- Area lookups are case-insensitive, so the lowercased form is
+            -- fine for those - but a hint travels on to the topology model
+            -- and to "jump <system>", both of which are keyed by the name as
+            -- the game spells it. Keep the user's own casing for those.
+            local originalWords = {}
+            for word in string.gmatch(original_arg, "%S+") do
+                table.insert(originalWords, word)
+            end
+            table.remove(originalWords, #originalWords)
+            local original_area_name = table.concat(originalWords, " ")
+
             if flag == "orbit" then
                 local planet_data = f2t_map_lookup_planet(area_name)
                 if planet_data and planet_data.system then
@@ -149,24 +278,22 @@ function f2t_map_resolve_location(location)
 
             local area_id = f2t_map_get_area_id(search_area_name)
             if not area_id then
-                return nil, string.format("'%s' not found - area may not exist or hasn't been explored yet", area_name)
+                return nil,
+                    string.format("'%s' not found - area may not exist or hasn't been explored yet", area_name),
+                    flagHint(original_area_name, flag)
             end
 
-            local area_rooms = getAreaRooms(area_id)
-            if not area_rooms then
-                return nil, string.format("No rooms found in '%s' - try 'map explore %s'", search_area_name, area_name)
+            local area_rooms = f2t_map_area_room_list(area_id)
+            if #area_rooms == 0 then
+                return nil,
+                    string.format("No rooms found in '%s' - try 'map explore %s'", search_area_name, area_name),
+                    flagHint(original_area_name, flag)
             end
 
             local flag_key = string.format("fed2_flag_%s", flag)
             local matching_rooms = {}
 
             if flag == "orbit" then
-                if area_rooms[0] then
-                    local room_planet = getRoomUserData(area_rooms[0], "fed2_planet")
-                    if room_planet and string.lower(room_planet) == string.lower(area_name) then
-                        table.insert(matching_rooms, area_rooms[0])
-                    end
-                end
                 for _, room_id in ipairs(area_rooms) do
                     local room_planet = getRoomUserData(room_id, "fed2_planet")
                     if room_planet and string.lower(room_planet) == string.lower(area_name) then
@@ -174,9 +301,6 @@ function f2t_map_resolve_location(location)
                     end
                 end
             else
-                if area_rooms[0] and getRoomUserData(area_rooms[0], flag_key) == "true" then
-                    table.insert(matching_rooms, area_rooms[0])
-                end
                 for _, room_id in ipairs(area_rooms) do
                     if getRoomUserData(room_id, flag_key) == "true" then
                         table.insert(matching_rooms, room_id)
@@ -187,10 +311,13 @@ function f2t_map_resolve_location(location)
             if #matching_rooms == 0 then
                 if flag == "orbit" then
                     return nil, string.format(
-                        "No orbit mapped for '%s' - try 'map explore %s' to discover it", area_name, area_name)
+                        "No orbit mapped for '%s' - try 'map explore %s' to discover it", area_name, area_name),
+                        flagHint(original_area_name, flag)
                 else
                     return nil, string.format(
-                        "No %s found in '%s' - try 'map explore %s' to discover one", flag, search_area_name, area_name)
+                        "No %s found in '%s' - try 'map explore %s' to discover one",
+                        flag, search_area_name, area_name),
+                        flagHint(original_area_name, flag)
                 end
             end
 
@@ -200,12 +327,18 @@ function f2t_map_resolve_location(location)
     end
 
     -- Planet
+    -- Planet before system, deliberately. Fed2 reuses names across planets,
+    -- systems, cartels and syndicates, and most systems have a planet of the
+    -- same name carrying their link - so a bare name almost always means that
+    -- planet, and answering it with the Planet nav default is what the user
+    -- meant. Anything that specifically wants the system says so with a flag
+    -- ("<name> link"), which the area-flag branch above already handles.
     local single_arg = arg
     if FLAG_SHORTCUTS[single_arg] then single_arg = FLAG_SHORTCUTS[single_arg] end
     local planet_data = f2t_map_lookup_planet(single_arg)
     if planet_data then
         local system_name = planet_data.system
-        local planet_dest = F2T_MAP_PLANET_NAV_DEFAULT or "shuttlepad"
+        local planet_dest = f2t_map_planet_nav_default()
 
         if planet_dest == "orbit" then
             if not system_name then
@@ -219,21 +352,10 @@ function f2t_map_resolve_location(location)
             if not space_area_id then
                 return nil, string.format("'%s' system space not in your map - fly there to add it", single_arg)
             end
-            local area_rooms = getAreaRooms(space_area_id)
-            if area_rooms then
-                if area_rooms[0] then
-                    local room_planet = getRoomUserData(area_rooms[0], "fed2_planet")
-                    if room_planet and string.lower(room_planet) == string.lower(single_arg) then
-                        target_id = area_rooms[0]
-                    end
-                end
-                if not target_id then
-                    for _, room_id in ipairs(area_rooms) do
-                        local room_planet = getRoomUserData(room_id, "fed2_planet")
-                        if room_planet and string.lower(room_planet) == string.lower(single_arg) then
-                            target_id = room_id; break
-                        end
-                    end
+            for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
+                local room_planet = getRoomUserData(room_id, "fed2_planet")
+                if room_planet and string.lower(room_planet) == string.lower(single_arg) then
+                    target_id = room_id; break
                 end
             end
             if target_id then return target_id, nil end
@@ -254,7 +376,7 @@ function f2t_map_resolve_location(location)
         else
             local planet_area_id = f2t_map_get_area_id(single_arg)
             if planet_area_id then
-                target_id = f2t_map_find_room_with_flag(planet_area_id, "shuttlepad")
+                target_id = f2t_map_find_shuttlepad_room(single_arg)
                 if target_id then return target_id, nil end
                 local err_msg = string.format(
                     "No shuttlepad mapped on '%s' - try 'map explore %s' to discover one", single_arg, single_arg)
@@ -268,11 +390,14 @@ function f2t_map_resolve_location(location)
     local space_area = f2t_map_get_system_space_area_actual(single_arg)
     if space_area then
         local space_area_id = f2t_map_get_area_id(space_area)
-        target_id = f2t_map_find_room_with_flag(space_area_id, "link")
+        target_id = f2t_map_find_link_room(space_area_id)
         if target_id then return target_id, nil end
+        -- The space area is spelled the way the game spells the system, which
+        -- is what the model and "jump" both want.
+        local canonical = f2t_map_get_system_from_space_area(space_area) or single_arg
         local err_msg = string.format(
             "No link room mapped in '%s' - try 'map explore %s' to discover it", space_area, single_arg)
-        return nil, err_msg, {kind = "system", name = single_arg}
+        return nil, err_msg, {kind = "system", name = canonical, link_only = true}
     end
 
     -- Flag in current area
@@ -296,8 +421,8 @@ function f2t_map_resolve_location(location)
         end
     end
 
-    local area_rooms = getAreaRooms(search_area_id)
-    if not area_rooms then
+    local area_rooms = f2t_map_area_room_list(search_area_id)
+    if #area_rooms == 0 then
         if KNOWN_FLAGS[single_arg] then
             return nil, string.format("No %s found here - try 'map explore' to discover one", single_arg)
         end
@@ -306,9 +431,6 @@ function f2t_map_resolve_location(location)
 
     local flag_key = string.format("fed2_flag_%s", single_arg)
     local matching_rooms = {}
-    if area_rooms[0] and getRoomUserData(area_rooms[0], flag_key) == "true" then
-        table.insert(matching_rooms, area_rooms[0])
-    end
     for _, room_id in ipairs(area_rooms) do
         if getRoomUserData(room_id, flag_key) == "true" then
             table.insert(matching_rooms, room_id)

@@ -128,8 +128,7 @@ function f2t_map_status()
     local area_total, area_with_rooms = 0, 0
     for _, area_id in pairs(getAreaTable() or {}) do
         area_total = area_total + 1
-        local ar = getAreaRooms(area_id)
-        if ar and next(ar) ~= nil then area_with_rooms = area_with_rooms + 1 end
+        if #f2t_map_area_room_list(area_id) > 0 then area_with_rooms = area_with_rooms + 1 end
     end
 
     local widget_live = (type(f2tMapHasLiveMapper) == "function" and f2tMapHasLiveMapper())

@@ -48,7 +48,7 @@ local function cartelRoomSet(cartel)
     local rooms = {}
     for _, areaId in pairs(getAreaTable()) do
         if getAreaUserData(areaId, "fed2_cartel") == cartel then
-            for _, roomId in ipairs(getAreaRooms(areaId) or {}) do
+            for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
                 rooms[roomId] = true
             end
         end

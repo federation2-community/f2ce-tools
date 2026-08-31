@@ -71,7 +71,7 @@ function f2t_hauling_phase_akaturi_get_job()
         cecho(string.format("\n<cyan>[hauling]<reset> Navigating to Armstrong Cuthbert on %s...\n", target_planet))
         local result = f2t_map_navigate(ac_hash)
 
-        if result == true then
+        if f2t_map_navigate_ok(result) then
             -- Verify we're actually at a known AC room
             local arrived_hash = f2t_get_current_room_hash()
             if arrived_hash == ac_hash then
@@ -267,7 +267,7 @@ function f2t_hauling_phase_akaturi_navigate_pickup()
     -- Navigate to room
     local result = f2t_map_navigate(room_id)
 
-    if result == true then
+    if f2t_map_navigate_ok(result) then
         -- Already at destination
         f2t_debug_log("[hauling/akaturi] Already at pickup location")
         F2T_HAULING_STATE.current_phase = "akaturi_collecting"
@@ -378,7 +378,7 @@ function f2t_hauling_phase_akaturi_navigate_delivery()
     -- Navigate to room
     local result = f2t_map_navigate(room_id)
 
-    if result == true then
+    if f2t_map_navigate_ok(result) then
         -- Already at destination
         f2t_debug_log("[hauling/akaturi] Already at delivery location")
         F2T_HAULING_STATE.current_phase = "akaturi_delivering"

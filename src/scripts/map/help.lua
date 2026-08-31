@@ -47,6 +47,7 @@ f2t_register_help("map", {
         {cmd="", desc=""},
         {cmd="Galaxy Topology:", desc=""},
         {cmd="map topology", desc="Show syndicates, cartels, and beacon builds"},
+        {cmd="map topology links", desc="List link rooms, flagging duplicates"},
         {cmd="map topology sync", desc="Sync model from display cartels/syndicates"},
         {cmd="map topology rebuild", desc="Re-derive all jump exits from the model"},
         {cmd="", desc=""},
@@ -76,6 +77,7 @@ f2t_register_help("map topology", {
     description = "Galaxy topology model: syndicates, cartels, beacons, and the jump graph derived from them",
     usage = {
         {cmd="map topology", desc="Show the known syndicate/cartel structure and beacon builds"},
+        {cmd="map topology links", desc="List every system's link room, flagging any with more than one"},
         {cmd="map topology sync", desc="Capture 'display cartels' + 'display syndicates' and rebuild jump exits"},
         {cmd="map topology rebuild", desc="Re-derive every link room's jump exits from the current model"},
     },
@@ -305,6 +307,7 @@ f2t_register_help("map exit", {
         {cmd="", desc=""},
         {cmd="map exit lock [room] <dir>", desc="Lock exit — navigation avoids"},
         {cmd="map exit unlock [room] <dir>", desc="Unlock exit"},
+        {cmd="map exit unlock all [area]", desc="Unlock every locked exit in an area"},
         {cmd="map exit death [room] <dir>", desc="Mark exit as danger"},
         {cmd="", desc=""},
         {cmd="map exit stub create [room] <dir>", desc="Create stub exit"},

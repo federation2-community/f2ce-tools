@@ -113,10 +113,8 @@ function f2t_map_connect_incoming_stubs(room_id, fed2_num)
     if not room_id or not fed2_num then return end
     local area_id = getRoomArea(room_id)
     if not area_id then return end
-    local area_rooms = getAreaRooms(area_id)
-    if not area_rooms then return end
     local fed2_num_str = tostring(fed2_num)
-    for _, other_room_id in pairs(area_rooms) do
+    for _, other_room_id in ipairs(f2t_map_area_room_list(area_id)) do
         if other_room_id ~= room_id then
             local stubs = getExitStubs(other_room_id)
             if stubs and next(stubs) ~= nil then
@@ -160,8 +158,13 @@ function f2t_map_process_special_exits(current_room_id, gmcp_room_data)
                 local dest_area   = parts[2]
                 local dest_num    = tonumber(parts[3])
                 if dest_system and dest_area and dest_num then
+                    -- Landing from orbit always sets you down on the planet's
+                    -- landing pad, so this stub is that room. Flagging it now
+                    -- is what lets "nav <planet>" resolve and reach it without
+                    -- anyone having walked the surface first.
                     local dest_data = {system=dest_system, area=dest_area, num=dest_num,
-                                       name=string.format("%s (via board)", dest_area), flags={}}
+                                       name=string.format("%s (via board)", dest_area),
+                                       flags={"shuttlepad"}}
                     local dest_area_id = f2t_map_get_or_create_area(dest_area, {system=dest_system})
                     if dest_area_id then
                         dest_room_id = f2t_map_create_room(dest_data, dest_area_id)
@@ -181,7 +184,3 @@ function f2t_map_process_special_exits(current_room_id, gmcp_room_data)
     end
 end
 
-function f2t_map_get_exit(room_id, direction)
-    if not room_id or not roomExists(room_id) then return nil end
-    return getRoomExits(room_id)[direction]
-end

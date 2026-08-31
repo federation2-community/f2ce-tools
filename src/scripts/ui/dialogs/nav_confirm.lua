@@ -9,14 +9,20 @@
 local _pendingNavConfirm = nil
 
 local function navConfirmBodyText(destination, hint)
+    -- Two different problems wear the same dialog: a place the map has never
+    -- heard of, and a place it knows but has no route to.
+    local problem = hint.mapped_but_unreachable
+        and string.format("Your map has no route to '%s' yet.", destination)
+        or string.format("'%s' isn't in your map yet.", destination)
+
     if hint.kind == "planet" then
         return string.format(
-            "'%s' isn't in your map yet.<br><br>Explore <font color='#7ab4ff'>%s</font> to look for its %s?",
-            destination, hint.name, hint.flag)
+            "%s<br><br>Explore <font color='#7ab4ff'>%s</font> to look for its %s?",
+            problem, hint.name, hint.flag)
     end
     return string.format(
-        "'%s' isn't in your map yet.<br><br>Travel to the <font color='#7ab4ff'>%s</font> system and explore for it?",
-        destination, hint.name)
+        "%s<br><br>Travel to the <font color='#7ab4ff'>%s</font> system and explore for it?",
+        problem, hint.name)
 end
 
 Mux.registerContent("f2t_nav_confirm", {

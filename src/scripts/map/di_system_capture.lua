@@ -1,37 +1,46 @@
 -- f2ce-tools map — DI system capture (ported from map_di_system_capture.lua)
 
 F2T_MAP_DI_SYSTEM_CAPTURE = F2T_MAP_DI_SYSTEM_CAPTURE or {
-    active = false, system_name = nil, planet_names = {}, timer_id = nil,
-}
-
-F2T_MAP_SOL_EXCLUDED_PLANETS = {
-    ["graveyard"] = true, ["hunt"] = true, ["magrathea"] = true, ["starbase1"] = true,
+    active = false, system_name = nil, planet_names = {},
 }
 
 function f2t_map_di_system_capture_start(system_name, callback)
+    f2t_capture_close("di_system")
     F2T_MAP_DI_SYSTEM_CAPTURE = {
         active = true, system_name = system_name,
-        planet_names = {}, timer_id = nil, callback = callback,
+        planet_names = {}, callback = callback,
     }
     send(string.format("di system %s", system_name), false)
+    -- Arm before the first line rather than on it, so a server that answers
+    -- with nothing at all still closes the capture instead of hanging it.
+    f2t_map_di_system_reset_timer()
 end
 
 function f2t_map_di_system_reset_timer()
-    if F2T_MAP_DI_SYSTEM_CAPTURE.timer_id then
-        killTimer(F2T_MAP_DI_SYSTEM_CAPTURE.timer_id)
-    end
-    F2T_MAP_DI_SYSTEM_CAPTURE.timer_id = tempTimer(0.5, function()
+    f2t_capture_arm("di_system", function()
         if F2T_MAP_DI_SYSTEM_CAPTURE.active then
             f2t_map_di_system_capture_complete()
         end
     end)
 end
 
+-- Set by the no-such-system trigger while a capture is open. "di system X"
+-- is the only thing that can tell us X is not a star system, and finding out
+-- is worth more than the planet list we asked for.
+function f2t_map_di_system_no_such_system()
+    if not F2T_MAP_DI_SYSTEM_CAPTURE or not F2T_MAP_DI_SYSTEM_CAPTURE.active then return false end
+    deleteLine()
+    F2T_MAP_DI_SYSTEM_CAPTURE.no_such_system = true
+    f2t_map_di_system_reset_timer()
+    return true
+end
+
 function f2t_map_di_system_capture_complete()
     local planet_lines = F2T_MAP_DI_SYSTEM_CAPTURE.planet_names
-    local system_name  = F2T_MAP_DI_SYSTEM_CAPTURE.system_name
-    local callback     = F2T_MAP_DI_SYSTEM_CAPTURE.callback
+    local callback       = F2T_MAP_DI_SYSTEM_CAPTURE.callback
+    local no_such_system = F2T_MAP_DI_SYSTEM_CAPTURE.no_such_system
 
+    f2t_capture_close("di_system")
     F2T_MAP_DI_SYSTEM_CAPTURE = {active = false}
 
     local planets = {}
@@ -67,19 +76,13 @@ function f2t_map_di_system_capture_complete()
         end
     end
 
-    if system_name and system_name:lower() == "sol" then
-        local filtered_planets = {}
-        for _, planet_name in ipairs(planets) do
-            if not F2T_MAP_SOL_EXCLUDED_PLANETS[planet_name:lower()] then
-                table.insert(filtered_planets, planet_name)
-            else
-                planets_without_exchange[planet_name] = nil
-            end
-        end
-        planets = filtered_planets
-    end
-
-    if callback then callback(planets, planets_without_exchange) end
+    -- A hardcoded list of Sol's non-tradeable planets used to be filtered out
+    -- here. The listing already publishes the same property per planet as
+    -- "Economy: None", which planets_without_exchange above reads: hauling
+    -- skips those outright and exploration maps them without hunting an
+    -- exchange. Enumerating the names as well only added a second, cruder
+    -- copy of that fact, and it had already drifted out of date.
+    if callback then callback(planets, planets_without_exchange, no_such_system) end
 end
 
 f2t_debug_log("[map] Loaded di_system_capture.lua")

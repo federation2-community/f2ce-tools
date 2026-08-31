@@ -1,1 +1,1 @@
-if F2T_MAP_MOVEMENT_KEYS then send("e") end
+if f2t_map_movement_keys_enabled() then send("e") end

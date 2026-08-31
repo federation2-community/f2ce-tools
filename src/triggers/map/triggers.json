@@ -1,7 +1,11 @@
 [
   {
     "name": "cartel_capture_end",
-    "patterns": [{"pattern": "^   Cartel", "type": "regex"}]
+    "patterns": [
+      {"pattern": "^   Cartel", "type": "regex"},
+      {"pattern": "^   Requests to join:$", "type": "regex"},
+      {"pattern": "^   Blish Cities:", "type": "regex"}
+    ]
   },
   {
     "name": "cartel_capture_member",
@@ -24,6 +28,13 @@
     "patterns": [{"pattern": "^  .+$", "type": "regex"}]
   },
   {
+    "name": "di_system_no_such",
+    "patterns": [{
+      "pattern": "There doesn't seem to be a star system with that name",
+      "type": "substring"
+    }]
+  },
+  {
     "name": "di_system_capture_planet",
     "patterns": [{"pattern": "^([^,]+, .+ system, .+ cartel(?:, .+ syndicate)?)$", "type": "regex"}]
   },
@@ -32,12 +43,29 @@
     "patterns": [{"pattern": "^System information for the (.+) system:$", "type": "regex"}]
   },
   {
-    "name": "explore_system_closed",
-    "patterns": [{"pattern": "^I'm afraid the (.+) system is closed to visitors at the moment\\.$", "type": "regex"}]
+    "name": "jump_exiled",
+    "patterns": [{
+      "pattern": "^Your request to make a hyperspace jump to the (.+) system has been denied",
+      "type": "regex"
+    }]
+  },
+  {
+    "name": "jump_not_at_link",
+    "patterns": [{
+      "pattern": "^You jump up and down, but nothing happens\\.$",
+      "type": "regex"
+    }]
   },
   {
     "name": "jump_no_direct_link",
     "patterns": [{"pattern": "^There isn't a direct link to (.+) from here\\.$", "type": "regex"}]
+  },
+  {
+    "name": "jump_system_closed",
+    "patterns": [{
+      "pattern": "^I'm afraid the (.+) system is closed to visitors at the moment\\.$",
+      "type": "regex"
+    }]
   },
   {
     "name": "jump_sol_credits_required",
@@ -53,6 +81,13 @@
   {
     "name": "speedwalk_customs_intercept",
     "patterns": [{"pattern": "Your routine is suddenly interrupted by the appearance", "type": "substring"}]
+  },
+  {
+    "name": "speedwalk_named_ship_required",
+    "patterns": [{
+      "pattern": "The landing controller accepts named ships only",
+      "type": "substring"
+    }]
   },
   {
     "name": "speedwalk_no_ship",
@@ -92,7 +127,7 @@
   {
     "name": "whereis_found",
     "patterns": [
-      {"pattern": "^.+ is in the (.+) system in the .+ cartel of the .+ syndicate\\.$", "type": "regex"}
+      {"pattern": "^.+ is in the (.+) system in the (.+) cartel of the (.+) syndicate\\.$", "type": "regex"}
     ]
   },
   {

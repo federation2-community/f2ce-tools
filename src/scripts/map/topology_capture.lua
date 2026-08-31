@@ -24,6 +24,7 @@ function f2t_map_topology_sync(callback, opts)
         end
         return false
     end
+    f2t_capture_close("topology")
     F2T_MAP_TOPOLOGY_CAPTURE = {
         active = true,
         phase = "cartels",
@@ -31,7 +32,6 @@ function f2t_map_topology_sync(callback, opts)
         cartels = {},
         syndicates = {},
         seen_start = false,
-        timer_id = nil,
         callback = callback,
         silent = silent,
     }
@@ -42,9 +42,7 @@ function f2t_map_topology_sync(callback, opts)
 end
 
 function f2t_map_topology_capture_reset_timer()
-    local capture = F2T_MAP_TOPOLOGY_CAPTURE
-    if capture.timer_id then killTimer(capture.timer_id) end
-    capture.timer_id = tempTimer(0.5, function()
+    f2t_capture_arm("topology", function()
         if F2T_MAP_TOPOLOGY_CAPTURE.active then
             f2t_map_topology_capture_phase_complete()
         end
@@ -66,6 +64,7 @@ end
 
 function f2t_map_topology_capture_finish()
     local capture = F2T_MAP_TOPOLOGY_CAPTURE
+    f2t_capture_close("topology")
     F2T_MAP_TOPOLOGY_CAPTURE = {active = false}
 
     local cartel_count, syndicate_count = 0, 0
@@ -115,6 +114,12 @@ function f2t_map_topology_capture_finish()
     for cartel in pairs(t.cartels) do
         if not t.systems[cartel] then t.systems[cartel] = cartel end
     end
+
+    -- Refusals exist to stop a stale model re-deriving a denied edge. The
+    -- sync just replaced the model from authority, so they have served out
+    -- their purpose. Closures and exiles are permission facts these listings
+    -- say nothing about, so they stay.
+    t.refused = {}
 
     t.synced_at = os.time()
     f2t_map_topology_save()

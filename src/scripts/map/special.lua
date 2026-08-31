@@ -240,4 +240,134 @@ function f2t_map_special_list(room_id)
     end
 end
 
+-- `map special ...`. Kept beside the special-exit functions it drives
+-- rather than in the alias file.
+function f2t_map_special_command(args)
+    local current_room = f2t_map_ensure_current_room(args)
+    if not current_room then return end
+
+    local rest = args:match("^special%s*(.*)") or ""
+
+    if rest == "" or f2t_handle_help("map special", rest) then
+        if rest == "" then f2t_show_registered_help("map special") end
+        return
+    end
+
+    local words = f2t_parse_words(rest)
+    local special_subcmd = words[1]
+
+    if special_subcmd == "arrival" then
+        local arrival_rest = string.match(rest, "^arrival%s*(.*)") or ""
+
+        if arrival_rest == "" or f2t_handle_help("map special arrival", arrival_rest) then
+            if arrival_rest == "" then f2t_show_registered_help("map special arrival") end
+            return
+        end
+
+        local command_or_remove = words[2]
+
+        if command_or_remove == "list" then
+            f2t_map_special_list_arrivals()
+        elseif command_or_remove == "remove" then
+            local success = f2t_map_special_remove_arrival(current_room)
+            if success then
+                cecho("\n<green>[map]<reset> On-arrival command removed\n")
+            else
+                cecho("\n<red>[map]<reset> Failed to remove on-arrival command\n")
+            end
+        else
+            local type_or_command = command_or_remove
+            local exec_type = F2T_MAP_ARRIVAL_TYPE_ALWAYS
+
+            if type_or_command == "always" or type_or_command == "once-room" or
+               type_or_command == "once-area" or type_or_command == "once-ever" then
+                exec_type = type_or_command
+
+                if #words < 3 then
+                    cecho("\n<red>[map]<reset> Missing command after execution type\n")
+                    cecho("\n<dim_grey>Usage: map special arrival [type] <command><reset>\n")
+                    return
+                end
+
+                local command_parts = {}
+                for i = 3, #words do table.insert(command_parts, words[i]) end
+                local command = table.concat(command_parts, " ")
+
+                local success = f2t_map_special_set_arrival(current_room, command, exec_type)
+                if success then
+                    cecho(string.format(
+                        "\n<green>[map]<reset> On-arrival command set (<cyan>%s<reset>): <white>%s<reset>\n",
+                        exec_type, command))
+                else
+                    cecho("\n<red>[map]<reset> Failed to set on-arrival command\n")
+                end
+            else
+                local command = string.match(rest, "^arrival%s+(.+)$")
+                if not command then
+                    cecho("\n<red>[map]<reset> Invalid command\n")
+                    return
+                end
+                local success = f2t_map_special_set_arrival(current_room, command, exec_type)
+                if success then
+                    cecho(string.format("\n<green>[map]<reset> On-arrival command set: <white>%s<reset>\n", command))
+                else
+                    cecho("\n<red>[map]<reset> Failed to set on-arrival command\n")
+                end
+            end
+        end
+
+    elseif special_subcmd == "circuit" then
+        local circuit_rest = string.match(args, "^special%s+circuit%s*(.*)") or ""
+
+        if circuit_rest == "" or f2t_handle_help("map special circuit", circuit_rest) then
+            if circuit_rest == "" then f2t_show_registered_help("map special circuit") end
+            return
+        end
+
+        local circuit_subcmd = words[2]
+
+        if circuit_subcmd == "create" then
+            f2t_map_circuit_cmd_create(words[3])
+
+        elseif circuit_subcmd == "set" then
+            local value = string.match(rest, "^circuit%s+set%s+%S+%s+%S+%s+(.+)$")
+            f2t_map_circuit_cmd_set(words[3], words[4], value)
+
+        elseif circuit_subcmd == "stop" then
+            local stop_action = words[3]
+            if not stop_action then
+                cecho("\n<red>[map]<reset> Usage: map special circuit stop add <id> <name>\n")
+                return
+            end
+            if stop_action == "add" then
+                f2t_map_circuit_cmd_stop_add(words[4], words[5])
+            elseif stop_action == "set" then
+                local value = string.match(rest, "^circuit%s+stop%s+set%s+%S+%s+%S+%s+arrival_pattern%s+(.+)$")
+                f2t_map_circuit_cmd_stop_set(words[4], words[5], words[6], value)
+            else
+                cecho(string.format("\n<red>[map]<reset> Unknown stop command: %s\n", stop_action))
+            end
+
+        elseif circuit_subcmd == "connect" then
+            f2t_map_circuit_cmd_connect(words[3])
+
+        elseif circuit_subcmd == "list" then
+            f2t_map_circuit_cmd_list()
+
+        elseif circuit_subcmd == "show" then
+            f2t_map_circuit_cmd_show(words[3])
+
+        elseif circuit_subcmd == "delete" then
+            f2t_map_circuit_cmd_delete(words[3])
+
+        else
+            cecho(string.format("\n<red>[map]<reset> Unknown circuit command: %s\n", circuit_subcmd))
+        end
+
+    else
+        cecho(string.format("\n<red>[map]<reset> Unknown special subcommand: %s\n", special_subcmd))
+        f2t_show_help_hint("map special")
+    end
+end
+
 f2t_debug_log("[map-special] Special navigation system initialized")

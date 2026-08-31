@@ -288,6 +288,29 @@ function f2t_map_manual_unlock_exit(room_id, direction)
     return true
 end
 
+-- One-off repair for maps carrying exit locks an exploration run left behind
+-- (it used to record them in a shape its own cleanup couldn't see). Nothing
+-- distinguishes those from a deliberate "map exit lock", so this clears both
+-- and says so.
+function f2t_map_manual_unlock_area_exits(area_id)
+    local area_name = getRoomAreaName(area_id) or tostring(area_id)
+    local cleared = 0
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        for direction in pairs(getRoomExits(room_id) or {}) do
+            if hasExitLock(room_id, direction) then
+                lockExit(room_id, direction, false)
+                cleared = cleared + 1
+            end
+        end
+    end
+    cecho(string.format("\n<green>[map]<reset> Unlocked %d exit(s) in <white>%s<reset>\n", cleared, area_name))
+    if cleared > 0 then
+        cecho("  <dim_grey>Deliberate exit locks here were cleared too" ..
+            " - re-apply with 'map exit lock'<reset>\n")
+    end
+    return cleared
+end
+
 function f2t_map_manual_lock_status(room_id)
     if not room_id or not roomExists(room_id) then
         cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return
