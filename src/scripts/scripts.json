@@ -10,5 +10,6 @@
   {"name": "player_db"},
   {"name": "rank"},
   {"name": "status"},
+  {"name": "mudlet_env"},
   {"name": "init"}
 ]

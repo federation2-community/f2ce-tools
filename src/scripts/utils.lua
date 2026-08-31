@@ -8,6 +8,16 @@
 local _f2tPkgInfo = getPackageInfo("f2ce-tools")
 F2T_VERSION = (_f2tPkgInfo and _f2tPkgInfo.version) or "unknown"
 
+-- ── Content registrar list ────────────────────────────────────────────────────
+-- Owned here, and cleared outright rather than kept with `or {}`, because this
+-- script loads first (scripts.json, and it must stay first for that reason) and
+-- every content module appends to the list as it loads. Uninstalling a package
+-- does not clear Lua globals, so on an in-place upgrade the previous version's
+-- list is still here and its closures still callable: keeping it would run both
+-- generations of every registrar, the outgoing one against globals the incoming
+-- version has since changed.
+F2T_CONTENT_REGISTRARS = {}
+
 -- ── Web client detection ──────────────────────────────────────────────────────
 
 -- True only in the dedicated Mudlet Web client (the "mudix" browser runtime).

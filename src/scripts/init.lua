@@ -77,6 +77,10 @@ local function afterLogin(fn)
     end)
 end
 
+-- Exposed so other scripts can gate on login without a second copy of this
+-- handler drifting from it (mudlet_env.lua).
+f2t_after_login = afterLogin
+
 -- True when the currently loaded Muxlet already meets F2T_REQUIRED_MUXLET
 -- (exact pin, not just a floor — see Mux._versionSatisfied). Reuses Muxlet's
 -- own comparator rather than re-parsing versions here; only exists so the boot
@@ -125,7 +129,12 @@ function f2tRegisterAllContent()
     for _, registrar in ipairs(F2T_CONTENT_REGISTRARS or {}) do
         local ok, err = pcall(registrar)
         if not ok then
-            f2t_debug_log("[init] content registrar error: %s", tostring(err))
+            -- Loud, not debug-only: a registrar that dies takes its panel out of
+            -- the Content Library and leaves any pane holding it blank, which
+            -- reads as a Muxlet fault rather than a script error.
+            cecho(string.format(
+                "\n<red>[f2ce-tools]<reset> A content panel failed to register: %s\n"
+                .. "  Its pane will be empty. Please report this.\n", tostring(err)))
         end
     end
 end
@@ -307,7 +316,15 @@ local function installMuxlet()
 end
 
 if Mux and Mux._ready then
-    onMuxletReady()
+    -- Deferred by a tick, never called straight through. Mudlet runs each script
+    -- body as it loads, in document order, and this file is 12th of 221 — every
+    -- content module that fills F2T_CONTENT_REGISTRARS loads after it. When the
+    -- pinned Muxlet is already loaded (an in-place upgrade, rather than a fresh
+    -- install where Muxlet arrives later and muxletReady drives this), bootHost
+    -- runs onReady synchronously, so registering from here would only ever see
+    -- the handful of registrars declared above this file. One tick lands after
+    -- the whole package has loaded.
+    tempTimer(0, onMuxletReady)
 elseif not table.contains(getPackages(), MUXLET_PKG) then
     if not MUXLET_URL then
         cecho("\n<red>[f2ce-tools]<reset> Cannot install Muxlet: build is missing MUXLET_URL injection. "

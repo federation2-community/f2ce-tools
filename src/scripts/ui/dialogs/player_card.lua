@@ -216,7 +216,10 @@ local function initialContentSize(player)
     local W = math.max(360, math.min(580, math.max(headerNeed, bodyNeed)))
 
     local offlineH = isOffline and ROW_H or 0
-    local H = BADGE_H + offlineH + ROW_H
+    -- +2 matches the divider line render() draws right under the badge row
+    -- (rowY += 2 there, alongside the += BADGE_H) -- omitting it here left
+    -- the pane 2px shorter than its actual content, every card, always.
+    local H = BADGE_H + 2 + offlineH + ROW_H
     if hasOwnership                then H = H + LOC_GAP end
     if hasCompany and isIndustrial then H = H + ROW_H end
     if hasCompany and isMfrFin     then H = H + ROW_H end
@@ -235,13 +238,92 @@ local function initialContentSize(player)
     return W, H
 end
 
+-- ── Quick-send slot (persistent — survives every render) ───────────────────────
+-- Built once per card and left alone afterward. render() deletes/recreates its
+-- own "_in" slot on every data refresh (see below), which would destroy and
+-- recreate this command line too if it lived there -- silently dropping
+-- keyboard focus and any unsent draft out from under whatever the user was
+-- mid-keystroke on. Living in its own container that's never deleted, only
+-- repositioned (via :move) and re-styled, sidesteps that entirely.
+local function ensureQuickSlot(target)
+    if target._f2tQuickSlot then return target._f2tQuickSlot end
+
+    local quickCmdName = target._gid .. "_qcmd"
+    local actionKey     = "_f2t_qsend_" .. target._gid
+    _G[actionKey] = function(text)
+        if text and text ~= "" then
+            expandAlias(string.format("tb %s %s", target._f2tCardPlayerName, text), false)
+            clearCmdLine(quickCmdName)
+        end
+    end
+    target._f2tCardActionKey = actionKey
+
+    local q = Geyser.Container:new({
+        name = target._gid .. "_quickslot", x = 0, y = 0, width = "100%", height = CMD_H + 32,
+    }, target.content)
+
+    -- Fills the margins around the frame/button (the divider gap, the side
+    -- edges) that render()'s own bg fill used to cover back when this row
+    -- was still a child of its disposable _in slot.
+    local qbg = Geyser.Label:new({ name = target._gid .. "_qbg", x="0%", y="0%", width="100%", height="100%" }, q)
+    qbg:setStyleSheet(Mux.css and Mux.css("content", target) or "background-color: rgba(15,17,30,255); border: none;")
+
+    local qdiv = Geyser.Label:new({ name = target._gid .. "_qdiv", x=4, y=4, width=tostring(-8), height=1 }, q)
+    qdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
+
+    local cmdFrame = Geyser.Label:new({
+        name = target._gid .. "_qframe", x = CMD_L_M - 2, y = 8, width = FRAME_W, height = CMD_H + 4,
+    }, q)
+    cmdFrame:setStyleSheet([[
+        background: rgba(18, 20, 38, 235);
+        border: 1px solid rgba(75, 90, 135, 190);
+        border-radius: 4px;
+    ]])
+
+    local quickCmd = Geyser.CommandLine:new({
+        name = quickCmdName, x = CMD_L_M, y = 10, width = CMD_W, height = CMD_H,
+    }, q)
+    quickCmd:setStyleSheet([[
+        QPlainTextEdit {
+            background: transparent;
+            color: rgba(198, 210, 238, 255);
+            border: none;
+            font-size: 12px;
+            font-family: "Consolas","Monaco",monospace;
+            padding: 2px 6px;
+        }
+        QPlainTextEdit::placeholder {
+            color: rgba(110, 120, 160, 200);
+            font-style: italic;
+        }
+    ]])
+    quickCmd:setAction(actionKey)
+    if setCommandLineAction then setCommandLineAction(quickCmdName, actionKey) end
+
+    local sendBtn = Geyser.Label:new({
+        name = target._gid .. "_qsend", x = SEND_X, y = 8, width = SEND_W, height = CMD_H + 4,
+    }, q)
+    sendBtn:echo("<center>▶</center>")
+    sendBtn:setClickCallback(function()
+        local text = getCmdLine(quickCmdName)
+        if text and text ~= "" then
+            expandAlias(string.format("tb %s %s", target._f2tCardPlayerName, text), false)
+            clearCmdLine(quickCmdName)
+        end
+    end)
+
+    target._f2tQuickSlot = { container = q, send = sendBtn, bg = qbg }
+    return target._f2tQuickSlot
+end
+
 -- ── Render ────────────────────────────────────────────────────────────────────
 -- Called on apply, resize, restore, and refresh — i.e. more than once over a
 -- card's life, none of which go through Muxlet's own content-slot teardown (that
 -- only fires when the content is removed/reapplied wholesale). So render() owns
 -- a child container it fully deletes and recreates each call, the same
 -- "disposable slot" pattern _applyContent itself uses, rather than hand-tracking
--- every widget it creates.
+-- every widget it creates. The quick-send row is the one exception -- see
+-- ensureQuickSlot above.
 local function render(target, player)
     -- delete() only schedules the old widgets' underlying Qt objects for teardown
     -- (deleteLater) -- they stay fully visible for at least one event-loop tick
@@ -250,6 +332,10 @@ local function render(target, player)
     -- guarantees the new widgets never share a name with the still-tearing-down
     -- old ones (a fresh render() with an identical row layout would otherwise
     -- create same-named replacements while the old ones are still pending delete).
+    -- The quick-send command line lives outside this slot entirely (see
+    -- ensureQuickSlot below) specifically so a data refresh never touches it --
+    -- destroying/recreating it would silently drop keyboard focus and any
+    -- unsent draft mid-keystroke.
     if target._f2tCardSlot then
         pcall(function() target._f2tCardSlot:hide() end)
         pcall(function() target._f2tCardSlot:delete() end)
@@ -261,7 +347,6 @@ local function render(target, player)
     }, target.content)
     target._f2tCardSlot = _in
 
-    local name      = player.name or target._f2tCardPlayerName or "Unknown"
     local rank      = player.rank       or "Unknown"
     local loc       = player.location   or ""
     local company   = player.company    or ""
@@ -583,67 +668,21 @@ local function render(target, player)
         end
     end
 
-    -- ── Quick-send (online only) ──────────────────────────────────────────────
+    -- ── Quick-send (online only) — persistent slot, positioned/re-styled only ──
     if not isOffline then
-        local qdiv = Geyser.Label:new({ name=wid(), x=4, y=rowY+4, width=tostring(-8), height=1 }, _in)
-        qdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
-
-        local cmdY = rowY + 10
-        local quickCmdName = target._gid .. "_qcmd"
-        local actionKey    = "_f2t_qsend_" .. target._gid
-        _G[actionKey] = function(text)
-            if text and text ~= "" then
-                expandAlias(string.format("tb %s %s", name, text), false)
-                clearCmdLine(quickCmdName)
-            end
-        end
-        target._f2tCardActionKey = actionKey
-
-        local cmdFrame = Geyser.Label:new({
-            name   = wid(),
-            x      = CMD_L_M - 2,
-            y      = cmdY - 2,
-            width  = FRAME_W,
-            height = CMD_H + 4,
-        }, _in)
-        cmdFrame:setStyleSheet([[
-            background: rgba(18, 20, 38, 235);
-            border: 1px solid rgba(75, 90, 135, 190);
-            border-radius: 4px;
-        ]])
-
-        local quickCmd = Geyser.CommandLine:new({
-            name   = quickCmdName,
-            x      = CMD_L_M,
-            y      = cmdY,
-            width  = CMD_W,
-            height = CMD_H,
-        }, _in)
-        quickCmd:setStyleSheet([[
-            QPlainTextEdit {
-                background: transparent;
-                color: rgba(198, 210, 238, 255);
-                border: none;
-                font-size: 12px;
-                font-family: "Consolas","Monaco",monospace;
-                padding: 2px 6px;
-            }
-            QPlainTextEdit::placeholder {
-                color: rgba(110, 120, 160, 200);
-                font-style: italic;
-            }
-        ]])
-        quickCmd:setAction(actionKey)
-        if setCommandLineAction then setCommandLineAction(quickCmdName, actionKey) end
-
-        local sendBtn = Geyser.Label:new({
-            name   = wid(),
-            x      = SEND_X,
-            y      = cmdY - 2,
-            width  = SEND_W,
-            height = CMD_H + 4,
-        }, _in)
-        sendBtn:setStyleSheet(string.format([[
+        local q = ensureQuickSlot(target)
+        q.container:show()
+        q.container:move(0, rowY)
+        -- _in was just deleted and recreated above; its fresh full-bleed bg
+        -- fill would otherwise land on top of this persistent container in
+        -- the Qt stacking order (last-created draws topmost), burying it.
+        -- raise() alone only touches the container's own (non-existent --
+        -- bare "container" type has no backing widget) name; raiseAll() is
+        -- what actually walks down and raises each real leaf widget.
+        q.container:raiseAll()
+        q.bg:setStyleSheet(Mux.css and Mux.css("content", target)
+            or "background-color: rgba(15,17,30,255); border: none;")
+        q.send:setStyleSheet(string.format([[
             QLabel {
                 background-color: rgba(18, 20, 38, 235);
                 color: %s;
@@ -658,14 +697,8 @@ local function render(target, player)
                 color: rgba(220, 235, 255, 255);
             }
         ]], accent, accent))
-        sendBtn:echo("<center>▶</center>")
-        sendBtn:setClickCallback(function()
-            local text = getCmdLine(quickCmdName)
-            if text and text ~= "" then
-                expandAlias(string.format("tb %s %s", name, text), false)
-                clearCmdLine(quickCmdName)
-            end
-        end)
+    elseif target._f2tQuickSlot then
+        target._f2tQuickSlot.container:hide()
     end
 end
 
@@ -715,7 +748,9 @@ function f2tRegisterPlayerCard()
                 _G[target._f2tCardActionKey] = nil
                 target._f2tCardActionKey = nil
             end
-            target._f2tCardSlot = nil   -- about to be destroyed with the rest of the content slot
+            -- both about to be destroyed with the rest of the content slot
+            target._f2tCardSlot  = nil
+            target._f2tQuickSlot = nil
         end,
 
         resize = function(target) renderCard(target) end,
