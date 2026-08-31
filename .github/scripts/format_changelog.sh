@@ -2,10 +2,12 @@
 # Formats commit history as markdown bullets. A single-line commit message
 # becomes one bullet. A commit whose first message line already starts with
 # "- " has no real subject of its own (it's just a run of hyphenated lines) —
-# every such line is a peer, not a child of the first, so those get an empty
-# parent bullet with all of them nested underneath as sub-bullets. A commit
-# with a genuine subject line followed by "- " prefixed body lines keeps the
-# subject as the parent bullet and nests the body lines under it.
+# every such line is a peer, not a child of the first, so each becomes its
+# own top-level bullet (no empty placeholder parent, which would otherwise
+# render as a content-less bullet stacked directly on top of its first
+# child's bullet). A commit with a genuine subject line followed by "- "
+# prefixed body lines keeps the subject as the parent bullet and nests the
+# body lines under it.
 #
 # Body lines can themselves be nested to any depth (indentation is taken as
 # 2 spaces per level). A line that isn't itself a "- " bullet is treated as
@@ -57,8 +59,7 @@ print_bullets() {
       echo "- $first"
     fi
   elif [[ "$first" == "- "* ]]; then
-    echo "-"
-    print_bullets 1 "${lines[@]}"
+    print_bullets 0 "${lines[@]}"
   else
     echo "- $first"
     print_bullets 1 "${lines[@]:1}"

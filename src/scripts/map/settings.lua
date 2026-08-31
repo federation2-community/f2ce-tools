@@ -14,6 +14,13 @@ f2t_settings_register("map", "planet_nav_default", {
     choices     = {"shuttlepad", "orbit", "exchange"},
 })
 
+f2t_settings_register("map", "nav_explore_confirm", {
+    label       = "Ask before auto-exploring",
+    description = "When 'nav' can only reach a destination by exploring first, ask before setting off. "
+               .. "Turn this off to let it go without asking",
+    default     = true,
+})
+
 f2t_settings_register("map", "speedwalk_timeout", {
     label       = "Speedwalk timeout (s)",
     description = "Seconds to wait for movement confirmation before treating speedwalk as stuck",

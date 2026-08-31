@@ -211,6 +211,70 @@ function f2t_galaxy_explore(kind, name)
     expandAlias("map explore " .. kind .. " " .. name)
 end
 
+-- "Planet found" dialog: a planet row's dot going green means brief-mode
+-- exploration has nothing obviously missing, so clicking it again shouldn't
+-- silently repeat that. Offers a full sweep instead, rather than adding a
+-- second per-row button just for full mode. Follows the same
+-- createDialog/registerContent(internal)/dialogCss/wireDialogButton pattern
+-- as ui/dialogs/nav_confirm.lua's Proceed/Cancel dialog.
+local _pendingFullExploreConfirm = nil
+
+Mux.registerContent("f2t_galaxy_full_explore_confirm", {
+    internal = true,
+    apply = function(target)
+        if target.contentBg then target.contentBg:echo(""); target.contentBg:hide() end
+        if not _pendingFullExploreConfirm then return end
+        local pending = _pendingFullExploreConfirm
+        _pendingFullExploreConfirm = nil
+
+        local c = target.content
+        local body = Geyser.Label:new({
+            name = target._gid .. "_gxfe_body", x = "5%", y = 14, width = "90%", height = 100,
+        }, c)
+        body:setStyleSheet(Mux.dialogCss.body)
+        body:echo(string.format(
+            "<font color='#7ab4ff'>%s</font> has already been found.<br><br>" ..
+            "Run a full exploration to sweep every room?", pending.name))
+
+        local cancelBtn = Geyser.Label:new({
+            name = target._gid .. "_gxfe_cancel", x = "8%", y = 128, width = "38%", height = 34,
+        }, c)
+        cancelBtn:setStyleSheet(Mux.dialogCss.button)
+        cancelBtn:echo("<center>Cancel</center>")
+        Mux.wireDialogButton(cancelBtn, Mux.dialogCss.button, Mux.dialogCss.buttonHover)
+
+        local fullBtn = Geyser.Label:new({
+            name = target._gid .. "_gxfe_full", x = "54%", y = 128, width = "38%", height = 34,
+        }, c)
+        fullBtn:setStyleSheet(Mux.dialogCss.buttonPrimary)
+        fullBtn:echo("<center>Full Explore</center>")
+        Mux.wireDialogButton(fullBtn, Mux.dialogCss.buttonPrimary, Mux.dialogCss.buttonPrimaryHover)
+
+        target.onClose = function() end
+        cancelBtn:setClickCallback(function()
+            target.onClose = nil
+            target:close()
+        end)
+        fullBtn:setClickCallback(function()
+            target.onClose = nil
+            target:close()
+            -- The "map explore planet <name>" form is hardcoded to brief mode;
+            -- "full <name>" is the generic dispatcher form that actually
+            -- accepts a mode, auto-detecting planet vs. system by name.
+            expandAlias("map explore full " .. pending.name)
+        end)
+    end,
+    remove = function(_) end,
+})
+
+local function showGalaxyFullExploreConfirm(name)
+    local dialog = Mux.createDialog({ title = "Planet Found", width = 420, height = 210 })
+    _pendingFullExploreConfirm = { name = name }
+    Mux._applyContent(dialog, "f2t_galaxy_full_explore_confirm")
+    dialog:show()
+    dialog:raise()
+end
+
 -- Search match helpers
 local function qMatches(name, q)
     return name and q ~= "" and name:lower():find(q:lower(), 1, true) ~= nil
@@ -431,8 +495,12 @@ local STATE_PCT  = 4    -- % width of the state dot, reserved before every row's
 -- explore button: clicking it explores that syndicate/cartel/system/planet,
 -- so status and action live in one element instead of two.
 local STATE_DOT_GLYPH = "●"
+-- No "click to check for anything new" for the mapped case: a refresh
+-- already reflects any new rooms as unmapped/partial on its own, and a
+-- planet's mapped click opens the full-explore dialog instead (see
+-- showGalaxyFullExploreConfirm) rather than re-running brief mode.
 local STATE_TOOLTIP = {
-    mapped   = "Explored — click to check for anything new",
+    mapped   = "Explored",
     partial  = "Partially Explored — click to continue exploring",
     unmapped = "Unexplored — click to explore",
 }
@@ -545,8 +613,14 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
     -- pattern already proven to work).
     dot:echo(string.format("<center><span style='color:%s;'>%s</span></center>",
         STATE_COLOR[cov.state] or STATE_COLOR.unmapped, STATE_DOT_GLYPH))
-    dot:setClickCallback(function() f2t_galaxy_explore(row_type, name) end)
-    dot:setToolTip(STATE_TOOLTIP[cov.state] or STATE_TOOLTIP.unmapped)
+    local planet_already_found = (row_type == "planet" and cov.state == "mapped")
+    if planet_already_found then
+        dot:setClickCallback(function() showGalaxyFullExploreConfirm(name) end)
+        dot:setToolTip("Explored — click for full explore options")
+    else
+        dot:setClickCallback(function() f2t_galaxy_explore(row_type, name) end)
+        dot:setToolTip(STATE_TOOLTIP[cov.state] or STATE_TOOLTIP.unmapped)
+    end
 
     local icon_x_pct = dot_x_pct + STATE_PCT
     local ic = ICONS[row_type]

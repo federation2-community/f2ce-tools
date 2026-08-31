@@ -158,8 +158,13 @@ end
 -- Ask before exploring, once. `run` gets opts with `interactive` cleared, so
 -- a single yes authorises the whole self-heal instead of stopping to ask
 -- again for each leg of the thing it just authorised.
+--
+-- Two things can waive the question: an automated caller, which never wanted
+-- to be asked, and the "Ask before auto-exploring" setting, which is how
+-- someone who always answers yes stops being asked. Read at the point of use
+-- so a change in the settings tab takes effect on the next nav.
 local function confirmThen(destination, hint, error_msg, opts, run)
-    if not opts.interactive then
+    if not opts.interactive or not f2t_settings_get("map", "nav_explore_confirm") then
         run(opts)
         return
     end
