@@ -3,5 +3,7 @@
   {"name": "map_import"},
   {"name": "map_legend"},
   {"name": "popups"},
-  {"name": "nav_confirm"}
+  {"name": "nav_confirm"},
+  {"name": "explore_reset_confirm"},
+  {"name": "explore_scope_confirm"}
 ]

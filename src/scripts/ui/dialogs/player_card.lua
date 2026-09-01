@@ -258,21 +258,27 @@ local function ensureQuickSlot(target)
     end
     target._f2tCardActionKey = actionKey
 
+    -- height="-0px": Geyser's negative-size convention for "stretch to the far
+    -- edge of the parent" -- resolved live against target.content's real Qt
+    -- geometry on every reposition, not a fixed pixel guess. Exactly matching
+    -- the pane's true bottom edge by construction, whatever it turns out to be,
+    -- sidesteps needing to reverse-engineer Muxlet's chrome/inset math by hand.
     local q = Geyser.Container:new({
-        name = target._gid .. "_quickslot", x = 0, y = 0, width = "100%", height = CMD_H + 32,
+        name = target._gid .. "_quickslot", x = 0, y = 0, width = "100%", height = "-0px",
     }, target.content)
 
     -- Fills the margins around the frame/button (the divider gap, the side
-    -- edges) that render()'s own bg fill used to cover back when this row
+    -- edges, and now whatever's left below the button down to the pane's real
+    -- bottom) that render()'s own bg fill used to cover back when this row
     -- was still a child of its disposable _in slot.
     local qbg = Geyser.Label:new({ name = target._gid .. "_qbg", x="0%", y="0%", width="100%", height="100%" }, q)
     qbg:setStyleSheet(Mux.css and Mux.css("content", target) or "background-color: rgba(15,17,30,255); border: none;")
 
-    local qdiv = Geyser.Label:new({ name = target._gid .. "_qdiv", x=4, y=4, width=tostring(-8), height=1 }, q)
+    local qdiv = Geyser.Label:new({ name = target._gid .. "_qdiv", x=4, y=8, width=tostring(-8), height=1 }, q)
     qdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
 
     local cmdFrame = Geyser.Label:new({
-        name = target._gid .. "_qframe", x = CMD_L_M - 2, y = 8, width = FRAME_W, height = CMD_H + 4,
+        name = target._gid .. "_qframe", x = CMD_L_M - 2, y = 16, width = FRAME_W, height = CMD_H + 4,
     }, q)
     cmdFrame:setStyleSheet([[
         background: rgba(18, 20, 38, 235);
@@ -281,7 +287,7 @@ local function ensureQuickSlot(target)
     ]])
 
     local quickCmd = Geyser.CommandLine:new({
-        name = quickCmdName, x = CMD_L_M, y = 10, width = CMD_W, height = CMD_H,
+        name = quickCmdName, x = CMD_L_M, y = 18, width = CMD_W, height = CMD_H,
     }, q)
     quickCmd:setStyleSheet([[
         QPlainTextEdit {
@@ -301,7 +307,7 @@ local function ensureQuickSlot(target)
     if setCommandLineAction then setCommandLineAction(quickCmdName, actionKey) end
 
     local sendBtn = Geyser.Label:new({
-        name = target._gid .. "_qsend", x = SEND_X, y = 8, width = SEND_W, height = CMD_H + 4,
+        name = target._gid .. "_qsend", x = SEND_X, y = 16, width = SEND_W, height = CMD_H + 4,
     }, q)
     sendBtn:echo("<center>▶</center>")
     sendBtn:setClickCallback(function()
@@ -621,14 +627,23 @@ local function render(target, player)
     -- before deciding how many titles fit in what's left. ─────────────────────
     local quickH = isOffline and 14 or (10 + CMD_H + 22)
 
+    -- Used below both to fit titles AND to position the quick-send row.
+    -- target.content:get_height() looked like the more honest source of truth
+    -- than trusting this function's own row-accumulation math to line up with
+    -- initialContentSize's estimate -- but in practice it reads back a
+    -- genuinely different value across renders of the *same* unchanged player
+    -- data (confirmed: titles that fit fine on one render got truncated to
+    -- "showing 2 of 3" on the next, nothing about the player had changed). A
+    -- measurement that unstable isn't safe to build layout decisions on, so
+    -- this goes back to the deterministic formula -- computedH here is
+    -- guaranteed to equal exactly what render()'s own rowY accumulates for
+    -- this same player, since both walk the same fields in the same order.
+    local _, computedH = initialContentSize(player)
+
     -- ── Titles (fit as many as the remaining live content height allows) ──────
     if #titles > 0 then
-        -- Measured off target.content (the stable parent), not the slot just
-        -- created above — a freshly-created 100% child hasn't resolved its own
-        -- live size yet within this same tick.
-        local ch = target.content:get_height(); if ch < 50 then ch = 600 end
         local TITLE_OVERHEAD = 10 + ROW_H
-        local available = ch - rowY - quickH
+        local available = computedH - rowY - quickH
         local shownTitles = 0
         if available >= (TITLE_OVERHEAD + 22) then
             shownTitles = math.min(#titles, math.floor((available - TITLE_OVERHEAD) / 22))
@@ -670,16 +685,35 @@ local function render(target, player)
 
     -- ── Quick-send (online only) — persistent slot, positioned/re-styled only ──
     if not isOffline then
+        -- Shrink _in's bg to stop exactly where the quick slot begins, instead
+        -- of overlapping it and depending on z-order to stay out of its way.
+        -- Nothing else in _in extends past this rowY (it's the final value,
+        -- computed after every row above), and the quick slot's own qbg covers
+        -- everything from here down -- so the two never occupy the same pixels
+        -- and which one Qt happens to paint first stops mattering. That
+        -- z-order dependency turned out to be real: Mux.raiseFloatingPanes()
+        -- (called after every location-driven refresh) does outer:raiseAll()
+        -- on the whole pane, which re-raises _in -- freshly deleted and
+        -- re-inserted by this same render, landing after the long-lived quick
+        -- slot in insertion order -- right back on top of it.
+        --
+        -- rowY lands exactly at computedH - quickH by construction (both this
+        -- function and initialContentSize walk the same fields in the same
+        -- order), so this clamp is a no-op in the normal case. It only
+        -- matters if player.titles grew since this card was created -- the
+        -- pane's real size is frozen at creation (resizable=false), but
+        -- computedH is recalculated fresh against today's data, so it could
+        -- read taller than what the pane actually has. CLAMP_MARGIN is a
+        -- small deliberate safety buffer for that case; the quick slot's own
+        -- "-0px" auto-fill height (see ensureQuickSlot) reaches the true
+        -- bottom regardless of exactly where this lands, so erring toward
+        -- extra padding here is harmless.
+        local CLAMP_MARGIN = 8
+        local qY = math.min(rowY, math.max(0, computedH - (CMD_H + 32 + CLAMP_MARGIN)))
+        bg:resize(nil, qY)
         local q = ensureQuickSlot(target)
         q.container:show()
-        q.container:move(0, rowY)
-        -- _in was just deleted and recreated above; its fresh full-bleed bg
-        -- fill would otherwise land on top of this persistent container in
-        -- the Qt stacking order (last-created draws topmost), burying it.
-        -- raise() alone only touches the container's own (non-existent --
-        -- bare "container" type has no backing widget) name; raiseAll() is
-        -- what actually walks down and raises each real leaf widget.
-        q.container:raiseAll()
+        q.container:move(0, qY)
         q.bg:setStyleSheet(Mux.css and Mux.css("content", target)
             or "background-color: rgba(15,17,30,255); border: none;")
         q.send:setStyleSheet(string.format([[

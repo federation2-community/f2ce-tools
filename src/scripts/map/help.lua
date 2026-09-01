@@ -44,12 +44,15 @@ f2t_register_help("map", {
         {cmd="map explore syndicate [name]", desc="Explore all cartels in a syndicate, traveling there first"},
         {cmd="map explore galaxy", desc="Explore all cartels in galaxy"},
         {cmd="map explore room <text>", desc="Walk current planet until a room name contains this text"},
+        {cmd="map explore reset <system|planet>", desc="Wipe all mapped rooms for that context and start over"},
         {cmd="", desc=""},
         {cmd="Galaxy Topology:", desc=""},
         {cmd="map topology", desc="Show syndicates, cartels, and beacon builds"},
         {cmd="map topology links", desc="List link rooms, flagging duplicates"},
         {cmd="map topology sync", desc="Sync model from display cartels/syndicates"},
         {cmd="map topology rebuild", desc="Re-derive all jump exits from the model"},
+        {cmd="map topology stranded [system]", desc="List rooms unreachable from that system's live link room"},
+        {cmd="map topology stranded purge [system]", desc="Permanently delete those stranded rooms"},
         {cmd="", desc=""},
         {cmd="Import/Export:", desc=""},
         {cmd="map export", desc="Export map to JSON file (file dialog)"},
@@ -80,8 +83,14 @@ f2t_register_help("map topology", {
         {cmd="map topology links", desc="List every system's link room, flagging any with more than one"},
         {cmd="map topology sync", desc="Capture 'display cartels' + 'display syndicates' and rebuild jump exits"},
         {cmd="map topology rebuild", desc="Re-derive every link room's jump exits from the current model"},
+        {cmd="map topology stranded [system]", desc="List rooms unreachable from that system's live link room" ..
+            " (default: current system) - a system rebuild (Dyson Sphere, etc.) can renumber a whole space" ..
+            " area and leave old rooms behind, still named but disconnected"},
+        {cmd="map topology stranded all", desc="Same check across every mapped system, not just one"},
+        {cmd="map topology stranded purge [system]", desc="Permanently delete those stranded rooms from the map"},
     },
-    examples = {"map topology", "map topology sync"},
+    examples = {"map topology", "map topology sync", "map topology stranded", "map topology stranded all",
+        "map topology stranded purge"},
 })
 
 f2t_register_help("map dest", {
@@ -189,6 +198,9 @@ f2t_register_help("map explore", {
         {cmd="map explore pause", desc="Pause exploration"},
         {cmd="map explore resume", desc="Resume paused exploration"},
         {cmd="map explore status", desc="Show current progress"},
+        {cmd="map explore reset <system|planet>", desc="Delete ALL mapped rooms for that context (requires" ..
+            " confirmation) so the next explore rebuilds it from scratch - for when the map is suspect" ..
+            " enough that 'map topology stranded purge' isn't confidence-inspiring"},
     },
     examples = {
         "map explore                      # Context-aware brief exploration",
@@ -197,6 +209,7 @@ f2t_register_help("map explore", {
         "map explore full                 # Full exploration of current area",
         "map explore room Cave            # Hunt current planet for any room name containing 'Cave'",
         "map explore stop                 # Stop and show statistics",
+        "map explore reset Stellar        # Wipe Stellar's whole space area and start over",
     },
 })
 

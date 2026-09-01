@@ -28,6 +28,22 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
 
     cartel_name = cartel_name:gsub("^%l", string.upper)
 
+    -- A standalone run (typed directly, or the Galaxy Navigator's dot click -
+    -- both just expand to this same call) can be a long, many-system sweep
+    -- from a single click with no chance to back out. A cartel nested under
+    -- a syndicate/galaxy sweep already got its one confirmation at that
+    -- larger run's own start and shouldn't ask again per cartel.
+    if not on_complete_callback and f2tShowExploreScopeConfirm then
+        f2tShowExploreScopeConfirm("cartel", cartel_name,
+            function() f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback) end,
+            function() cecho("\n<yellow>[map-explore]<reset> Cartel exploration cancelled\n") end)
+        return true
+    end
+
+    return f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback)
+end
+
+function f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback)
     cecho(string.format("\n<green>[map-explore]<reset> Starting cartel exploration: <white>%s<reset>\n", cartel_name))
     cecho("  <dim_grey>Capturing system list...<reset>\n")
 
@@ -138,13 +154,19 @@ function f2t_map_explore_cartel_next_system()
     cecho(string.format("\n<green>[map-explore]<reset> System %d/%d: <white>%s<reset>\n",
         index, #systems, system_name))
 
-    if f2t_map_explore_is_system_fully_mapped(system_name) then
-        cecho("  <green>System already fully mapped, skipping<reset>\n")
-        F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
-            F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
-        f2t_map_explore_cartel_next_system()
-        return
-    end
+    -- No local-only shortcut here (there used to be an is-it-fully-mapped
+    -- pre-check): it can only ever see planets that already have some room
+    -- in the map, so a planet with zero presence at all - no orbit room,
+    -- nothing - is invisible to it. A system missing several planets
+    -- entirely could still read as "fully mapped" if the few it did know
+    -- about were complete, which is how a cartel sweep was silently
+    -- skipping whole systems (hub systems worst of all - see the same class
+    -- of fix in f2t_map_explore_is_system_fully_mapped, which still isn't
+    -- enough for the case where a planet has no room at all). The nested
+    -- system explore below already does this correctly, verified against
+    -- 'di system' rather than guessed from whatever's locally mapped, and
+    -- completes in a couple seconds on its own when there is genuinely
+    -- nothing left to do.
 
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_system = current_room and getRoomUserData(current_room, "fed2_system")

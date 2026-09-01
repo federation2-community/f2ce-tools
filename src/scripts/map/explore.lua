@@ -535,6 +535,30 @@ function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
         return
     end
 
+    -- Already standing in the target system with no mapped route to its own
+    -- space area: a jump chain can't help - you can't jump to the system
+    -- you're already in, so link_room below would resolve to the very room
+    -- that's already unreachable and just retry the identical broken walk.
+    -- This happens when the game renumbers a planet's local rooms out from
+    -- under an existing map (a stranded duplicate one level down from a
+    -- whole stranded system). Board into space instead and let the ordinary
+    -- frontier sweep rediscover real exits from wherever that lands - the
+    -- "explore_travel_arriving" phase set above already resolves as soon as
+    -- fed2_system matches, regardless of which room that turns out to be.
+    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
+    if kind == "system" and current_system and current_system:lower() == string.lower(target) then
+        if f2t_map_room_has_flag(current_room, "shuttlepad") then
+            cecho(string.format(
+                "  <dim_grey>Already in %s but its mapped space is unreachable from here - " ..
+                "boarding to look for a route<reset>\n", target))
+            send("board")
+            return
+        end
+        cecho(string.format("  <red>Error:<reset> No mapped route to %s's space from here\n", target))
+        f2t_map_explore_travel_finish(false)
+        return
+    end
+
     local barredReason = f2t_map_link_barred and
         f2t_map_link_barred(current_room and getRoomUserData(current_room, "fed2_system"))
     if barredReason then
@@ -547,7 +571,6 @@ function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
     -- room specifically. An entry-room lookup won't do: on a sparse map it
     -- falls back to "any room in the system's space area", and jumping from
     -- the wrong one just gets "You jump up and down, but nothing happens."
-    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
     local link_room = current_system and f2t_map_find_link_room_in_system(current_system)
     if not link_room then
         cecho(string.format(
@@ -563,9 +586,14 @@ function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
     if nav_result == "pending" then
         cecho(string.format("  <red>Error:<reset> Cannot navigate to a link room to reach %s\n", target))
         f2t_map_explore_travel_finish(false)
+    elseif nav_result == "failed" then
+        -- No route and nothing left to try - getPath already printed why.
+        -- Nothing is moving, so no room-change event will ever arrive to
+        -- drive the next step; without this the sweep sits ACTIVE forever.
+        f2t_map_explore_travel_finish(false)
     end
-    -- arrived/walking/failed: wait for the room-change dispatcher to drive the
-    -- next step.
+    -- arrived/walking: wait for the room-change dispatcher to drive the next
+    -- step.
 end
 
 -- Issue the blind jump chain toward the stored travel target from the link
@@ -734,6 +762,75 @@ function f2t_map_explore_stop(reason)
     F2T_MAP_EXPLORE_STATE = blankState()
 end
 
+-- Deletes every room in an area and reports how many. Shared by the manual
+-- 'map explore reset' command and the automatic reset-and-re-explore flow a
+-- system sweep offers when it can't find every expected planet.
+function f2t_map_explore_delete_area_rooms(area_id)
+    local rooms = f2t_map_area_room_list(area_id)
+    for _, room_id in ipairs(rooms) do
+        deleteRoom(room_id)
+    end
+    return #rooms
+end
+
+-- Wipes every room in a system's space area or a planet's own surface area,
+-- so the next explore rebuilds it from a completely clean slate. This is the
+-- nuclear option: unlike 'map topology stranded purge' (which only removes
+-- rooms it can prove are unreachable duplicates), this deletes everything,
+-- live rooms included, for when the map for a whole context is suspect
+-- enough that partial cleanup isn't confidence-inspiring.
+function f2t_map_explore_reset(target_name)
+    if F2T_MAP_EXPLORE_STATE.active then
+        cecho("\n<red>[map-explore]<reset> An exploration is running - use 'map explore stop' first\n")
+        return
+    end
+    if not target_name or target_name == "" then
+        cecho("\n<red>[map-explore]<reset> Usage: map explore reset <system or planet name>\n")
+        return
+    end
+    target_name = target_name:gsub("^%l", string.upper)
+
+    local area_id, area_kind
+    local space_area_name = f2t_map_get_system_space_area_actual(target_name)
+    if space_area_name then
+        area_id = f2t_map_get_area_id(space_area_name)
+        area_kind = "system"
+    else
+        area_id = f2t_map_get_area_id(target_name)
+        area_kind = "planet"
+    end
+
+    if not area_id then
+        cecho(string.format("\n<red>[map-explore]<reset> No mapped system or planet called '%s'\n", target_name))
+        return
+    end
+
+    local rooms = f2t_map_area_room_list(area_id)
+    if #rooms == 0 then
+        cecho(string.format("\n<yellow>[map-explore]<reset> %s has no mapped rooms - nothing to reset\n",
+            target_name))
+        return
+    end
+    if F2T_MAP_CURRENT_ROOM_ID and getRoomArea(F2T_MAP_CURRENT_ROOM_ID) == area_id then
+        cecho(string.format(
+            "\n<red>[map-explore]<reset> You are currently standing in %s's %s area - move elsewhere" ..
+            " first, deleting the room you're in would leave your position unknown\n",
+            target_name, area_kind == "system" and "space" or "surface"))
+        return
+    end
+
+    local area_word = area_kind == "system" and "space" or "surface"
+    f2t_map_manual_request_confirmation(
+        string.format("delete all %d room(s) in %s's %s area", #rooms, target_name, area_word),
+        function()
+            local deleted = f2t_map_explore_delete_area_rooms(area_id)
+            cecho(string.format(
+                "\n<green>[map-explore]<reset> Reset complete: %d room(s) removed from %s's %s area." ..
+                " The next explore starts from a clean slate.<reset>\n",
+                deleted, target_name, area_word))
+        end)
+end
+
 function f2t_map_explore_pause()
     if not F2T_MAP_EXPLORE_STATE.active then
         cecho("\n<yellow>[map-explore]<reset> No exploration in progress\n"); return
@@ -857,6 +954,15 @@ function f2t_map_explore_complete()
     f2t_map_explore_unlock_temp_exits()
     cecho("\n<green>[map]<reset> Exploration Complete!\n")
     f2t_map_explore_show_statistics()
+    -- Anything set here (a system sweep's expected-planet gap, currently the
+    -- only user) is a result of the run, not a mid-run status update, and
+    -- belongs after every last bit of movement (a return-to-link leg, a
+    -- return-to-start leg) has actually finished - not wherever in the
+    -- middle of that movement it happened to be detected.
+    if F2T_MAP_EXPLORE_STATE.deferred_report then
+        cecho("\n")
+        cecho(F2T_MAP_EXPLORE_STATE.deferred_report)
+    end
     if #F2T_MAP_EXPLORE_STATE.suspected_special_exits > 0 then
         cecho("\n  <yellow>Suspected Special Exits<reset> (manual mapping recommended):\n")
         for _, suspect in ipairs(F2T_MAP_EXPLORE_STATE.suspected_special_exits) do

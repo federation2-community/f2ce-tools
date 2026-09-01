@@ -653,6 +653,198 @@ function f2t_map_topology_show_links()
     end
 end
 
+-- Every room in a system's space area unreachable from the room the client
+-- actually treats as "here" for that system. This is the general case of the
+-- link-duplicate check above: a system rebuild (Dyson Sphere construction,
+-- "MAKE STAR", etc.) can renumber a whole space area at once and leave any
+-- number of old orbit/shuttlepad/filler rooms behind - not just link rooms -
+-- all still carrying real names and userdata, none of them reachable any
+-- more. Anchors on the link room the client would actually navigate to
+-- (freshest GMCP confirmation wins, same as f2t_map_find_link_room), falling
+-- back to wherever the player is currently standing if this system has no
+-- link room mapped at all.
+function f2t_map_topology_find_stranded_rooms(area_id)
+    if not area_id then return {}, nil end
+    local anchor = f2t_map_find_link_room(area_id)
+    if not anchor then
+        local here = F2T_MAP_CURRENT_ROOM_ID
+        if here and getRoomArea(here) == area_id then anchor = here end
+    end
+    if not anchor then return {}, nil end
+
+    local stranded = {}
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        if room_id ~= anchor and not getPath(anchor, room_id) then
+            table.insert(stranded, room_id)
+        end
+    end
+    return stranded, anchor
+end
+
+-- Every mapped system's space area, reported the same way as
+-- f2t_map_topology_show_links - a galaxy-wide sweep for the same corruption,
+-- not just whatever system the player happens to be standing in.
+function f2t_map_topology_show_stranded_all()
+    local names = {}
+    local areas = {}
+    for area_name, area_id in pairs(getAreaTable()) do
+        local system = f2t_map_get_system_from_space_area(area_name)
+        if system then
+            table.insert(names, system)
+            areas[system] = area_id
+        end
+    end
+    table.sort(names)
+
+    local affected = 0
+    local total = 0
+    for _, system in ipairs(names) do
+        local stranded, anchor = f2t_map_topology_find_stranded_rooms(areas[system])
+        if anchor and #stranded > 0 then
+            affected = affected + 1
+            total = total + #stranded
+            cecho(string.format("  <red>%-20s<reset> %d stranded room(s)\n", system, #stranded))
+        end
+    end
+    if affected == 0 then
+        cecho("\n<green>[map]<reset> No stranded rooms found in any mapped system\n")
+    else
+        cecho(string.format(
+            "\n<dim_grey>%d system(s), %d room(s) total. Run 'map topology stranded <system>' for details" ..
+            " on one, or 'map topology stranded purge <system>' to clean it up.<reset>\n", affected, total))
+    end
+end
+
+-- Purges only the confident case: a planet name with more than one room in
+-- this area where exactly one is reachable from the anchor. That reachable
+-- room already proves the planet's real orbit is mapped, so every other
+-- room sharing its name is provably superseded, not merely unexplored - safe
+-- to delete without asking. A name with zero reachable rooms is left alone:
+-- there is nothing yet to say an unreachable copy is dead rather than a real
+-- pocket nobody has walked a connection to (see f2t_map_topology_find_
+-- stranded_rooms, which is the tool for that harder, review-first case).
+function f2t_map_topology_auto_purge_stale_duplicates(area_id)
+    if not area_id then return 0, {} end
+    local anchor = f2t_map_find_link_room(area_id)
+    if not anchor then
+        local here = F2T_MAP_CURRENT_ROOM_ID
+        if here and getRoomArea(here) == area_id then anchor = here end
+    end
+    if not anchor then return 0, {} end
+
+    local by_name = {}
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        local planet = getRoomUserData(room_id, "fed2_planet")
+        if planet and planet ~= "" then
+            by_name[planet] = by_name[planet] or {}
+            table.insert(by_name[planet], room_id)
+        end
+    end
+
+    local purged_count = 0
+    local purged_names = {}
+    for planet_name, rooms in pairs(by_name) do
+        if #rooms > 1 then
+            local live = nil
+            for _, room_id in ipairs(rooms) do
+                if room_id == anchor or getPath(anchor, room_id) then
+                    live = room_id
+                    break
+                end
+            end
+            if live then
+                for _, room_id in ipairs(rooms) do
+                    if room_id ~= live then
+                        deleteRoom(room_id)
+                        purged_count = purged_count + 1
+                    end
+                end
+                table.insert(purged_names, planet_name)
+            end
+        end
+    end
+    table.sort(purged_names)
+    return purged_count, purged_names
+end
+
+-- Resolves system_name (default: wherever the player is standing) to its
+-- space area, or reports why it couldn't and returns nil. Shared by the
+-- report and purge commands below so their error text always matches.
+local function resolveStrandedTarget(system_name)
+    system_name = system_name and system_name ~= "" and system_name or f2t_get_current_system()
+    if not system_name or system_name == "" then
+        cecho("\n<red>[map]<reset> No system specified and couldn't detect current system\n")
+        return nil
+    end
+    system_name = system_name:gsub("^%l", string.upper)
+    local space_area_name = f2t_map_get_system_space_area_actual(system_name)
+    local area_id = space_area_name and f2t_map_get_area_id(space_area_name)
+    if not area_id then
+        cecho(string.format("\n<yellow>[map]<reset> %s has no mapped space area\n", system_name))
+        return nil
+    end
+    return system_name, area_id
+end
+
+function f2t_map_topology_show_stranded(system_name)
+    local resolved_name, area_id = resolveStrandedTarget(system_name)
+    if not resolved_name then return end
+
+    local stranded, anchor = f2t_map_topology_find_stranded_rooms(area_id)
+    if not anchor then
+        cecho(string.format(
+            "\n<yellow>[map]<reset> %s has no interstellar link mapped and you are not standing in"
+            .. " its space - nothing to check reachability against\n", resolved_name))
+        return
+    end
+    if #stranded == 0 then
+        cecho(string.format(
+            "\n<green>[map]<reset> No stranded rooms in %s's space (checked against room %d)\n",
+            resolved_name, anchor))
+        return
+    end
+
+    table.sort(stranded)
+    cecho(string.format(
+        "\n<red>[map]<reset> %d stranded room(s) in %s's space, unreachable from room %d (%s):\n",
+        #stranded, resolved_name, anchor, getRoomName(anchor) or "unnamed"))
+    for _, room_id in ipairs(stranded) do
+        local planet = getRoomUserData(room_id, "fed2_planet")
+        cecho(string.format("  room %-6d <dim_grey>%s<reset>%s\n", room_id, getRoomName(room_id) or "unnamed",
+            planet and planet ~= "" and string.format("  <yellow>(%s)<reset>", planet) or ""))
+    end
+    cecho(
+        "\n<dim_grey>\"Unreachable\" only means no known route exists yet - that's also true of a real,"
+        .. " different pocket of this system nobody has walked a connection to, not only stale rooms left"
+        .. " over from a rebuild. Check the names above before purging.<reset>\n")
+    cecho(string.format(
+        "\n<dim_grey>Run 'map topology stranded purge %s' to delete these permanently.<reset>\n", resolved_name))
+end
+
+function f2t_map_topology_purge_stranded(system_name)
+    local resolved_name, area_id = resolveStrandedTarget(system_name)
+    if not resolved_name then return end
+
+    local stranded, anchor = f2t_map_topology_find_stranded_rooms(area_id)
+    if not anchor then
+        cecho(string.format(
+            "\n<yellow>[map]<reset> %s has no interstellar link mapped and you are not standing in"
+            .. " its space - nothing to check reachability against\n", resolved_name))
+        return
+    end
+    if #stranded == 0 then
+        cecho(string.format("\n<green>[map]<reset> No stranded rooms in %s's space - nothing to purge\n",
+            resolved_name))
+        return
+    end
+
+    for _, room_id in ipairs(stranded) do
+        deleteRoom(room_id)
+    end
+    cecho(string.format("\n<green>[map]<reset> Purged %d stranded room(s) from %s's space\n",
+        #stranded, resolved_name))
+end
+
 function f2t_map_topology_show()
     f2t_map_topology_ensure_loaded()
     local t = F2T_MAP_TOPOLOGY

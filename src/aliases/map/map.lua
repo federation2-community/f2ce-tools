@@ -229,6 +229,9 @@ handlers["explore"] = function()
     elseif first == "suspected" then
         f2t_map_explore_list_suspected()
 
+    elseif first == "reset" then
+        f2t_map_explore_reset(f2t_parse_rest(words, 2))
+
     else
         local target = f2t_parse_rest(words, 1)
         f2t_map_explore_start("brief", target)
@@ -292,6 +295,15 @@ handlers["topology"] = function()
             "\n<green>[map]<reset> Jump exits rebuilt: <white>%d<reset> system(s), %d exit change(s)%s\n",
             rebuilt, changed,
             skipped > 0 and string.format(", <yellow>%d skipped<reset> (syndicate unknown)", skipped) or ""))
+    elseif rest == "stranded" or rest:match("^stranded%s") then
+        local stranded_rest = rest:match("^stranded%s*(.*)") or ""
+        if stranded_rest == "purge" or stranded_rest:match("^purge%s") then
+            f2t_map_topology_purge_stranded(stranded_rest:match("^purge%s*(.*)") or "")
+        elseif stranded_rest == "all" then
+            f2t_map_topology_show_stranded_all()
+        else
+            f2t_map_topology_show_stranded(stranded_rest)
+        end
     else
         cecho(string.format("\n<red>[map]<reset> Unknown topology command: %s\n", rest))
         f2t_show_help_hint("map topology")

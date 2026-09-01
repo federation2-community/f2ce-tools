@@ -67,14 +67,23 @@ function f2t_map_explore_is_system_fully_mapped(system_name)
     if not space_area_id then return false end
     if f2t_map_explore_has_unlocked_stubs(space_area_id) then return false end
 
+    local seen = {}
     local orbit_rooms = {}
     for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
         local planet = getRoomUserData(room_id, "fed2_planet")
-        if planet then
+        if planet and planet ~= "" and not seen[planet] then
+            seen[planet] = true
             local planet_area_id = f2t_map_get_area_id(planet)
-            if planet_area_id then
-                table.insert(orbit_rooms, {name = planet, area_id = planet_area_id})
-            end
+            -- A planet only known from orbit, with no surface area created
+            -- yet, has definitely not been explored - silently dropping it
+            -- here (the old behavior) is how a system with one could get
+            -- reported "fully mapped" while a real, never-visited planet
+            -- sat in it. This is why cartel sweeps were skipping hub
+            -- systems: hubs get incidentally seen in space (heavy jump
+            -- traffic) far more than their planets get deliberately landed
+            -- on, so they hit this exact gap more than ordinary members do.
+            if not planet_area_id then return false end
+            table.insert(orbit_rooms, {name = planet, area_id = planet_area_id})
         end
     end
     if #orbit_rooms == 0 then return false end

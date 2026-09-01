@@ -5,6 +5,15 @@
 -- nested under cartel/galaxy exploration (parent mode preserved, callback
 -- chains back up).
 
+-- Systems whose space was just reset and re-explored via the "Exploration
+-- Incomplete" dialog, so the completion handler below can tell a fresh gap
+-- from one that already survived a full reset. Checking again would just
+-- offer the same dialog forever if the gap is genuinely unfixable client-
+-- side (a planet with no server-side route at all) - each entry is cleared
+-- the moment it's checked, so it only suppresses the one completion right
+-- after a reset, never a later, independent run.
+F2T_MAP_EXPLORE_JUST_RESET = F2T_MAP_EXPLORE_JUST_RESET or {}
+
 function f2t_map_explore_system_start(system_mode, system_name, on_complete_callback)
     if not system_name or system_name == "" then
         -- Default to the system we are standing in, if detectable.
@@ -58,6 +67,7 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     local expected_planets_set = nil
     local expected_planets_found_set = nil
     local expected_planets_remaining_count = nil
+    local current_room = F2T_MAP_CURRENT_ROOM_ID
 
     if system_mode == "brief" and expected_planet_names then
         if #expected_planet_names == 0 then
@@ -71,17 +81,23 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
                 expected_planets_set[planet_name] = true
             end
 
-            -- Orbit rooms carry fed2_planet userdata; check the system's own
-            -- space area rather than scanning the whole room database.
+            -- A room bearing this planet's name only counts as "already
+            -- mapped" if it is actually reachable from here. A Dyson Sphere
+            -- (or similar) rebuild can renumber a system's whole space area
+            -- and leave a planet's old orbit room stranded - still carrying
+            -- its fed2_planet userdata, but disconnected from everything
+            -- live. f2t_map_find_orbit_room already prefers a reachable
+            -- candidate over a stale one; still verify what it returns,
+            -- since with no reachable candidate at all it falls back to
+            -- returning the stale one anyway.
             local space_area_check = f2t_map_get_system_space_area_actual(system_name)
-            local space_area_check_id = space_area_check and f2t_map_get_area_id(space_area_check)
             local known_count = 0
-            if space_area_check_id then
-                for _, room_id in ipairs(f2t_map_area_room_list(space_area_check_id)) do
-                    local room_planet = getRoomUserData(room_id, "fed2_planet")
-                    if room_planet and expected_planets_set[room_planet]
-                       and not expected_planets_found_set[room_planet] then
-                        expected_planets_found_set[room_planet] = true
+            if space_area_check then
+                for planet_name in pairs(expected_planets_set) do
+                    local orbit_room = f2t_map_find_orbit_room(space_area_check, planet_name)
+                    if orbit_room and current_room
+                       and (orbit_room == current_room or getPath(current_room, orbit_room)) then
+                        expected_planets_found_set[planet_name] = true
                         known_count = known_count + 1
                     end
                 end
@@ -97,7 +113,6 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
 
     local space_area_name = f2t_map_get_system_space_area_actual(system_name)
     local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
     local current_area = current_room and getRoomArea(current_room)
 
     -- Computed once up front (not re-derived per branch below) so a standalone
@@ -252,93 +267,225 @@ function f2t_map_explore_system_space_complete()
     local space_area_id = F2T_MAP_EXPLORE_STATE.space_area_id
     local planets = {}
 
-    if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and F2T_MAP_EXPLORE_STATE.expected_planets_found then
-        for planet_name, _ in pairs(F2T_MAP_EXPLORE_STATE.expected_planets_found) do
-            local orbit_room_id = nil
-            for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
-                if getRoomUserData(room_id, "fed2_planet") == planet_name then
-                    orbit_room_id = room_id
-                    break
-                end
-            end
-            if orbit_room_id then
-                table.insert(planets, {name = planet_name, orbit_room_id = orbit_room_id})
-            else
-                f2t_debug_log("[map-explore-system] WARNING: Expected planet %s has no orbit room", planet_name)
-            end
-        end
-    else
-        local seen = {}
-        for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
-            local planet_name = getRoomUserData(room_id, "fed2_planet")
-            if planet_name and planet_name ~= "" and not seen[planet_name] then
-                seen[planet_name] = true
-                table.insert(planets, {name = planet_name, orbit_room_id = room_id})
-            end
-        end
+    -- Clean up whatever this sweep just proved stale before doing anything
+    -- else with the area: a system rebuild (Dyson Sphere, etc.) can leave old
+    -- orbit rooms behind under a name this sweep just found a live, reachable
+    -- copy of. That reachable copy is the confident case - safe to purge
+    -- without asking, unlike a genuinely unreachable name with no live
+    -- duplicate at all (map topology stranded remains the tool for that).
+    local auto_purged, auto_purged_names = f2t_map_topology_auto_purge_stale_duplicates(space_area_id)
+    if auto_purged > 0 then
+        cecho(string.format(
+            "\n<dim_grey>[map-explore] Cleaned up %d stale duplicate room(s) left over from a system" ..
+            " rebuild: %s<reset>\n", auto_purged, table.concat(auto_purged_names, ", ")))
     end
 
-    if #planets == 0 then
-        cecho("\n<yellow>[map-explore]<reset> No planets identified in this system's space\n")
-        f2t_map_explore_system_return_to_link_and_complete()
-        return
-    end
-
-    table.sort(planets, function(a, b) return a.name < b.name end)
-
-    -- Skip planets that already have all required brief flags mapped.
-    local system_name = F2T_MAP_EXPLORE_STATE.system_name or ""
-    local required_flags = f2t_map_explore_strip_courier_outside_sol(
-        f2t_map_explore_default_required_flags(), system_name)
-
-    local planets_to_explore = {}
-    local already_explored = 0
-    for _, planet in ipairs(planets) do
-        local planet_area_id = f2t_map_get_area_id(planet.name)
-        local all_flags_found = false
-        if planet_area_id then
-            all_flags_found = true
-            for _, flag in ipairs(required_flags) do
-                local skip_flag = flag == "exchange" and
-                    F2T_MAP_EXPLORE_STATE.planets_without_exchange and
-                    F2T_MAP_EXPLORE_STATE.planets_without_exchange[planet.name]
-                if not skip_flag and not f2t_map_find_room_with_flag(planet_area_id, flag) then
-                    all_flags_found = false
-                    break
+    -- The rest of this function (build the planet list, skip already-fully-
+    -- explored ones, start Phase 2) is pulled into a closure so the
+    -- reset-confirm dialog below can call it either immediately or only
+    -- after the user answers, without duplicating the logic in a second
+    -- top-level function - which is how 'local planets' briefly went missing
+    -- from an earlier version of this split.
+    local function continueCompletion()
+        if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and F2T_MAP_EXPLORE_STATE.expected_planets_found then
+            local space_area_name = F2T_MAP_EXPLORE_STATE.space_area_name
+            for planet_name, _ in pairs(F2T_MAP_EXPLORE_STATE.expected_planets_found) do
+                -- Prefer a reachable candidate over a stale duplicate of the
+                -- same name (see the reachability check in f2t_map_explore_
+                -- system_start_with_planets above) - a hand-rolled "first
+                -- match" scan here would happily hand Phase 2 a room nothing
+                -- can navigate to.
+                local orbit_room_id = space_area_name and f2t_map_find_orbit_room(space_area_name, planet_name)
+                if orbit_room_id then
+                    table.insert(planets, {name = planet_name, orbit_room_id = orbit_room_id})
+                else
+                    f2t_debug_log("[map-explore-system] WARNING: Expected planet %s has no orbit room",
+                        planet_name)
                 end
             end
-        end
-        if all_flags_found then
-            already_explored = already_explored + 1
         else
-            table.insert(planets_to_explore, planet)
+            local seen = {}
+            for _, room_id in ipairs(f2t_map_area_room_list(space_area_id)) do
+                local planet_name = getRoomUserData(room_id, "fed2_planet")
+                if planet_name and planet_name ~= "" and not seen[planet_name] then
+                    seen[planet_name] = true
+                    table.insert(planets, {name = planet_name, orbit_room_id = room_id})
+                end
+            end
+        end
+
+        if #planets == 0 then
+            cecho("\n<yellow>[map-explore]<reset> No planets identified in this system's space\n")
+            f2t_map_explore_system_return_to_link_and_complete()
+            return
+        end
+
+        table.sort(planets, function(a, b) return a.name < b.name end)
+
+        -- Skip planets that already have all required brief flags mapped.
+        local system_name = F2T_MAP_EXPLORE_STATE.system_name or ""
+        local required_flags = f2t_map_explore_strip_courier_outside_sol(
+            f2t_map_explore_default_required_flags(), system_name)
+
+        local planets_to_explore = {}
+        local already_explored = 0
+        for _, planet in ipairs(planets) do
+            local planet_area_id = f2t_map_get_area_id(planet.name)
+            local all_flags_found = false
+            if planet_area_id then
+                all_flags_found = true
+                for _, flag in ipairs(required_flags) do
+                    local skip_flag = flag == "exchange" and
+                        F2T_MAP_EXPLORE_STATE.planets_without_exchange and
+                        F2T_MAP_EXPLORE_STATE.planets_without_exchange[planet.name]
+                    if not skip_flag and not f2t_map_find_room_with_flag(planet_area_id, flag) then
+                        all_flags_found = false
+                        break
+                    end
+                end
+            end
+            if all_flags_found then
+                already_explored = already_explored + 1
+            else
+                table.insert(planets_to_explore, planet)
+            end
+        end
+
+        F2T_MAP_EXPLORE_STATE.planet_list = planets_to_explore
+        F2T_MAP_EXPLORE_STATE.current_planet_index = 0
+        -- #planets is only what this sweep actually found - when DI system
+        -- said there should be more, the true total belongs in the final
+        -- stats too, or "12/12" reads as complete when a planet is still
+        -- known to be missing.
+        local expected_total = 0
+        if F2T_MAP_EXPLORE_STATE.expected_planets then
+            for _ in pairs(F2T_MAP_EXPLORE_STATE.expected_planets) do expected_total = expected_total + 1 end
+        end
+        F2T_MAP_EXPLORE_STATE.system_stats.total_planets = expected_total > 0 and expected_total or #planets
+        for _ = 1, already_explored do
+            F2T_MAP_EXPLORE_STATE.system_stats.planets_explored =
+                F2T_MAP_EXPLORE_STATE.system_stats.planets_explored + 1
+            F2T_MAP_EXPLORE_STATE.system_stats.exchanges_found =
+                F2T_MAP_EXPLORE_STATE.system_stats.exchanges_found + 1
+            F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped =
+                F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped + 1
+        end
+
+        cecho(string.format("\n  <green>Space exploration complete!<reset> Discovered %d planet(s)\n", #planets))
+        if already_explored > 0 then
+            cecho(string.format("  <cyan>Already explored:<reset> %d planet(s) (skipping)\n", already_explored))
+        end
+
+        if #planets_to_explore == 0 then
+            cecho("\n<green>[map-explore]<reset> All planets already explored! System exploration complete.\n")
+            f2t_map_explore_system_return_to_link_and_complete()
+            return
+        end
+
+        cecho(string.format("  <white>To explore:<reset> %d planet(s)\n", #planets_to_explore))
+        cecho("  <dim_grey>Phase 2: Brief exploration of each planet<reset>\n\n")
+        F2T_MAP_EXPLORE_STATE.system_phase = "running_brief"
+        f2t_map_explore_system_brief_next_planet()
+    end
+
+    -- The frontier walk can exhaust (no more unknown exits) without ever
+    -- finding every expected planet - a genuinely unreachable orbit, not
+    -- just a slow search. A standalone run (the user typed 'map explore
+    -- system X' directly, not a nested cartel/galaxy/hauling sweep) gets
+    -- offered a reset dialog: wiping this system's space and re-walking it
+    -- as genuinely new territory can turn up a route the map's current stub
+    -- data doesn't show, and it's just the ordinary, already-correct
+    -- frontier walker doing that - not a bespoke re-check pass with its own
+    -- pacing and fuel logic to get wrong. Only ever offered once per sweep,
+    -- since continueCompletion() below runs the rest of this function
+    -- exactly once either way.
+    if F2T_MAP_EXPLORE_STATE.system_mode == "brief"
+       and F2T_MAP_EXPLORE_STATE.expected_planets_remaining
+       and F2T_MAP_EXPLORE_STATE.expected_planets_remaining > 0 then
+        local missing = {}
+        for planet_name, _ in pairs(F2T_MAP_EXPLORE_STATE.expected_planets) do
+            if not F2T_MAP_EXPLORE_STATE.expected_planets_found[planet_name] then
+                table.insert(missing, planet_name)
+            end
+        end
+        table.sort(missing)
+
+        local system_name = F2T_MAP_EXPLORE_STATE.system_name
+        local standalone = F2T_MAP_EXPLORE_STATE.system_complete_callback == nil
+
+        -- Accumulates rather than overwrites: a nested sweep (cartel/galaxy)
+        -- can hit this for more than one system before its own true end, and
+        -- f2t_map_explore_complete() - the one place this actually prints -
+        -- only ever runs once, at the end of the whole outer run.
+        local function appendGapReport(text)
+            F2T_MAP_EXPLORE_STATE.deferred_report = (F2T_MAP_EXPLORE_STATE.deferred_report or "") .. text
+        end
+
+        -- A fresh reset just walked this whole area as genuinely new
+        -- territory and still couldn't find it - offering to reset again
+        -- would only repeat that exact walk for the same answer, forever if
+        -- the user kept saying yes. One reset is the whole test; report the
+        -- result instead of asking again.
+        if F2T_MAP_EXPLORE_JUST_RESET[system_name] then
+            F2T_MAP_EXPLORE_JUST_RESET[system_name] = nil
+            appendGapReport(string.format(
+                "<red>Still couldn't find %s after a full reset and re-exploration of %s's space: " ..
+                "<white>%s<reset>\n<red>This is very likely a server-side location problem, not" ..
+                " something exploration can fix by trying again. Please report it to game staff.<reset>\n",
+                #missing > 1 and "these planets" or "this planet", system_name, table.concat(missing, ", ")))
+            continueCompletion()
+            return
+        end
+
+        if standalone and f2tShowExploreResetConfirm then
+            f2tShowExploreResetConfirm(system_name, missing,
+                function()
+                    -- f2t_map_explore_stop() replaces F2T_MAP_EXPLORE_STATE
+                    -- wholesale, but space_area_id above is a plain number
+                    -- captured earlier and stays valid for the delete. The
+                    -- room this leaves us standing in also gets deleted, and
+                    -- unlike a plain arrival, f2t_map_explore_system_start_
+                    -- with_planets never itself calls f2t_map_ensure_current_
+                    -- location - it just reads F2T_MAP_CURRENT_ROOM_ID, which
+                    -- still points at the now-deleted room. Left alone,
+                    -- getRoomArea() on that stale id comes back empty and the
+                    -- restart tries to navigate to a system it thinks it
+                    -- isn't in, with a blank system name in the error text.
+                    -- Clearing it and forcing the resync here (send 'look',
+                    -- wait for the answer) before restarting is what actually
+                    -- re-establishes where we are before Phase 1 runs.
+                    f2t_map_explore_stop(string.format("Resetting %s's space to look for %s",
+                        system_name, table.concat(missing, ", ")))
+                    local deleted = f2t_map_explore_delete_area_rooms(space_area_id)
+                    cecho(string.format(
+                        "\n<green>[map-explore]<reset> %d room(s) removed - re-exploring %s from" ..
+                        " scratch...<reset>\n", deleted, system_name))
+                    F2T_MAP_EXPLORE_JUST_RESET[system_name] = true
+                    F2T_MAP_CURRENT_ROOM_ID = nil
+                    f2t_map_ensure_current_location(function()
+                        f2t_map_explore_system_start("brief", system_name)
+                    end)
+                end,
+                function()
+                    appendGapReport(string.format(
+                        "<yellow>%d expected planet(s) never found an orbit room in this sweep: " ..
+                        "<white>%s<reset>\n", #missing, table.concat(missing, ", ")))
+                    continueCompletion()
+                end)
+            return
+        end
+
+        appendGapReport(string.format(
+            "<yellow>%d expected planet(s) never found an orbit room in this sweep: " ..
+            "<white>%s<reset>\n", #missing, table.concat(missing, ", ")))
+        if not standalone then
+            appendGapReport(string.format(
+                "<dim_grey>Nested under a larger sweep, so not offering a reset here - run" ..
+                " 'map explore system %s' on its own to try one.<reset>\n", system_name))
         end
     end
 
-    F2T_MAP_EXPLORE_STATE.planet_list = planets_to_explore
-    F2T_MAP_EXPLORE_STATE.current_planet_index = 0
-    F2T_MAP_EXPLORE_STATE.system_stats.total_planets = #planets
-    for _ = 1, already_explored do
-        F2T_MAP_EXPLORE_STATE.system_stats.planets_explored = F2T_MAP_EXPLORE_STATE.system_stats.planets_explored + 1
-        F2T_MAP_EXPLORE_STATE.system_stats.exchanges_found = F2T_MAP_EXPLORE_STATE.system_stats.exchanges_found + 1
-        F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped = F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped + 1
-    end
-
-    cecho(string.format("\n  <green>Space exploration complete!<reset> Discovered %d planet(s)\n", #planets))
-    if already_explored > 0 then
-        cecho(string.format("  <cyan>Already explored:<reset> %d planet(s) (skipping)\n", already_explored))
-    end
-
-    if #planets_to_explore == 0 then
-        cecho("\n<green>[map-explore]<reset> All planets already explored! System exploration complete.\n")
-        f2t_map_explore_system_return_to_link_and_complete()
-        return
-    end
-
-    cecho(string.format("  <white>To explore:<reset> %d planet(s)\n", #planets_to_explore))
-    cecho("  <dim_grey>Phase 2: Brief exploration of each planet<reset>\n\n")
-    F2T_MAP_EXPLORE_STATE.system_phase = "running_brief"
-    f2t_map_explore_system_brief_next_planet()
+    continueCompletion()
 end
 
 function f2t_map_explore_system_next_planet()
@@ -427,8 +574,16 @@ end
 
 -- After system completion, return to the link room before calling back up so
 -- the next phase (cartel/galaxy jump) starts from a jump-capable location.
+-- Only relevant when there is a next phase: a standalone run (the user typed
+-- 'map explore system X' directly, no parent sweep) has nowhere to jump on
+-- to, so the link-room leg would just be a detour before the ordinary
+-- return-to-starting-room courtesy runs anyway. Skip straight there instead.
 function f2t_map_explore_system_return_to_link_and_complete()
     if not F2T_MAP_EXPLORE_STATE.active then return end
+    if not F2T_MAP_EXPLORE_STATE.system_complete_callback then
+        f2t_map_explore_system_call_callback()
+        return
+    end
 
     local link_room = nil
     local space_area_id = F2T_MAP_EXPLORE_STATE.space_area_id

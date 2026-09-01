@@ -24,6 +24,17 @@ function f2t_map_explore_syndicate_start(syndicate_name)
         syndicate_name = syndicate
     end
     syndicate_name = syndicate_name:gsub("^%l", string.upper)
+
+    -- Always a top-level run (no nested-syndicate concept), so no
+    -- standalone/nested gate is needed here the way cartel's has one -
+    -- this can be a very long sweep (every cartel and every system in
+    -- each) from a single click or command, so it always confirms first.
+    if f2tShowExploreScopeConfirm then
+        f2tShowExploreScopeConfirm("syndicate", syndicate_name,
+            function() f2t_map_explore_galaxy_start_with_filter(syndicate_name) end,
+            function() cecho("\n<yellow>[map-explore]<reset> Syndicate exploration cancelled\n") end)
+        return true
+    end
     return f2t_map_explore_galaxy_start_with_filter(syndicate_name)
 end
 

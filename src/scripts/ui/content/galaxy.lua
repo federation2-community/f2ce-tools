@@ -481,7 +481,10 @@ local ICONS = {
 -- Coverage state colors and row layout for the state-dot/badge/POI-chip
 -- columns createRow reserves alongside a row's icon and on its right, before
 -- the nav arrow.
-local STATE_COLOR = { mapped = "#7ed99a", partial = "#e0b34d", unmapped = "#767b8a" }
+-- "mapped" was #7ed99a (pale mint) - too close to "unmapped" grey on some
+-- screens to tell apart at a glance. A richer, more saturated green reads
+-- clearly distinct from both the grey and the amber "partial" state.
+local STATE_COLOR = { mapped = "#22c55e", partial = "#e0b34d", unmapped = "#767b8a" }
 local BADGE_W    = 8    -- % width of the "n/m" coverage badge (syndicate/cartel/system rows)
 local CHIP_W     = 4    -- % width per POI chip (planet rows)
 local STATE_PCT  = 4    -- % width of the state dot, reserved before every row's icon
