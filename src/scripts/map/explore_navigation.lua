@@ -15,6 +15,11 @@ function f2t_map_explore_navigate_to_next()
 
     if not next_exit then
         -- Exploration complete for this area
+        -- Leaving "navigating" so a same-room gmcp.room.info re-fire (another
+        -- player's ship arriving/leaving) can't walk this branch a second time.
+        if F2T_MAP_EXPLORE_STATE.phase ~= "navigating" then return end
+        F2T_MAP_EXPLORE_STATE.phase = "area_complete"
+
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and
            F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count > 0 then
             local planet_name = F2T_MAP_EXPLORE_STATE.brief_planet_name or "Unknown"

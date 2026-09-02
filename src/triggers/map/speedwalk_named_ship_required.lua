@@ -20,4 +20,14 @@ if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE then
     tempTimer(0.2, function()
         f2t_map_speedwalk_fail("This planet only accepts named ships - use 'dub' to name yours")
     end)
+    return
+end
+
+-- System/cartel/galaxy brief exploration boards each planet with a raw
+-- send("board"), not through speedwalk - catch the refusal here too, or
+-- f2t_map_explore_system_board_denied's "boarding_planet" phase never sees
+-- an arrival to move it along.
+if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active
+   and F2T_MAP_EXPLORE_STATE.phase == "boarding_planet" then
+    f2t_map_explore_system_board_denied("this planet accepts named ships only - use 'dub' to name yours")
 end

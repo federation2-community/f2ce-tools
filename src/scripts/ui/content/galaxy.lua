@@ -490,9 +490,12 @@ local ICONS = {
 -- screens to tell apart at a glance. A richer, more saturated green reads
 -- clearly distinct from both the grey and the amber "partial" state.
 local STATE_COLOR = { mapped = "#22c55e", partial = "#e0b34d", unmapped = "#767b8a" }
-local BADGE_W    = 8    -- % width of the "n/m" coverage badge (syndicate/cartel/system rows)
+local BADGE_W    = 20   -- % width of the "n/m" coverage badge (syndicate/cartel/system rows) -
+                         -- wide enough for up to 4-digit counts ("9999/9999") at BADGE_FONT_PX
+local BADGE_FONT_PX = 8 -- px; smaller than the row's other labels so 4-digit counts still fit BADGE_W
 local CHIP_W     = 4    -- % width per POI chip (planet rows)
 local STATE_PCT  = 4    -- % width of the state dot, reserved before every row's icon
+local SCROLLBAR_PX = 8    -- matches CSS_SCROLL's QScrollBar:vertical width; rows must not paint under it
 
 -- Coverage is shown as its own dot rather than tinting the row-type icon:
 -- 🏛️🌌⭐🌍 are color-emoji glyphs, and Qt's QSS `color` property has no
@@ -577,7 +580,12 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
     local uid = (string.format("gx_%s_%d_%s_%s_%s", inst.gid, inst.epoch, row_type, cartel_ctx, name)
         :gsub("[^%w_]", "_")) .. "_r"
 
-    local row = Geyser.Label:new({ name = uid, x = 0, y = y_px, width = "100%", height = ROW_H }, parent)
+    -- Narrower than the content pane itself: inst.content spans the FULL scrollbox
+    -- width (including the strip the scrollbar overlaps) so no background gap shows,
+    -- but rows must stop short of that strip or their rightmost text (badge/nav) gets
+    -- clipped under the scrollbar. See inst.contentW's comment where it's set.
+    local row_w = math.max(50, (inst.contentW or 200) - SCROLLBAR_PX)
+    local row = Geyser.Label:new({ name = uid, x = 0, y = y_px, width = row_w, height = ROW_H }, parent)
     row:setStyleSheet(CSS_ROW)
 
     local indent_pct = 1 + indent_level * INDENT_PCT
@@ -648,8 +656,8 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
 
     local name_end
     if row_type == "planet" then name_end = 91 - num_chips * CHIP_W
-    elseif row_type == "system" then name_end = 83   -- badge occupies 84-92, nav 93-98
-    elseif has_badge then name_end = 89               -- badge occupies 90-98 (no nav)
+    elseif row_type == "system" then name_end = 93 - BADGE_W   -- badge sits flush left of nav (93-98)
+    elseif has_badge then name_end = 98 - BADGE_W               -- badge flush against row's right edge (no nav)
     else name_end = 97 end
     local name_w_pct = math.max(5, name_end - name_x_pct)
 
@@ -677,12 +685,12 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
     end
 
     if has_badge then
-        local badge_x = (row_type == "system") and 84 or 90
+        local badge_x = (row_type == "system") and (93 - BADGE_W) or (98 - BADGE_W)
         local blbl = Geyser.Label:new({ name = uid .. "_badge", x = badge_x .. "%", y = 1,
             width = BADGE_W .. "%", height = ROW_H - 2 }, row)
-        blbl:setStyleSheet(
-            "background-color:transparent; font-size:9px; font-weight:bold; " ..
-            "qproperty-alignment: AlignRight; padding-right:2px;")
+        blbl:setStyleSheet(string.format(
+            "background-color:transparent; font-size:%dpx; font-weight:bold; " ..
+            "qproperty-alignment: AlignRight; padding-right:2px;", BADGE_FONT_PX))
         blbl:echo(string.format("<span style='color:%s;'>%d/%d</span>", STATE_COLOR[cov.state], cov.mapped, cov.total))
     end
 
@@ -743,6 +751,23 @@ local function hoistFront(list, matchName)
             table.insert(list, 1, v)
             return
         end
+    end
+end
+
+-- Re-covers the scrollbox viewport with content/stateLbl so Geyser.ScrollBox's
+-- unstyled native background (white; it has no working setStyleSheet) never
+-- peeks through below a shorter widget. inst.rowsH is the actual row content
+-- height from the last populate(); the covered height never shrinks below it
+-- even if the viewport momentarily reads smaller than the real content.
+local function recoverContentCoverage(inst)
+    if not inst or not inst.scroll or not inst.content then return end
+    local freshH = (inst.scroll.get_height and inst.scroll:get_height()) or 0
+    if freshH <= 0 then return end
+    local h = math.max(inst.rowsH or 0, freshH)
+    if h ~= inst._coveredH then
+        pcall(function() inst.content:resize(inst.contentW or 200, h) end)
+        pcall(function() inst.stateLbl:resize(inst.contentW or 200, h) end)
+        inst._coveredH = h
     end
 end
 
@@ -888,25 +913,33 @@ local function populate(gid)
     end
 
     -- Resize AFTER all rows exist; resizing mid-loop corrupts container refs.
-    pcall(function() inst.content:resize(inst.contentW or 200, math.max(y + 4, viewportH)) end)
-    reportAutoFit(inst, y + 4)
+    inst.rowsH = y + 4
+    pcall(function() inst.content:resize(inst.contentW or 200, math.max(inst.rowsH, viewportH)) end)
+    inst._coveredH = math.max(inst.rowsH, viewportH)
+    reportAutoFit(inst, inst.rowsH)
 
-    -- reportAutoFit's pane shrink lands a tick later (async autofit), so the
-    -- resize above -- sized against the viewport height read at the TOP of
-    -- this call, before the shrink -- can end up shorter than the pane once
-    -- it actually settles. That gap exposes the scrollbox's own unstyled
-    -- native background (white; Geyser.ScrollBox has no working setStyleSheet)
-    -- until something else forces a resize. Re-measure and re-cover once the
-    -- shrink has actually landed.
+    -- reportAutoFit's pane grow/shrink lands async, and on a nested dock/tab
+    -- layout can take more than one tick to actually settle. A single
+    -- re-check (the previous approach) could still land before it did,
+    -- leaving the scrollbox's unstyled native background (white; Geyser.
+    -- ScrollBox has no working setStyleSheet) showing below the content for
+    -- however long it took. Keep re-covering for a few ticks until the
+    -- viewport height stops changing, instead of trusting one snapshot; the
+    -- recurring search poll below also calls recoverContentCoverage every
+    -- cycle as a standing safety net beyond that.
     local epoch = inst.epoch
-    tempTimer(0, function()
+    local lastH, ticksLeft = nil, 10
+    local function settle()
         local i = instances[gid]
         if not i or i.epoch ~= epoch then return end   -- a newer populate() has since run
-        local freshH = (i.scroll.get_height and i.scroll:get_height()) or 0
-        if freshH > 0 then
-            pcall(function() i.content:resize(i.contentW or 200, math.max(y + 4, freshH)) end)
+        recoverContentCoverage(i)
+        ticksLeft = ticksLeft - 1
+        if ticksLeft > 0 and i._coveredH ~= lastH then
+            lastH = i._coveredH
+            tempTimer(0, settle)
         end
-    end)
+    end
+    tempTimer(0, settle)
 
     -- New rows are visible by default regardless of parent hidden state, so
     -- re-assert hidden here or they'd flash visible on a condition-hidden pane.
@@ -1088,8 +1121,10 @@ local function buildPanel(target)
     inst.scroll = Geyser.ScrollBox:new({ name = gid .. "_gx_scroll", x = 0, y = TOPBAR_FULL_H,
         width = "100%", height = "100%-" .. (TOPBAR_FULL_H + FOOTER_H) .. "px" }, C)
     pcall(function() inst.scroll:setStyleSheet(CSS_SCROLL) end)
-    -- Content fills the FULL scrollbox width; the 8px scrollbar overlaps only
-    -- the right edge (rows are left-anchored), so no white column is left uncovered.
+    -- Content fills the FULL scrollbox width; the scrollbar overlaps only the right
+    -- edge (rows are left-anchored), so no white column is left uncovered. Rows
+    -- themselves are narrower (see createRow's row_w) so their own text never
+    -- paints under that overlapped strip.
     inst.contentW = math.max(50, inst.scroll:get_width() or 220)
 
     -- Permanent state label (loading / empty) and the row container.
@@ -1134,6 +1169,10 @@ local function buildPanel(target)
                 if instances[gid] then populate(gid) end
             end)
         end
+        -- Standing safety net for the white-background gap: catches any
+        -- pane resize whose landing outlasts populate()'s own settle loop
+        -- (e.g. a slow dock/splitter reflow), not just search-driven ones.
+        recoverContentCoverage(i)
         tempTimer(0.4, poll)
     end
     tempTimer(0.4, poll)

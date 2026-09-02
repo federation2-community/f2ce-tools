@@ -8,6 +8,7 @@
   {"name": "chat"},
   {"name": "local_players"},
   {"name": "spynet_capture"},
+  {"name": "promotion_capture"},
   {"name": "commodities"},
   {"name": "hauling_jobs"},
   {"name": "price_checker"},

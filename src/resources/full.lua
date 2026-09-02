@@ -292,8 +292,27 @@ Mux.registerWorkspace("f2ce-tools", {
                                             name = "SypnetReport",
                                             pattern = "SPYNET REPORT: ",
                                             transformAction = "f2t.captureTransform.spynetReport"
+                                        },
+                                        {
+                                            enabled = true,
+                                            gag = true,
+                                            mode = "regex",
+                                            name = "Promotion",
+                                            pattern = "\\S+ has (?:promoted to Commander"
+                                                .. "|earned membership in the Adventurer's Guild and become "
+                                                .. "an? (?:Adventurer|Adventuress)"
+                                                .. "|joined the Galactic Trading Guild and become a Merchant"
+                                                .. "|reached Trader rank"
+                                                .. "|become CEO of .+ and has promoted to Industrialist"
+                                                .. "|launched an IPO for .+ and promoted to Manufacturer"
+                                                .. "|been acclaimed as Founder of .+ in the .+ system"
+                                                .. "|promoted .+ in the .+ system to .+ level and gained the "
+                                                .. "rank of (?:Engineer|Mogul|Technocrat|Magnate)"
+                                                .. "|gained promotion to Gengineer)!",
+                                            transformAction = "f2t.captureTransform.promotion"
                                         }
-                                    }
+                                    },
+                                    filter = ""
                                 },
                                 contentable = false,
                                 movable = true,

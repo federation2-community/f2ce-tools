@@ -225,6 +225,17 @@ function f2t_map_topology_is_barred(system)
         or canonicalKey(t.exiled or {}, system) ~= nil
 end
 
+-- Human-readable reason a barred system is being skipped, or nil if it isn't
+-- barred at all. Distinct from is_barred so a caller that wants to explain
+-- the skip (an explore sweep's log/summary) doesn't have to re-derive which
+-- of the two reasons applies.
+function f2t_map_topology_barred_reason(system)
+    local t = F2T_MAP_TOPOLOGY
+    if canonicalKey(t.closed or {}, system) ~= nil then return "closed to visitors" end
+    if canonicalKey(t.exiled or {}, system) ~= nil then return "you are exiled" end
+    return nil
+end
+
 -- A refused edge, recorded against the model rather than only against the
 -- room, so a rebuild cannot re-derive what the server just denied.
 function f2t_map_topology_mark_refused(from_system, to_system)

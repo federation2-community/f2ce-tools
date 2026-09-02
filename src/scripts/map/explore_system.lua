@@ -145,6 +145,26 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
     local current_area = current_room and getRoomArea(current_room)
 
+    -- A system already proven closed/exiled to us this session isn't worth a
+    -- fresh travel attempt just to get refused again - skip straight to the
+    -- callback (no run was ever claimed, so nothing needs releasing). Only a
+    -- nested call (F2T_MAP_EXPLORE_STATE already active, owned by a parent
+    -- cartel/galaxy sweep) gets a deferred-report line: a standalone call has
+    -- no later summary to show it in, and the cecho below already said it.
+    if (not space_area_id or current_area ~= space_area_id) then
+        local barred_reason = f2t_map_topology_barred_reason(system_name)
+        if barred_reason then
+            cecho(string.format(
+                "\n<yellow>[map-explore]<reset> Skipping %s - known %s\n", system_name, barred_reason))
+            if F2T_MAP_EXPLORE_STATE.active then
+                F2T_MAP_EXPLORE_STATE.deferred_report = (F2T_MAP_EXPLORE_STATE.deferred_report or "") ..
+                    string.format("<yellow>Skipped %s:<reset> %s\n", system_name, barred_reason)
+            end
+            if on_complete_callback then on_complete_callback() end
+            return true
+        end
+    end
+
     -- Computed once up front (not re-derived per branch below) so a standalone
     -- call is recognized the same way whether or not it needs to travel first,
     -- and so the completion cleanup wrapped onto on_complete_callback just
@@ -168,13 +188,31 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
                 expected_planet_names, planets_without_exchange, on_complete_callback)
         end
         local function give_up()
-            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", system_name))
+            -- The refusal trigger (jump_system_closed.lua/jump_exiled.lua) has
+            -- already recorded this against the topology model by the time
+            -- travel_finish calls back here, so the reason is known now even
+            -- though the proactive check above couldn't have caught it yet.
+            local barred_reason = f2t_map_topology_barred_reason(system_name)
+            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s%s\n", system_name,
+                barred_reason and (" - " .. barred_reason) or ""))
+            -- Only a nested call's parent sweep will reach a final summary to
+            -- show this in; a standalone call's cecho above is the only place
+            -- this is ever seen, and there is no later reset to leak it past.
+            if not started_standalone then
+                F2T_MAP_EXPLORE_STATE.deferred_report = (F2T_MAP_EXPLORE_STATE.deferred_report or "") ..
+                    string.format("<yellow>Skipped %s:<reset> %s\n", system_name,
+                        barred_reason or "could not reach")
+            end
             -- Only tear down if we set active ourselves; a nested call must
-            -- leave the parent sweep's state alone so it can move on.
+            -- leave the parent sweep's state alone, but still has to call
+            -- back up itself or the parent sweep just stalls forever with
+            -- nothing left to drive its next step.
             if started_standalone then
                 f2t_map_explore_release_run()
                 f2t_map_explore_brief_mode_restore()
                 F2T_MAP_EXPLORE_STATE.mode = nil
+            elseif on_complete_callback then
+                on_complete_callback()
             end
         end
 
@@ -535,6 +573,22 @@ function f2t_map_explore_system_board_planet()
     cecho("  <dim_grey>Boarding planet...<reset>\n")
     F2T_MAP_EXPLORE_STATE.phase = "boarding_planet"
     send("board")
+end
+
+-- A planet can refuse the landing outright (e.g. requires a named ship),
+-- which produces no room change for on_room_change to react to - left alone
+-- this phase would sit "boarding_planet" forever. Skip the planet, same as
+-- an orbit that never resolves a navigable path.
+function f2t_map_explore_system_board_denied(reason)
+    if not F2T_MAP_EXPLORE_STATE.active then return end
+    if F2T_MAP_EXPLORE_STATE.phase ~= "boarding_planet" then return end
+    local planet = F2T_MAP_EXPLORE_STATE.planet_list[F2T_MAP_EXPLORE_STATE.current_planet_index]
+    local planet_name = (planet and planet.name) or F2T_MAP_EXPLORE_STATE.brief_target_planet or "this planet"
+    cecho(string.format("  <yellow>Warning:<reset> Cannot land on '%s' - %s, skipping...\n", planet_name, reason))
+    F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped = F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped + 1
+    F2T_MAP_EXPLORE_STATE.deferred_report = (F2T_MAP_EXPLORE_STATE.deferred_report or "") ..
+        string.format("<yellow>Skipped %s:<reset> %s\n", planet_name, reason)
+    f2t_map_explore_system_brief_next_planet()
 end
 
 function f2t_map_explore_system_brief_next_planet()

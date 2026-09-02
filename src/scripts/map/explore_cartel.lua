@@ -154,60 +154,22 @@ function f2t_map_explore_cartel_next_system()
     cecho(string.format("\n<green>[map-explore]<reset> System %d/%d: <white>%s<reset>\n",
         index, #systems, system_name))
 
-    -- No local-only shortcut here (there used to be an is-it-fully-mapped
-    -- pre-check): it can only ever see planets that already have some room
-    -- in the map, so a planet with zero presence at all - no orbit room,
-    -- nothing - is invisible to it. A system missing several planets
-    -- entirely could still read as "fully mapped" if the few it did know
-    -- about were complete, which is how a cartel sweep was silently
-    -- skipping whole systems (hub systems worst of all - see the same class
-    -- of fix in f2t_map_explore_is_system_fully_mapped, which still isn't
-    -- enough for the case where a planet has no room at all). The nested
-    -- system explore below already does this correctly, verified against
-    -- 'di system' rather than guessed from whatever's locally mapped, and
-    -- completes in a couple seconds on its own when there is genuinely
-    -- nothing left to do.
-
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
-    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
-
-    local function on_system_reached()
-        F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
-            F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
-        f2t_map_explore_cartel_start_system_mode(system_name)
-    end
-    local function on_system_unreachable()
-        cecho(string.format("  <red>Error:<reset> Could not reach %s, skipping\n", system_name))
-        f2t_map_explore_cartel_next_system()
-    end
-
-    if current_system == system_name then
-        local space_area_name = f2t_map_get_system_space_area_actual(system_name)
-        local space_area_id = space_area_name and f2t_map_get_area_id(space_area_name)
-        if space_area_id and getRoomArea(current_room) == space_area_id then
-            on_system_reached()
-        else
-            -- In the right system but on a planet: get to its space link first
-            -- (a plain walk, not a jump - reuse the same arrival verification).
-            -- Navigate by room ID, not by re-guessing system_name through the
-            -- generic name resolver - see f2t_map_area_entry_room().
-            cecho(string.format("  <dim_grey>Navigating to %s space...<reset>\n", system_name))
-            f2t_map_explore_await_arrival("system", system_name, on_system_reached, on_system_unreachable)
-            local target_room_id = f2t_map_area_entry_room(space_area_id)
-            local nav_result = target_room_id and f2t_map_navigate(tostring(target_room_id))
-            if nav_result == nil then
-                cecho(string.format("  <red>Error:<reset> Cannot navigate to %s space link, skipping\n", system_name))
-                f2t_map_explore_travel_finish(false)
-            end
-        end
-        return
-    end
-
-    -- Different system: jump-chain travel handles cross-cartel/cross-syndicate legality.
-    f2t_map_explore_travel_to("system", system_name, on_system_reached, on_system_unreachable)
+    -- No travel here (there used to be one): f2t_map_explore_system_start
+    -- below already owns the whole decision, checking against a freshly
+    -- captured 'di system' roster (not a local-only guess - see the fix in
+    -- f2t_map_explore_is_system_fully_mapped for why a local check can be
+    -- blind to a planet with zero rooms at all) before it ever travels, and
+    -- skips travelling entirely when every expected planet is already
+    -- mapped, reachable, and fully flagged. Jumping first here, like the
+    -- old code did, would burn the travel on every system regardless,
+    -- since by the time system_start got a look the sweep had already
+    -- arrived.
+    f2t_map_explore_cartel_start_system_mode(system_name)
 end
 
 function f2t_map_explore_cartel_start_system_mode(system_name)
+    F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
+        F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
     local success = f2t_map_explore_system_start("brief", system_name, function()
         f2t_map_explore_cartel_next_system()
     end)

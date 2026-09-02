@@ -140,27 +140,21 @@ function f2t_map_explore_galaxy_next_cartel()
     cecho(string.format("\n<green>[map-explore]<reset> Cartel %d/%d: <white>%s<reset>\n",
         index, #cartels, cartel_name))
 
-    local current_cartel = f2t_map_get_current_cartel()
-
-    local function on_cartel_reached()
-        F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored =
-            F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored + 1
-        f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
-    end
-
-    if current_cartel and current_cartel:lower() == cartel_name:lower() then
-        on_cartel_reached()
-        return
-    end
-
-    -- Different cartel: jump-chain travel handles cross-syndicate legality.
-    f2t_map_explore_travel_to("cartel", cartel_name, on_cartel_reached, function()
-        cecho(string.format("  <red>Error:<reset> Could not reach %s, skipping\n", cartel_name))
-        f2t_map_explore_galaxy_next_cartel()
-    end)
+    -- No travel here: "display cartel <name>" (the roster capture inside
+    -- f2t_map_explore_cartel_start) already works from anywhere, and the
+    -- per-system travel below it (already fixed the same way - see
+    -- f2t_map_explore_cartel_next_system) only ever jumps when a given
+    -- system genuinely still needs exploring, building its own direct
+    -- cross-cartel/cross-syndicate chain via f2t_map_topology_jump_chain
+    -- rather than routing through this cartel's hub first. Jumping to the
+    -- cartel up front, like the old code did, burned a hop on every cartel
+    -- regardless of whether anything inside it was left to do.
+    f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
 end
 
 function f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
+    F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored =
+        F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored + 1
     local success = f2t_map_explore_cartel_start(cartel_name, function()
         f2t_map_explore_galaxy_cartel_complete()
     end)
