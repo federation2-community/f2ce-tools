@@ -219,7 +219,12 @@ end
 -- as ui/dialogs/nav_confirm.lua's Proceed/Cancel dialog.
 local _pendingFullExploreConfirm = nil
 
-Mux.registerContent("f2t_galaxy_full_explore_confirm", {
+-- Defined here, registered from f2tRegisterGalaxy. Registering at load time
+-- instead would call into Mux while Muxlet may be mid-reinstall: a nil
+-- registerContent raises, and the rest of this file -- f2tRegisterGalaxy and its
+-- enrolment included -- never runs, so the navigator goes missing with no error
+-- the registrar loop could report.
+local fullExploreConfirmDef = {
     internal = true,
     apply = function(target)
         if target.contentBg then target.contentBg:echo(""); target.contentBg:hide() end
@@ -265,7 +270,7 @@ Mux.registerContent("f2t_galaxy_full_explore_confirm", {
         end)
     end,
     remove = function(_) end,
-})
+}
 
 local function showGalaxyFullExploreConfirm(name)
     local dialog = Mux.createDialog({ title = "Planet Found", width = 420, height = 210 })
@@ -725,6 +730,22 @@ local function reportAutoFit(inst, contentH)
     if Mux and Mux.requestAutoFit then Mux.requestAutoFit(inst.target, h) end
 end
 
+-- Moves a matching entry to the front of an already-sorted name list. The
+-- ScrollBox has no scrollTo/ensureVisible hook to jump the viewport to an
+-- arbitrary row, so this is the closest approximation of "scroll to it"
+-- available: sort the target to where the view already starts (see
+-- F2T_GALAXY.scrollTarget, set by player_card.lua's openInGalaxy).
+local function hoistFront(list, matchName)
+    if not matchName then return end
+    for i, v in ipairs(list) do
+        if v == matchName then
+            table.remove(list, i)
+            table.insert(list, 1, v)
+            return
+        end
+    end
+end
+
 -- Populate one instance's scroll tree, filtered by search
 local function populate(gid)
     local inst = instances[gid]
@@ -770,6 +791,8 @@ local function populate(gid)
     local syn_sorted = {}
     for syn in pairs(g.syndicates or {}) do syn_sorted[#syn_sorted + 1] = syn end
     table.sort(syn_sorted)
+    local target = g.scrollTarget
+    hoistFront(syn_sorted, target and target.syn)
 
     local ri         = gmcp and gmcp.room and gmcp.room.info
     local cur_cartel = ri and ri.cartel or ""
@@ -803,6 +826,7 @@ local function populate(gid)
                 local cn_sorted = {}
                 for cn in pairs(syd.cartels or {}) do cn_sorted[#cn_sorted + 1] = cn end
                 table.sort(cn_sorted)
+                if target and target.syn == syn then hoistFront(cn_sorted, target.cartel) end
                 for _, cn in ipairs(cn_sorted) do
                     local cd = syd.cartels[cn]
                     local show_c = not searching or g.expanded[synkey] or cartelHasMatch(cd, q)
@@ -818,6 +842,9 @@ local function populate(gid)
                             local ss = {}
                             for sn in pairs(cd.systems or {}) do ss[#ss + 1] = sn end
                             table.sort(ss)
+                            if target and target.syn == syn and target.cartel == cn then
+                                hoistFront(ss, target.system)
+                            end
                             for _, sn in ipairs(ss) do
                                 if sn ~= (cn .. " Space") then
                                     local sd = cd.systems[sn]
@@ -1169,8 +1196,12 @@ local function buildGalaxyDef()
         },
 
         apply = function(target)
+            -- Contained so a half-built panel can't take the whole workspace
+            -- restore with it, but reported loudly: Mux._applyContent reports
+            -- apply errors itself and this pcall hides them from it, so
+            -- debug-only logging here meant an empty pane and total silence.
             local ok, err = pcall(buildPanel, target)
-            if not ok and f2t_debug_log then f2t_debug_log("[galaxy] apply error: %s", tostring(err)) end
+            if not ok then Mux._err("galaxy apply error: %s", tostring(err)) end
         end,
 
         remove = function(target)
@@ -1244,6 +1275,7 @@ end
 function f2tRegisterGalaxy()
     if not (Mux and Mux.registerContent) then return end
     Mux.registerContent("fed2_galaxy", buildGalaxyDef())
+    Mux.registerContent("f2t_galaxy_full_explore_confirm", fullExploreConfirmDef)
     -- Package (re)install re-enables all triggers; park the catch-all capture
     -- triggers unless a scrape is actually in flight.
     if not F2T_GALAXY.capture_active then setCaptureTriggers(false) end

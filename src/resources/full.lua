@@ -134,13 +134,13 @@ Mux.registerWorkspace("f2ce-tools", {
             atAnchor = true,
             closeable = false,
             contentState = {
-                settingsLocked = false,
+                settingsLocked = true,
                 showHeading = false,
                 showRefreshIcon = true
             },
             contentable = false,
             convertible = false,
-            floatH = 1125,
+            floatH = 834,
             floatW = 495,
             floatX = 1550,
             floatY = 81,
@@ -150,6 +150,7 @@ Mux.registerWorkspace("f2ce-tools", {
             mainConsoleHost = false,
             name = "🔭 Galaxy Navigator",
             nameAlign = "center",
+            propertiesButton = false,
             renamable = false,
             resizable = false,
             rules = {
@@ -195,9 +196,10 @@ Mux.registerWorkspace("f2ce-tools", {
             convertible = false,
             floatH = 138,
             floatW = 332,
-            floatX = 1468,
+            floatX = 1467,
             floatY = 57,
             floating = true,
+            hidden = true,
             id = "pane_9",
             mainConsoleHost = false,
             minimizable = false,
@@ -230,7 +232,7 @@ Mux.registerWorkspace("f2ce-tools", {
             a = {
                 a = {
                     a = {
-                        activeTabName = "Who",
+                        activeTabName = "Events",
                         anchorable = true,
                         bordered = false,
                         closeable = false,
@@ -277,6 +279,28 @@ Mux.registerWorkspace("f2ce-tools", {
                                         id = "r10"
                                     }
                                 }
+                            },
+                            {
+                                _activeContent = "mux_capture",
+                                closeable = false,
+                                contentState = {
+                                    captures = {
+                                        {
+                                            enabled = true,
+                                            gag = true,
+                                            mode = "substring",
+                                            name = "SypnetReport",
+                                            pattern = "SPYNET REPORT: ",
+                                            transformAction = "f2t.captureTransform.spynetReport"
+                                        }
+                                    }
+                                },
+                                contentable = false,
+                                movable = true,
+                                name = "Events",
+                                nameAlign = "center",
+                                propertiesButton = false,
+                                renamable = false
                             },
                             {
                                 _activeContent = "fed2_exchange",
@@ -564,7 +588,7 @@ Mux.registerWorkspace("f2ce-tools", {
                     zoomable = false
                 },
                 b = {
-                    activeTabName = "Hauling",
+                    activeTabName = "Missions",
                     anchorable = true,
                     bordered = false,
                     closeable = false,
@@ -653,49 +677,6 @@ Mux.registerWorkspace("f2ce-tools", {
                             }
                         },
                         {
-                            _activeContent = "fed2_price_checker",
-                            closeable = false,
-                            contentState = {
-                                selectedCommodity = "Alloys"
-                            },
-                            contentable = false,
-                            movable = true,
-                            name = "Price Checker",
-                            nameAlign = "center",
-                            propertiesButton = false,
-                            renamable = false,
-                            rules = {
-                                {
-                                    act = "mux.showSelf",
-                                    actElse = "mux.hideSelf",
-                                    cond = {
-                                        ref = "RemoteAccessCert"
-                                    },
-                                    enabled = true,
-                                    id = "r5"
-                                },
-                                {
-                                    act = "mux.overlay.disconnected.show",
-                                    actElse = "mux.overlay.disconnected.hide",
-                                    cond = {
-                                        ref = "disconnected"
-                                    },
-                                    enabled = true,
-                                    id = "r14"
-                                },
-                                {
-                                    act = "mux.overlay.connecting.show",
-                                    actElse = "mux.overlay.connecting.hide",
-                                    cond = {
-                                        ref = "connecting"
-                                    },
-                                    enabled = true,
-                                    id = "r15"
-                                }
-                            },
-                            visible = false
-                        },
-                        {
                             activeTabName = "Overview",
                             closeable = false,
                             contentable = false,
@@ -757,6 +738,28 @@ Mux.registerWorkspace("f2ce-tools", {
                                     renamable = false
                                 },
                                 {
+                                    _activeContent = "fed2_company_portfolio",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Investment",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false,
+                                    rules = {
+                                        {
+                                            act = "mux.showSelf",
+                                            actElse = "mux.hideSelf",
+                                            cond = {
+                                                ref = "FinancierRank"
+                                            },
+                                            enabled = true,
+                                            id = "r11"
+                                        }
+                                    }
+                                },
+                                {
                                     _activeContent = "fed2_company_factories",
                                     closeable = false,
                                     contentState = {},
@@ -778,32 +781,51 @@ Mux.registerWorkspace("f2ce-tools", {
                                         }
                                     },
                                     visible = false
-                                },
-                                {
-                                    _activeContent = "fed2_company_portfolio",
-                                    closeable = false,
-                                    contentState = {},
-                                    contentable = false,
-                                    movable = false,
-                                    name = "Investment",
-                                    nameAlign = "center",
-                                    propertiesButton = false,
-                                    renamable = false,
-                                    rules = {
-                                        {
-                                            act = "mux.showSelf",
-                                            actElse = "mux.hideSelf",
-                                            cond = {
-                                                ref = "FinancierRank"
-                                            },
-                                            enabled = true,
-                                            id = "r11"
-                                        }
-                                    },
-                                    visible = false
                                 }
                             },
-                            tabsLocked = true,
+                            tabsLocked = true
+                        },
+                        {
+                            _activeContent = "fed2_price_checker",
+                            closeable = false,
+                            contentState = {
+                                selectedCommodity = "Alloys"
+                            },
+                            contentable = false,
+                            movable = true,
+                            name = "Price Checker",
+                            nameAlign = "center",
+                            propertiesButton = false,
+                            renamable = false,
+                            rules = {
+                                {
+                                    act = "mux.showSelf",
+                                    actElse = "mux.hideSelf",
+                                    cond = {
+                                        ref = "RemoteAccessCert"
+                                    },
+                                    enabled = true,
+                                    id = "r5"
+                                },
+                                {
+                                    act = "mux.overlay.disconnected.show",
+                                    actElse = "mux.overlay.disconnected.hide",
+                                    cond = {
+                                        ref = "disconnected"
+                                    },
+                                    enabled = true,
+                                    id = "r14"
+                                },
+                                {
+                                    act = "mux.overlay.connecting.show",
+                                    actElse = "mux.overlay.connecting.hide",
+                                    cond = {
+                                        ref = "connecting"
+                                    },
+                                    enabled = true,
+                                    id = "r15"
+                                }
+                            },
                             visible = false
                         }
                     },

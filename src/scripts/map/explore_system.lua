@@ -108,6 +108,36 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
             if known_count > 0 then
                 cecho(string.format("  <cyan>Already mapped:<reset> %d planet(s)\n", known_count))
             end
+
+            -- Every expected planet is already known and reachable from here
+            -- - checked now, before any travel decision, using the same DI
+            -- system list just captured, not a local-only guess. If their
+            -- surfaces are also fully explored there is nothing to travel
+            -- for at all: this is what lets a cartel/galaxy sweep skip a
+            -- genuinely complete system without physically visiting it,
+            -- without falling back into the old bug where a local-only
+            -- heuristic guessed "done" from whatever few planets it already
+            -- had data on and silently ignored the rest.
+            if expected_planets_remaining_count == 0 then
+                local required_flags = f2t_map_explore_strip_courier_outside_sol(
+                    f2t_map_explore_default_required_flags(), system_name)
+                local fully_explored = true
+                for planet_name in pairs(expected_planets_found_set) do
+                    local planet_area_id = f2t_map_get_area_id(planet_name)
+                    if not planet_area_id
+                       or not f2t_map_explore_planet_has_flags(planet_area_id, required_flags) then
+                        fully_explored = false
+                        break
+                    end
+                end
+                if fully_explored then
+                    cecho(string.format(
+                        "\n<green>[map-explore]<reset> %s is already fully explored - nothing to do\n",
+                        system_name))
+                    if on_complete_callback then on_complete_callback() end
+                    return true
+                end
+            end
         end
     end
 

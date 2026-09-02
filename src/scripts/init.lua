@@ -21,23 +21,36 @@ local F2T_REQUIRED_MUXLET = nil
 -- build-injected: GitHub release URL (bare tag = prerelease; v-tag = production)
 local MUXLET_URL = nil
 
--- ── generic_mapper removal ────────────────────────────────────────────────────
--- generic_mapper conflicts with the f2ce-tools map system; remove it silently.
-if table.contains(getPackages(), "generic_mapper") then
-    f2t_debug_log("Removing incompatible package: generic_mapper")
-    uninstallPackage("generic_mapper")
-end
+-- ── Conflicting package removal ───────────────────────────────────────────────
+-- generic_mapper conflicts with the f2ce-tools map system; fed2-tools is
+-- superseded by it and shares alias/trigger/global names. Both go.
+--
+-- Deferred a tick and individually pcalled rather than run inline, because this
+-- is the top of the file that defines f2tRegisterAllContent, f2tInit and the
+-- whole boot sequence: an uninstall that raises here would take all of them with
+-- it and leave the package loaded but inert. Mudlet 5.0 also preinstalls
+-- generic_mapper as a default package, so this branch now runs for far more
+-- profiles than it used to, and one tick puts the uninstall after f2ce-tools has
+-- finished loading rather than partway through its own script unit.
+tempTimer(0, function()
+    if table.contains(getPackages(), "generic_mapper") then
+        f2t_debug_log("Removing incompatible package: generic_mapper")
+        local ok, err = pcall(uninstallPackage, "generic_mapper")
+        if not ok then f2t_debug_log("generic_mapper removal failed: %s", tostring(err)) end
+    end
 
--- ── fed2-tools removal ────────────────────────────────────────────────────────
--- f2ce-tools supersedes fed2-tools; the two share alias/trigger/global names and
--- cannot coexist. Announced rather than silent since it's a package the user
--- installed deliberately.
-if table.contains(getPackages(), "fed2-tools") then
-    f2t_debug_log("Removing superseded package: fed2-tools")
-    uninstallPackage("fed2-tools")
-    cecho("\n<yellow>[f2ce-tools]<reset> Removed the older <cyan>fed2-tools<reset> package, "
-        .. "which f2ce-tools replaces.\n")
-end
+    -- Announced rather than silent: a package the user installed deliberately.
+    if table.contains(getPackages(), "fed2-tools") then
+        f2t_debug_log("Removing superseded package: fed2-tools")
+        local ok, err = pcall(uninstallPackage, "fed2-tools")
+        if ok then
+            cecho("\n<yellow>[f2ce-tools]<reset> Removed the older <cyan>fed2-tools<reset> package, "
+                .. "which f2ce-tools replaces.\n")
+        else
+            f2t_debug_log("fed2-tools removal failed: %s", tostring(err))
+        end
+    end
+end)
 
 -- ── Install handler ───────────────────────────────────────────────────────────
 -- sysInstall fires during installation only, not on normal session start.
@@ -193,12 +206,12 @@ function f2tInit()
                 -- layout loads instead of Muxlet's blank default workspace.
                 f2t_settings_set("f2t", "mux_autostart", true)
                 Mux.configureHost({ defaultWorkspace = "f2ce-tools" })
-                Mux.fullStart()
+                f2tFullStart()
             elseif f2tShowModeSelect then
                 f2tShowModeSelect()
             end
         elseif autostart == true then
-            Mux.fullStart()
+            f2tFullStart()
         end
         -- autostart == false: Minimal mode — Muxlet is available but not started.
     end)

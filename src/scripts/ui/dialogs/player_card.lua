@@ -99,39 +99,59 @@ local FRAME_W  = tostring(-(SEND_W + GAP + CMD_R_M + CMD_L_M - 2))
 local function openInGalaxy(cartelName, entityName, syndicateName)
     if not F2T_GALAXY then return end
 
-    -- Cartel rows key off "syndicate:cartel" (see galaxy.lua createRow); a
-    -- cartel found here needs both its own key and its parent syndicate
-    -- expanded so the navigator actually reveals it.
+    -- Key format must match what populate()/createRow actually check
+    -- ("syn:Name", "cartel:Syndicate:Name", "system:Cartel:Name" -- see
+    -- galaxy.lua's autoExpandCurrentLocation for the canonical pattern this
+    -- was silently drifted from). Without the prefixes these previously set
+    -- keys that populate() never looks at, so nothing ever actually expanded.
     local function expandCartel(cn, cd)
-        if cd.syndicate then F2T_GALAXY.expanded[cd.syndicate] = true end
-        F2T_GALAXY.expanded[(cd.syndicate or "") .. ":" .. cn] = true
+        if cd.syndicate then F2T_GALAXY.expanded["syn:" .. cd.syndicate] = true end
+        F2T_GALAXY.expanded["cartel:" .. (cd.syndicate or "") .. ":" .. cn] = true
     end
 
+    -- galaxy.lua's ScrollBox has no scrollTo/ensureVisible hook (confirmed:
+    -- Muxlet's own globals.lua notes the same gap for pane content groups),
+    -- so there's no way to scroll the viewport to an arbitrary row. The
+    -- nearest available approximation -- also the one Muxlet already uses
+    -- for that other case -- is to sort the expanded branch to the front of
+    -- each level's list, since the view always starts scrolled to the top.
+    -- populate() reads this to hoist syn/cartel/system into place.
     local function expand()
+        F2T_GALAXY.scrollTarget = nil
         if cartelName and cartelName ~= "" then
             local cd = F2T_GALAXY.cartels[cartelName]
-            if cd then expandCartel(cartelName, cd) end
+            if cd then
+                expandCartel(cartelName, cd)
+                F2T_GALAXY.scrollTarget = { syn = cd.syndicate, cartel = cartelName }
+            end
         elseif entityName and entityName ~= "" then
             for cn, cd in pairs(F2T_GALAXY.cartels or {}) do
                 if cd.systems then
                     if cd.systems[entityName] then
                         expandCartel(cn, cd)
-                        F2T_GALAXY.expanded[cn .. ":" .. entityName] = true
+                        F2T_GALAXY.expanded["system:" .. cn .. ":" .. entityName] = true
+                        F2T_GALAXY.scrollTarget = { syn = cd.syndicate, cartel = cn, system = entityName }
                         break
                     end
+                    local foundPlanet = false
                     for sn, sd in pairs(cd.systems) do
                         for _, pd in ipairs(sd.planets or {}) do
                             if pd.name == entityName then
                                 expandCartel(cn, cd)
-                                F2T_GALAXY.expanded[cn .. ":" .. sn] = true
+                                F2T_GALAXY.expanded["system:" .. cn .. ":" .. sn] = true
+                                F2T_GALAXY.scrollTarget = { syn = cd.syndicate, cartel = cn, system = sn }
+                                foundPlanet = true
                                 break
                             end
                         end
+                        if foundPlanet then break end
                     end
+                    if foundPlanet then break end
                 end
             end
         elseif syndicateName and syndicateName ~= "" then
-            F2T_GALAXY.expanded[syndicateName] = true
+            F2T_GALAXY.expanded["syn:" .. syndicateName] = true
+            F2T_GALAXY.scrollTarget = { syn = syndicateName }
         end
         if f2t_galaxy_refresh_open then f2t_galaxy_refresh_open() end
     end
@@ -163,6 +183,11 @@ local function fingerprint(p)
         p.rank or "", p.location or "", p.company or "",
         p.system or "", p.cartel or "", p.syndicate or "", p.ship_class or "",
         p.staff or "", tostring(p.is_online == false),
+        -- Titles affect rendered height (each one adds a row), so a title
+        -- change has to count as a data change here too -- previously it
+        -- didn't, meaning a player earning a new title while their card was
+        -- open wouldn't have triggered f2tPlayerCardsRefreshAll at all.
+        table.concat(p.titles or {}, "|"),
     }, "\0")
 end
 
@@ -202,7 +227,23 @@ local function initialContentSize(player)
     local function badgePx(s) return math.ceil(#s * 6.5) + 16 end
     local rankBadgeW  = badgePx(rank)
     local staffBadgeW = staff ~= "" and badgePx("[" .. staff .. "]") or 0
-    local headerNeed  = 10 + rankBadgeW + (staff ~= "" and (4 + staffBadgeW) or 0) + 10
+    -- Trailing term reserves room for the spynet-report button on the right
+    -- of this same row (see render()'s spynetBtn, anchored at GAL_X) so long
+    -- rank/staff badges never grow into it.
+    local headerNeed  = 10 + rankBadgeW + (staff ~= "" and (4 + staffBadgeW) or 0) + 8 + BTN_W + R_M
+
+    -- Titles render as "  \xc2\xb7 <text>" at the same font/width as the body
+    -- rows below, but were never factored into width at all -- a long title
+    -- (e.g. "Member of the Order of True Caffeination") routinely exceeds
+    -- every other field's length, wraps or overflows its fixed 22px-tall
+    -- label when the pane clamps to the 360px floor, and visually spills
+    -- into whatever's positioned next. That overflow is pure text rendering,
+    -- invisible to every get_height()-based measurement, which is why it
+    -- kept surviving several rounds of height/position fixes.
+    local longestTitle = 0
+    for _, t in ipairs(player.titles or {}) do
+        if #t > longestTitle then longestTitle = #t end
+    end
 
     local longest = math.max(
         #(loc ~= "" and loc or "Unknown"),
@@ -210,7 +251,8 @@ local function initialContentSize(player)
         hasSystem    and (#system    + 8)  or 0,
         hasPlanet    and (#system    + 8)  or 0,
         hasCartel    and (#cartel    + 8)  or 0,
-        hasSyndicate and (#syndicate + 12) or 0)
+        hasSyndicate and (#syndicate + 12) or 0,
+        longestTitle + 4)
     local bodyNeed = math.ceil(longest * 7.0) + 30 + 62
 
     local W = math.max(360, math.min(580, math.max(headerNeed, bodyNeed)))
@@ -228,7 +270,12 @@ local function initialContentSize(player)
     if hasSyndicate                then H = H + ROW_H end
     if hasCartel                   then H = H + ROW_H end
     if hasShip                     then H = H + ROW_H end
-    H = H + (isOffline and 14 or (10 + CMD_H + 22))
+    -- Tail term's trailing constant sets the bottom margin below the
+    -- quick-send button: gap = (tail - 10)px, so 26 -> 16px, matching
+    -- LOC_GAP -- the same visual rhythm the card already uses elsewhere,
+    -- instead of a uniquely large gap that reads as inconsistent design
+    -- regardless of it being pixel-identical on every card.
+    H = H + (isOffline and 14 or (10 + CMD_H + 26))
     -- Reserve room for the full title list up front so a fresh card doesn't
     -- open pre-truncated; render() re-measures the real content height
     -- afterward in case the pane ends up smaller than this estimate.
@@ -244,7 +291,15 @@ end
 -- recreate this command line too if it lived there -- silently dropping
 -- keyboard focus and any unsent draft out from under whatever the user was
 -- mid-keystroke on. Living in its own container that's never deleted, only
--- repositioned (via :move) and re-styled, sidesteps that entirely.
+-- repositioned (via :move) and re-styled, sidesteps that entirely. Parented to
+-- target.content the one time this runs -- the apply() callback defers its
+-- first renderCard() call by a tick specifically so target.content is always
+-- the pane's real, permanent container by then (see registerContent's apply
+-- below), never the disposable slot Mux._applyContent aliases it to for the
+-- duration of apply() itself. Every later "_in" also lands in that same real
+-- container, so this and the main content rows are guaranteed to share one
+-- coordinate frame for the card's whole life, instead of two independently
+-- tracked containers that only coincidentally cover the same rectangle.
 local function ensureQuickSlot(target)
     if target._f2tQuickSlot then return target._f2tQuickSlot end
 
@@ -277,6 +332,18 @@ local function ensureQuickSlot(target)
     local qdiv = Geyser.Label:new({ name = target._gid .. "_qdiv", x=4, y=8, width=tostring(-8), height=1 }, q)
     qdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
 
+    -- Positioned down from q's top via an explicit pixel offset, not derived
+    -- from q's current height at all -- confirmed correct by direct
+    -- measurement (contentH matched the requested height exactly, and the
+    -- gap from the button's bottom edge to that boundary was identical --
+    -- 40px -- on both a short, no-titles card and a long, many-titles card).
+    -- A bottom-anchored (negative y) version briefly lived here instead, but
+    -- that depends on q's height already reflecting the post-auto-fit size
+    -- at the moment these widgets are first positioned, which isn't
+    -- guaranteed -- ensureQuickSlot only runs once, before auto-fit's
+    -- resize has necessarily taken effect, and nothing was forcing a
+    -- reposition afterward once render() started skipping unchanged
+    -- re-renders. Top-anchored has no such dependency.
     local cmdFrame = Geyser.Label:new({
         name = target._gid .. "_qframe", x = CMD_L_M - 2, y = 16, width = FRAME_W, height = CMD_H + 4,
     }, q)
@@ -331,6 +398,19 @@ end
 -- every widget it creates. The quick-send row is the one exception -- see
 -- ensureQuickSlot above.
 local function render(target, player)
+    -- render() gets invoked far more often than the player's data actually
+    -- changes: Muxlet's own reflow machinery re-fires this content's resize
+    -- hook (Mux._relayoutContent) every time target.content's measured size
+    -- changes, which the auto-fit call at the end of this function itself
+    -- triggers at least once, asynchronously, after it resizes the pane --
+    -- confirmed by logging, one card fired this 4 times in a row for a
+    -- single open, all producing identical output. Skip the whole rebuild
+    -- when nothing this function's output depends on has actually changed
+    -- since the last time it fully ran for this target.
+    local fp = fingerprint(player)
+    if target._f2tCardSlot and target._f2tLastRenderFingerprint == fp then return end
+    target._f2tLastRenderFingerprint = fp
+
     -- delete() only schedules the old widgets' underlying Qt objects for teardown
     -- (deleteLater) -- they stay fully visible for at least one event-loop tick
     -- after this call returns. hide() first is synchronous, so the old slot never
@@ -353,6 +433,7 @@ local function render(target, player)
     }, target.content)
     target._f2tCardSlot = _in
 
+    local name      = player.name or target._f2tCardPlayerName or "Unknown"
     local rank      = player.rank       or "Unknown"
     local loc       = player.location   or ""
     local company   = player.company    or ""
@@ -412,6 +493,12 @@ local function render(target, player)
         qproperty-alignment: AlignCenter;
     ]], accent, accent))
     rankLbl:echo(rank)
+
+    local spynetBtn = Geyser.Label:new({ name=wid(), x=GAL_X, y=4, width=BTN_W, height=22 }, _in)
+    spynetBtn:setStyleSheet(_CSS_ICON)
+    spynetBtn:echo("<center>🕵️</center>")
+    spynetBtn:setClickCallback(function() send(string.format("spynet report %s", name)) end)
+    spynetBtn:setToolTip("Spynet report on " .. name .. "  (spynet report " .. name .. ")")
 
     if staff ~= "" then
         local staffBadgeW = badgePx("[" .. staff .. "]")
@@ -623,63 +710,55 @@ local function render(target, player)
         rowY = rowY + ROW_H
     end
 
-    -- ── Quick-send (online only) — build first so its height can be reserved
-    -- before deciding how many titles fit in what's left. ─────────────────────
-    local quickH = isOffline and 14 or (10 + CMD_H + 22)
+    local quickH = isOffline and 14 or (10 + CMD_H + 26)
 
-    -- Used below both to fit titles AND to position the quick-send row.
-    -- target.content:get_height() looked like the more honest source of truth
-    -- than trusting this function's own row-accumulation math to line up with
-    -- initialContentSize's estimate -- but in practice it reads back a
-    -- genuinely different value across renders of the *same* unchanged player
-    -- data (confirmed: titles that fit fine on one render got truncated to
-    -- "showing 2 of 3" on the next, nothing about the player had changed). A
-    -- measurement that unstable isn't safe to build layout decisions on, so
-    -- this goes back to the deterministic formula -- computedH here is
-    -- guaranteed to equal exactly what render()'s own rowY accumulates for
-    -- this same player, since both walk the same fields in the same order.
-    local _, computedH = initialContentSize(player)
-
-    -- ── Titles (fit as many as the remaining live content height allows) ──────
+    -- ── Titles ──────────────────────────────────────────────────────────────
+    -- Shows every title unconditionally. This used to truncate the list
+    -- against a computed estimate of the pane's real content height --
+    -- target.content:get_height() looked like the more honest source but
+    -- proved unreliable (confirmed reading back a different value across
+    -- renders of the *same* unchanged player data), and even a deterministic
+    -- formula-based estimate never quite matched the pane's actual rendered
+    -- chrome closely enough to avoid the quick-send row sometimes clipping
+    -- the row above it, sometimes overlapping the border. Mux.requestAutoFit
+    -- (below, once rowY is final) sidesteps the whole problem: it resizes the
+    -- pane to whatever this function actually rendered, using Muxlet's own
+    -- already-correct chrome math, so there's no fixed budget left to
+    -- truncate titles against -- the card just grows to fit them.
     if #titles > 0 then
-        local TITLE_OVERHEAD = 10 + ROW_H
-        local available = computedH - rowY - quickH
-        local shownTitles = 0
-        if available >= (TITLE_OVERHEAD + 22) then
-            shownTitles = math.min(#titles, math.floor((available - TITLE_OVERHEAD) / 22))
-        end
-        if shownTitles > 0 then
-            local tdiv = Geyser.Label:new({ name=wid(), x=4, y=rowY+4, width=tostring(-8), height=1 }, _in)
-            tdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
-            rowY = rowY + 10
+        local tdiv = Geyser.Label:new({ name=wid(), x=4, y=rowY+4, width=tostring(-8), height=1 }, _in)
+        tdiv:setStyleSheet("background-color: rgba(255,255,255,0.15); border: none;")
+        rowY = rowY + 10
 
-            local thdr = Geyser.Label:new({ name=wid(), x=0, y=rowY, width="100%", height=ROW_H }, _in)
-            thdr:setStyleSheet([[
+        local thdr = Geyser.Label:new({ name=wid(), x=0, y=rowY, width="100%", height=ROW_H }, _in)
+        thdr:setStyleSheet([[
+            background: transparent; border: none;
+            color: rgba(130, 140, 185, 255);
+            font-size: 10px; font-weight: bold;
+            font-family: "Consolas","Monaco",monospace;
+            padding: 0 10px;
+        ]])
+        thdr:echo("  Titles")
+        rowY = rowY + ROW_H
+
+        for i = 1, #titles do
+            local tl = Geyser.Label:new({ name=wid(), x=0, y=rowY, width="100%", height=22 }, _in)
+            tl:setStyleSheet([[
                 background: transparent; border: none;
-                color: rgba(130, 140, 185, 255);
-                font-size: 10px; font-weight: bold;
+                color: rgba(175, 185, 225, 200);
+                font-size: 11px;
                 font-family: "Consolas","Monaco",monospace;
                 padding: 0 10px;
             ]])
-            local titleHdrText = shownTitles < #titles
-                and string.format("  Titles  <span style='color: rgb(160,100,100);'>(showing %d of %d)</span>",
-                    shownTitles, #titles)
-                or  "  Titles"
-            thdr:echo(titleHdrText)
-            rowY = rowY + ROW_H
-
-            for i = 1, shownTitles do
-                local tl = Geyser.Label:new({ name=wid(), x=0, y=rowY, width="100%", height=22 }, _in)
-                tl:setStyleSheet([[
-                    background: transparent; border: none;
-                    color: rgba(175, 185, 225, 200);
-                    font-size: 11px;
-                    font-family: "Consolas","Monaco",monospace;
-                    padding: 0 10px;
-                ]])
-                tl:echo("  · " .. titles[i])
-                rowY = rowY + 22
-            end
+            -- Qt's QLabel stylesheet engine doesn't reliably support CSS
+            -- text-overflow, so truncate the string itself as a hard safety
+            -- net -- 74 chars is safe even at the pane's max possible width
+            -- (580px), regardless of whether the width formula above ever
+            -- under-estimates for some future title text.
+            local titleText = titles[i]
+            if #titleText > 74 then titleText = titleText:sub(1, 73) .. "…" end
+            tl:echo("  · " .. titleText)
+            rowY = rowY + 22
         end
     end
 
@@ -697,19 +776,17 @@ local function render(target, player)
         -- re-inserted by this same render, landing after the long-lived quick
         -- slot in insertion order -- right back on top of it.
         --
-        -- rowY lands exactly at computedH - quickH by construction (both this
-        -- function and initialContentSize walk the same fields in the same
-        -- order), so this clamp is a no-op in the normal case. It only
-        -- matters if player.titles grew since this card was created -- the
-        -- pane's real size is frozen at creation (resizable=false), but
-        -- computedH is recalculated fresh against today's data, so it could
-        -- read taller than what the pane actually has. CLAMP_MARGIN is a
-        -- small deliberate safety buffer for that case; the quick slot's own
-        -- "-0px" auto-fill height (see ensureQuickSlot) reaches the true
-        -- bottom regardless of exactly where this lands, so erring toward
-        -- extra padding here is harmless.
-        local CLAMP_MARGIN = 8
-        local qY = math.min(rowY, math.max(0, computedH - (CMD_H + 32 + CLAMP_MARGIN)))
+        -- qY is always exactly rowY -- never earlier. A clamp against a
+        -- separately-estimated pane height lived here briefly to add bottom
+        -- padding, but that estimate never quite matched the pane's actual
+        -- rendered chrome, and a min()-based clamp can pick a value *smaller*
+        -- than rowY -- pushing this section's top edge above where the last
+        -- content row actually ends, clipping straight into it (its buttons,
+        -- in one reported case). There's no valid reason to ever start this
+        -- section before the content above it has finished. The pane's real
+        -- size is now driven by Mux.requestAutoFit below instead, so any
+        -- bottom padding just comes from quickH's own trailing margin.
+        local qY = rowY
         bg:resize(nil, qY)
         local q = ensureQuickSlot(target)
         q.container:show()
@@ -733,6 +810,28 @@ local function render(target, player)
         ]], accent, accent))
     elseif target._f2tQuickSlot then
         target._f2tQuickSlot.container:hide()
+    end
+
+    -- Resizes the pane's real outer window to fit whatever was just rendered,
+    -- using Muxlet's own chrome math (titlebar height, border inset) instead
+    -- of this file re-deriving it -- see galaxy.lua/local_players.lua for the
+    -- same pattern. This is what actually ends the border/clipping saga: the
+    -- pane now always matches rowY+quickH exactly, by construction, so there
+    -- is no fixed budget left to guess at or fall out of sync with.
+    --
+    -- Only call it when the target height actually changed. requestAutoFit
+    -- always resizes target.outer and schedules a deferred reposition even
+    -- when asked for the size it's already at, and that reposition changes
+    -- target.content's measured dimensions enough to trip Muxlet's own
+    -- Mux._relayoutContent, which calls this content's resize hook (=
+    -- renderCard) again -- a confirmed 4x render() cascade for one card open.
+    -- It always converged on the right numbers, just wastefully, so this
+    -- skips the redundant resize instead of ever actually reaching Mux for
+    -- a no-op change, cutting the cascade off at its source.
+    local wantH = rowY + quickH
+    if Mux and Mux.requestAutoFit and target._f2tLastAutoFitH ~= wantH then
+        target._f2tLastAutoFitH = wantH
+        Mux.requestAutoFit(target, wantH)
     end
 end
 
@@ -774,7 +873,21 @@ function f2tRegisterPlayerCard()
 
         apply = function(target)
             target.contentBg:echo(""); target.contentBg:hide()
-            renderCard(target)
+            -- Mux._applyContent temporarily aliases target.content to a disposable
+            -- one-shot slot for the duration of this call, then restores it to the
+            -- pane's real, permanent .content right after apply() returns. Calling
+            -- renderCard synchronously here would build the quick-send slot (which
+            -- ensureQuickSlot only ever creates once, then reuses forever) inside
+            -- that disposable slot -- while every later render (any data refresh)
+            -- builds its own rows fresh under the real .content instead, since by
+            -- then the alias has already been restored. That split every card that
+            -- ever refreshes into two independently-tracked containers which merely
+            -- happen to cover the same rectangle instead of guaranteed to, and
+            -- explains the border misaligning after some refreshes but not others.
+            -- Deferring one tick guarantees this first render also runs against
+            -- the real, permanent container, so every widget the card ever creates
+            -- shares the exact same parent for its whole life.
+            tempTimer(0, function() renderCard(target) end)
         end,
 
         remove = function(target)
@@ -782,9 +895,12 @@ function f2tRegisterPlayerCard()
                 _G[target._f2tCardActionKey] = nil
                 target._f2tCardActionKey = nil
             end
-            -- both about to be destroyed with the rest of the content slot
-            target._f2tCardSlot  = nil
-            target._f2tQuickSlot = nil
+            if target._f2tQuickSlot then
+                pcall(function() target._f2tQuickSlot.container:delete() end)
+                target._f2tQuickSlot = nil
+            end
+            -- _f2tCardSlot is destroyed with the rest of the content slot
+            target._f2tCardSlot = nil
         end,
 
         resize = function(target) renderCard(target) end,

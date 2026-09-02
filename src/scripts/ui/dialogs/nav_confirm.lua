@@ -25,7 +25,10 @@ local function navConfirmBodyText(destination, hint)
         problem, hint.name)
 end
 
-Mux.registerContent("f2t_nav_confirm", {
+-- Defined here, registered from the registrar below. A load-time call into
+-- Mux raises while Muxlet is mid-reinstall, and everything after it in this
+-- file, the show function included, would never be defined.
+local navConfirmDef = {
     name = "Destination Not Found",
     internal = true,
     apply = function(target)
@@ -71,7 +74,7 @@ Mux.registerContent("f2t_nav_confirm", {
         end)
     end,
     remove = function(_) end,
-})
+}
 
 --- Shows a Proceed/Cancel confirm dialog for an unresolved nav destination.
 -- Not resizable/convertible/anchorable/minimizable/zoomable; movable is fine
@@ -90,3 +93,11 @@ function f2tShowNavHintConfirm(destination, hint, error_msg, on_proceed, on_canc
     dialog:show()
     dialog:raise()
 end
+
+local function f2tRegisterNavConfirm()
+    if not (Mux and Mux.registerContent) then return end
+    Mux.registerContent("f2t_nav_confirm", navConfirmDef)
+end
+
+F2T_CONTENT_REGISTRARS = F2T_CONTENT_REGISTRARS or {}
+table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterNavConfirm)

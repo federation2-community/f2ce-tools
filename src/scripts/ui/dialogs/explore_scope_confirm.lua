@@ -22,7 +22,10 @@ local function exploreScopeConfirmBodyText(kind, name)
         KIND_SCOPE[kind] or "everything in", name, kind)
 end
 
-Mux.registerContent("f2t_explore_scope_confirm", {
+-- Defined here, registered from the registrar below. A load-time call into
+-- Mux raises while Muxlet is mid-reinstall, and everything after it in this
+-- file, the show function included, would never be defined.
+local exploreScopeConfirmDef = {
     name = "Confirm Exploration",
     internal = true,
     apply = function(target)
@@ -68,7 +71,7 @@ Mux.registerContent("f2t_explore_scope_confirm", {
         end)
     end,
     remove = function(_) end,
-})
+}
 
 --- Shows an Explore/Cancel confirm dialog before a cartel or syndicate sweep.
 -- @param kind "cartel" or "syndicate"
@@ -83,3 +86,11 @@ function f2tShowExploreScopeConfirm(kind, name, on_proceed, on_cancel)
     dialog:show()
     dialog:raise()
 end
+
+local function f2tRegisterExploreScopeConfirm()
+    if not (Mux and Mux.registerContent) then return end
+    Mux.registerContent("f2t_explore_scope_confirm", exploreScopeConfirmDef)
+end
+
+F2T_CONTENT_REGISTRARS = F2T_CONTENT_REGISTRARS or {}
+table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterExploreScopeConfirm)

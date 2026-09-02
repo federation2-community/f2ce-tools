@@ -1,7 +1,13 @@
 -- Auto-fetches the game's `comhistory` output once per session after login
 -- and merges missed com messages into F2T_CHAT.history, deduplicating against
 -- existing records (ages are reported in whole-unit buckets, so the dedup
--- window spans one bucket on each side).
+-- window spans one bucket on each side). comhistory reports the player's own
+-- messages too (headed by their own character name, same as anyone else's);
+-- those are captured as self_com records and deduplicated against existing
+-- self_com entries the same way other senders dedup against "com" entries —
+-- this is what reconstructs the player's own traffic after a chat wipe or
+-- fresh profile, when the alias's own self_com record from the moment of
+-- sending no longer exists locally.
 --
 -- Two permanent triggers drive capture (src/triggers/chat/):
 --   comhistory_capture -> f2tChatComhistoryBegin()   (header line)
@@ -91,9 +97,9 @@ local function parseTime(agoStr, refTime)
     return refTime, 60
 end
 
-local function isDuplicate(from, msg, t, tolerance)
+local function isDuplicate(mtype, from, msg, t, tolerance)
     for _, r in ipairs(F2T_CHAT.history) do
-        if r.type == "com" and r.from == from and r.msg == msg
+        if r.type == mtype and r.from == from and r.msg == msg
            and math.abs(r.t - t) <= tolerance then
             return true
         end
@@ -200,8 +206,15 @@ finish = function()
     local newRecords = {}
     for _, entry in ipairs(buffer) do
         local t, tolerance = parseTime(entry.ago, state.refTime)
-        if not isDuplicate(entry.name, entry.text, t, tolerance) then
-            table.insert(newRecords, { t = t, type = "com", from = entry.name, msg = entry.text })
+        -- Own messages dedup/render as self_com (matching the alias's own
+        -- record of the moment of sending) rather than as a "com" entry from
+        -- someone else; F2T_CHAR_NAME is used as `from` rather than whatever
+        -- casing comhistory reports, so it lines up with existing self_com
+        -- records written by chat_outbound.lua.
+        local rtype = entry.isSelf and "self_com" or "com"
+        local from  = entry.isSelf and F2T_CHAR_NAME or entry.name
+        if not isDuplicate(rtype, from, entry.text, t, tolerance) then
+            table.insert(newRecords, { t = t, type = rtype, from = from, msg = entry.text })
         end
     end
 
@@ -276,8 +289,8 @@ end
 -- quoted chat messages (chat_inbound.lua) — a continuation line repeats
 -- neither the sender name nor the "X ago:" prefix, so it never matches
 -- matchHeader(). Any such line is treated as a continuation of whatever entry
--- is in progress (state.current, or none if the entry belonged to our own
--- message — already in the live log) as long as state.inEntry is still true.
+-- is in progress (state.current — including an own-message entry, folded in
+-- the same way as anyone else's) as long as state.inEntry is still true.
 function f2tChatComhistoryLine()
     if not state.active then return end
 
@@ -304,12 +317,9 @@ function f2tChatComhistoryLine()
 
         state.inEntry   = true
         state.contLines = 0
-        if F2T_CHAR_NAME and name:lower() == F2T_CHAR_NAME:lower() then
-            state.current = nil
-        else
-            state.current = { name = name, ago = ago, text = text }
-            table.insert(state.buffer, state.current)
-        end
+        local isSelf = F2T_CHAR_NAME ~= nil and name:lower() == F2T_CHAR_NAME:lower()
+        state.current = { name = name, ago = ago, text = text, isSelf = isSelf }
+        table.insert(state.buffer, state.current)
         return
     end
 

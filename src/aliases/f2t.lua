@@ -62,7 +62,7 @@ elseif subcommand == "on" then
         return
     end
     f2tSetAutostart(true)
-    if not Mux._running then Mux.fullStart() end
+    if not Mux._running then f2tFullStart() end
     cecho("\n<green>[f2t]<reset> f2ce-tools UI is on.\n")
 
 elseif subcommand == "off" then

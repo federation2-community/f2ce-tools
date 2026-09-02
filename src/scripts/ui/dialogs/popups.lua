@@ -277,11 +277,11 @@ local function applyModeSelectToPane(target)
             -- "f2ce-tools" directly: no separate apply call, no race with
             -- fullStart's own internal deferred setup.
             Mux.configureHost({ defaultWorkspace = "f2ce-tools" })
-            Mux.fullStart()
+            f2tFullStart()
         elseif selectedMode == "byow" then
             f2tSetAutostart(true)
             Mux.configureHost({ defaultWorkspace = "default" })
-            Mux.fullStart()
+            f2tFullStart()
         else
             f2tSetAutostart(false)
         end

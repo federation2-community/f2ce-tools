@@ -22,7 +22,10 @@ local function exploreResetConfirmBodyText(system_name, missing)
         table.concat(missing, ", "), system_name)
 end
 
-Mux.registerContent("f2t_explore_reset_confirm", {
+-- Defined here, registered from the registrar below. A load-time call into
+-- Mux raises while Muxlet is mid-reinstall, and everything after it in this
+-- file, the show function included, would never be defined.
+local exploreResetConfirmDef = {
     name = "Exploration Incomplete",
     internal = true,
     apply = function(target)
@@ -71,7 +74,7 @@ Mux.registerContent("f2t_explore_reset_confirm", {
         end)
     end,
     remove = function(_) end,
-})
+}
 
 --- Shows a Reset & Re-explore / Not now confirm dialog after a system sweep
 --- finishes with expected planets still missing.
@@ -89,3 +92,11 @@ function f2tShowExploreResetConfirm(system_name, missing, on_proceed, on_cancel)
     dialog:show()
     dialog:raise()
 end
+
+local function f2tRegisterExploreResetConfirm()
+    if not (Mux and Mux.registerContent) then return end
+    Mux.registerContent("f2t_explore_reset_confirm", exploreResetConfirmDef)
+end
+
+F2T_CONTENT_REGISTRARS = F2T_CONTENT_REGISTRARS or {}
+table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterExploreResetConfirm)
