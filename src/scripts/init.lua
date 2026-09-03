@@ -135,9 +135,9 @@ end)
 -- because it provides its own onboarding via f2tShowModeSelect().  It also
 -- prevents Muxlet's auto_start timer from double-starting by owning fullStart().
 
--- Loops F2T_CONTENT_REGISTRARS. Also called via MuddletDevHooks.afterReload
--- below after a live dev-mode reload — Mux.registerContent() overwrites by
--- name, safe to call repeatedly.
+-- Loops F2T_CONTENT_REGISTRARS. Called from f2tInit() below, including on a
+-- live dev-mode reload (see the "if Mux and Mux._ready" branch further down)
+-- — Mux.registerContent() overwrites by name, safe to call repeatedly.
 function f2tRegisterAllContent()
     for _, registrar in ipairs(F2T_CONTENT_REGISTRARS or {}) do
         local ok, err = pcall(registrar)
@@ -154,17 +154,20 @@ end
 
 -- Extension point the muddlet-injected dev-mode watcher looks for (see the
 -- muddlet repo's devmode.lua) — it never assumes this table exists, so it's
--- only defined here because f2ce-tools specifically needs both hooks:
+-- only defined here because f2ce-tools specifically needs it:
 --   ready: defers a poll's blocking io.open() until after login, so it can
 --     never land mid-password-prompt.
---   afterReload: reinstalling f2ce-tools doesn't refire Muxlet's
---     "muxletReady", so content registration has to be re-run explicitly.
+--
+-- No afterReload hook: reinstalling f2ce-tools doesn't refire Muxlet's own
+-- "muxletReady", but the "if Mux and Mux._ready then tempTimer(0,
+-- onMuxletReady) end" branch below already covers exactly that case (an
+-- in-place upgrade with Mux already loaded) — it re-runs f2tInit(), which
+-- calls f2tRegisterAllContent() itself and, via its own afterLogin(...),
+-- is what actually drives f2tFullStart() too. An afterReload hook here that
+-- also called f2tRegisterAllContent() only duplicated that same tick's work
+-- a moment earlier, registering every panel twice on every live reload.
 MuddletDevHooks = {
     ready = function() return F2T_LOGGED_IN end,
-    afterReload = function()
-        F2T_CONTENT_REGISTRARS = {}
-        if f2tRegisterAllContent then f2tRegisterAllContent() end
-    end,
 }
 
 -- onReady callback passed to Mux.bootHost; runs once a satisfying (exactly
@@ -278,6 +281,11 @@ local function bootHostOpts()
         opts.updateRepo              = "federation2-community/f2ce-tools"
         opts.updateSettingsNamespace = "f2t"
         opts.updateSettingsTab       = "F2CE-Tools/Update"
+
+        -- Only meaningful alongside updateRepo -- Mux._hostUpdate (which
+        -- carries this through to the restart-recommended dialog) is only
+        -- ever set when updateRepo is. See workspace.lua's f2tOnRestartDeclined.
+        opts.onRestartDeclined = f2tOnRestartDeclined
     end
 
     return opts

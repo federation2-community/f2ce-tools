@@ -1,7 +1,11 @@
--- Muxlet capture Transform for "SPYNET REPORT: <Rank> <Name> has entered/left <place>."
--- lines (see full.lua's default "SypnetReport" capture). Colors the line by
--- the rank shown in the report and turns the name into a player-card link,
--- the same rank-color + click-to-card convention as chat.lua/local_players.lua.
+-- Muxlet capture Transform for "SPYNET REPORT: <Rank> <Name>[ [tag]] has
+-- entered/left <place>." lines (see full.lua's default "SypnetReport" capture).
+-- Colors the line by the rank shown in the report and turns the name into a
+-- player-card link, the same rank-color + click-to-card convention as
+-- chat.lua/local_players.lua. The name may be followed by a bracketed tag
+-- (e.g. "Ariapaxa [Navigator]" for a staff role) — captured loosely as "who"
+-- and split apart below rather than assumed to be a single space-free token,
+-- so any such tag rides along without breaking the match.
 --
 -- Registered as an ordinary Muxlet action (Settings → Muxlet → Actions still
 -- lists it, read-only) so any capture's Transform dropdown can pick it by name;
@@ -12,8 +16,11 @@ local function spynetTransform(ctx)
     local text = ctx and ctx.value
     if not (mc and text) then return end
 
-    local rank, name, verb, place = text:match("^SPYNET REPORT: (%a+) (%S+) has (%a+) (.-)%.?$")
-    if not name then return end   -- unrecognized shape: let the caller fall back to a verbatim copy
+    local rank, who, verb, place = text:match("^SPYNET REPORT: (%a+) (.-) has (%a+) (.-)%.?$")
+    if not who then return end   -- unrecognized shape: let the caller fall back to a verbatim copy
+    local name = who:match("^(%S+)")
+    if not name then return end
+    local tag = who:match("(%[[^%]]-%])%s*$")
 
     local rc        = (f2t_rank_color_decho and f2t_rank_color_decho(rank)) or "<200,200,200>"
     local verbColor = (verb == "entered") and "<green>" or "<red>"
@@ -22,6 +29,7 @@ local function spynetTransform(ctx)
     mc:dechoLink(rc .. "<b>" .. name .. "</b><r>", function()
         if f2tPlayerCardShowOrRaiseByName then f2tPlayerCardShowOrRaiseByName(name) end
     end, "Open player card for " .. name, true)
+    if tag then mc:cecho(" <dim_grey>" .. tag .. "<reset>") end
     mc:cecho(string.format(" has %s%s<reset> %s.\n", verbColor, verb, place))
 
     return true

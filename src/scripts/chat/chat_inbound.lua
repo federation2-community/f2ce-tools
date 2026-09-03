@@ -53,6 +53,18 @@ function f2tChatInboundLine()
     local p = state.pending
     if not p then return end
 
+    -- The once-per-login topology sync (map/events.lua) and galaxy navigator
+    -- scrape (ui/content/galaxy.lua) both auto-request plain game output
+    -- (`display cartels`/`display syndicates`, `di systems`) around the same
+    -- login window a wrapped chat message can be mid-continuation. Their own
+    -- triggers own those lines and gag them once they've matched, but this
+    -- catch-all fires first/independently and has no gag of its own, so
+    -- without this check it folds their output straight into the pending
+    -- message (mirrors comhistory.lua's identical F2T_GALAXY.capture_active
+    -- guard).
+    if F2T_MAP_TOPOLOGY_CAPTURE and F2T_MAP_TOPOLOGY_CAPTURE.active then return end
+    if F2T_GALAXY and F2T_GALAXY.capture_active then return end
+
     local l = line
 
     if l:match('^%s*$') then

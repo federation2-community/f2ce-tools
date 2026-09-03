@@ -60,6 +60,78 @@ end
 F2T_CONTENT_REGISTRARS = F2T_CONTENT_REGISTRARS or {}
 table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterWorkspace)
 
+-- Hidden bookkeeping, not a user preference -- mirrors map/import_check.lua's
+-- seenHash()/markHashSeen() for the exact same reason: f2t_settings_get/set
+-- silently no-op on an unregistered key (Mux.settings.set returns
+-- false/"Unknown setting" without f2t_settings_register having run for it
+-- first), and registering it would only add a meaningless Settings-UI row
+-- for a value no user should ever touch. Reads/writes Mux.settings._data
+-- directly instead, with an explicit save.
+local function layoutHashSeen()
+    local d = Mux and Mux.settings and Mux.settings._data
+    return d and d["f2t"] and d["f2t"]["layout_hash_seen"]
+end
+
+local function markLayoutHashSeen(hash)
+    if not (Mux and Mux.settings) then return end
+    Mux.settings._data["f2t"] = Mux.settings._data["f2t"] or {}
+    Mux.settings._data["f2t"]["layout_hash_seen"] = hash
+    Mux.settings.save()
+end
+
+-- Genuinely user-facing, unlike layout_hash_seen above -- registered so it
+-- gets a real Settings-UI row and actually persists via f2t_settings_set.
+-- Flipped off by the "Never Prompt" button in layout_update_confirm.lua.
+f2t_settings_register("workspace", "notify_layout_updates", {
+    tab         = "F2CE-Tools/Misc",
+    label       = "Notify on layout updates",
+    description = "Prompt to reload the Full workspace layout when full.lua ships a change. "
+                .. "Turned off automatically by the prompt's own \"Never Prompt\" button.",
+    default     = true,
+})
+
+-- Hash a deferred layout-update prompt is waiting on (see f2tFullStart's
+-- "wasRunning" branch below), or nil when nothing is pending. Read by
+-- f2tOnRestartDeclined, wired as Muxlet's onRestartDeclined callback in
+-- init.lua's bootHostOpts.
+local _pendingLayoutUpdateHash = nil
+
+-- Shows the Reload/Not This Time/Never Prompt dialog. Shared by
+-- f2tFullStart's immediate path and f2tOnRestartDeclined's deferred one.
+-- "seen" is recorded from inside Reload/Not This Time/Never Prompt's own
+-- callbacks -- only once the user has actually responded to one of those
+-- three, not merely because the dialog was shown -- so closing the dialog
+-- (a deliberate no-op, wired in layout_update_confirm.lua) or a profile
+-- that closes before any button is clicked both correctly re-prompt next
+-- time instead of silently marking it handled.
+local function f2tShowLayoutUpdate(hash)
+    if not f2tShowLayoutUpdateConfirm then return end
+    f2tShowLayoutUpdateConfirm(
+        function() -- on_reload
+            Mux.applyWorkspace("f2ce-tools")
+            markLayoutHashSeen(hash)
+        end,
+        function() -- on_not_this_time: ask again once full.lua changes further
+            markLayoutHashSeen(hash)
+        end,
+        function() -- on_never: also silence the notify_layout_updates toggle
+            markLayoutHashSeen(hash)
+            f2t_settings_set("workspace", "notify_layout_updates", false)
+        end
+    )
+end
+
+-- Called back by Muxlet's restart-recommended dialog (see init.lua's
+-- bootHostOpts) when the user picks "Close Later" over "Close Profile" --
+-- the one moment a prompt deferred below actually needs to appear.
+function f2tOnRestartDeclined()
+    if not _pendingLayoutUpdateHash then return end
+    local hash = _pendingLayoutUpdateHash
+    _pendingLayoutUpdateHash = nil
+    f2t_debug_log("[workspace] f2tOnRestartDeclined: showing deferred Reload/Not This Time/Never Prompt")
+    f2tShowLayoutUpdate(hash)
+end
+
 -- Runs Mux.fullStart(), then reconciles the "f2ce-tools" Full-mode layout
 -- against F2T_LAYOUT_HASH.
 --
@@ -76,27 +148,59 @@ table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterWorkspace)
 -- and prompts once.
 function f2tFullStart()
     local hadCurrent = Mux._workspaces["current"] ~= nil
+    -- Read before Mux.fullStart(), which sets Mux._running = true itself on
+    -- a fresh start -- checking after the call would always read true.
+    local wasRunning = Mux._running
     Mux.fullStart()
 
-    if not F2T_LAYOUT_HASH then return end -- full.lua failed to load; nothing to compare
+    f2t_debug_log("[workspace] f2tFullStart: hash=%s hadCurrent=%s reset_workspace=%s seen=%s",
+        tostring(F2T_LAYOUT_HASH), tostring(hadCurrent),
+        tostring(Mux.settings.get("mux", "reset_workspace")),
+        tostring(layoutHashSeen()))
+
+    if not F2T_LAYOUT_HASH then
+        f2t_debug_log("[workspace] f2tFullStart: bailing, full.lua never loaded (F2T_LAYOUT_HASH is nil)")
+        return
+    end
 
     if not hadCurrent then
         -- Just built fresh from this session's "f2ce-tools" (or BYOW's
         -- "default"); that already IS this content.
-        f2t_settings_set("f2t", "layout_hash_seen", F2T_LAYOUT_HASH)
+        f2t_debug_log("[workspace] f2tFullStart: no prior 'current' workspace; seeding baseline, no prompt")
+        markLayoutHashSeen(F2T_LAYOUT_HASH)
         return
     end
 
-    if Mux.settings.get("mux", "reset_workspace") ~= "f2ce-tools" then return end -- BYOW, or no mode chosen
-
-    if f2t_settings_get("f2t", "layout_hash_seen") == F2T_LAYOUT_HASH then return end
-
-    if f2tShowLayoutUpdateConfirm then
-        f2tShowLayoutUpdateConfirm(function() -- on_reload
-            Mux.applyWorkspace("f2ce-tools")
-        end)
+    if Mux.settings.get("mux", "reset_workspace") ~= "f2ce-tools" then
+        f2t_debug_log("[workspace] f2tFullStart: bailing, reset_workspace is not \"f2ce-tools\"")
+        return -- BYOW, or no mode chosen
     end
-    -- Either choice means the user has now been asked about this content;
-    -- never ask again for it.
-    f2t_settings_set("f2t", "layout_hash_seen", F2T_LAYOUT_HASH)
+
+    if not f2t_settings_get("workspace", "notify_layout_updates") then
+        f2t_debug_log("[workspace] f2tFullStart: bailing, notify_layout_updates is off")
+        return
+    end
+
+    if layoutHashSeen() == F2T_LAYOUT_HASH then
+        f2t_debug_log("[workspace] f2tFullStart: bailing, hash matches what was already seen")
+        return
+    end
+
+    if wasRunning then
+        -- Mux was already running, meaning this is an in-place reinstall
+        -- (not a fresh boot) -- exactly the situation that always pairs
+        -- with Muxlet's own restart-recommended dialog too, whether this
+        -- reinstall came from a dev-mode local build or a real end-user
+        -- update. Showing both dialogs at once stacks one on top of the
+        -- other, so wait for the actual restart decision instead: if the
+        -- user restarts, the next boot's own non-deferred call through this
+        -- same function shows this fresh, with nothing lost; if they pick
+        -- "Close Later" (see f2tOnRestartDeclined above), it shows then.
+        f2t_debug_log("[workspace] f2tFullStart: deferring Reload/Not This Time/Never Prompt to restart decision")
+        _pendingLayoutUpdateHash = F2T_LAYOUT_HASH
+        return
+    end
+
+    f2t_debug_log("[workspace] f2tFullStart: showing Reload/Not This Time/Never Prompt")
+    f2tShowLayoutUpdate(F2T_LAYOUT_HASH)
 end

@@ -5,5 +5,6 @@
   {"name": "popups"},
   {"name": "nav_confirm"},
   {"name": "explore_reset_confirm"},
-  {"name": "explore_scope_confirm"}
+  {"name": "explore_scope_confirm"},
+  {"name": "layout_update_confirm"}
 ]

@@ -3,7 +3,7 @@
   "version": "3.3.0",
   "dependency": {
     "package": "Muxlet",
-    "version": "2.3.2",
+    "version": "v2.3.2",
     "repo": "tmtocloud/Muxlet",
     "initFile": "src/scripts/init.lua",
     "versionVar": "F2T_REQUIRED_MUXLET",
