@@ -121,6 +121,21 @@ jobs:
       - name: Build with muddler
         run: docker run --rm -v "$PWD:/work" -w /work demonnic/muddler
 
+      - name: Inject dev-mode auto-reload (pre-release builds only)
+        if: steps.version.outputs.is_release == 'false'
+        run: |
+          # Production releases (v* tags) never carry this — only pre-release
+          # builds (branch pushes, unversioned dispatch) get the watcher, so a
+          # tagged production install can never self-reinstall from outside
+          # Mudlet's own update flow. Reuses muddlet's own injection logic
+          # (github.com/tmtocloud/muddlet) rather than duplicating it here, so
+          # this repo carries none of devmode.lua's actual source.
+          curl -fsSL -o devmode.lua https://raw.githubusercontent.com/tmtocloud/muddlet/master/devmode.lua
+          curl -fsSL -o inject_devmode.py https://raw.githubusercontent.com/tmtocloud/muddlet/master/inject_devmode.py
+          python3 inject_devmode.py devmode.lua f2ce-tools build/f2ce-tools.xml build/f2ce-tools.mpackage muddlet_devmode
+          rm -f devmode.lua inject_devmode.py
+          echo "Dev mode      : injected into build/f2ce-tools.mpackage"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
