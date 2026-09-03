@@ -119,7 +119,12 @@ jobs:
             src/scripts/init.lua
 
       - name: Build with muddler
-        run: docker run --rm -v "$PWD:/work" -w /work demonnic/muddler
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work demonnic/muddler
+          # The container writes build/ as root; hand it back to the runner
+          # user so later steps (e.g. the devmode injection below) can write
+          # to it too.
+          sudo chown -R "$(id -u):$(id -g)" build
 
       - name: Inject dev-mode auto-reload (pre-release builds only)
         if: steps.version.outputs.is_release == 'false'
