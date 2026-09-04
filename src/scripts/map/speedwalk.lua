@@ -472,11 +472,16 @@ end
 -- triggers that recognize a failure as permanent (e.g. a rank/credits gate
 -- that no route recompute could ever get around) and want to skip straight
 -- to stopping instead of burning through retries first.
-function f2t_map_speedwalk_fail(reason)
+-- failed_room/failed_dir let a caller that already knows the true origin of
+-- the failure (e.g. handle_move_failure, which captures it before an
+-- unexpected arrival overwrites F2T_MAP_CURRENT_ROOM_ID) report it exactly.
+-- Every other caller fails from the room it's still standing in, so the
+-- default is correct there.
+function f2t_map_speedwalk_fail(reason, failed_room, failed_dir)
     if not F2T_SPEEDWALK_ACTIVE then return end
     cecho(string.format("\n<red>[map]<reset> %s\n", reason))
-    F2T_SPEEDWALK_FAILED_EXIT_ROOM = F2T_MAP_CURRENT_ROOM_ID
-    F2T_SPEEDWALK_FAILED_EXIT_DIR  = F2T_SPEEDWALK_LAST_COMMAND
+    F2T_SPEEDWALK_FAILED_EXIT_ROOM = failed_room or F2T_MAP_CURRENT_ROOM_ID
+    F2T_SPEEDWALK_FAILED_EXIT_DIR  = failed_dir or F2T_SPEEDWALK_LAST_COMMAND
     cecho("\n<yellow>[map]<reset> Speedwalk stopped\n")
     resetSpeedwalkState("failed", true)
     tempTimer(0, function()
@@ -534,14 +539,15 @@ function f2t_map_speedwalk_handle_move_failure(from_room)
     if repeats >= max_retries then
         f2t_map_speedwalk_fail(string.format(
             "'%s' has failed %d times from the same room, stopping speedwalk",
-            F2T_SPEEDWALK_LAST_COMMAND or "movement", repeats))
+            F2T_SPEEDWALK_LAST_COMMAND or "movement", repeats),
+            from_room, F2T_SPEEDWALK_LAST_COMMAND)
         return
     end
 
     F2T_SPEEDWALK_CONSECUTIVE_FAILURES = F2T_SPEEDWALK_CONSECUTIVE_FAILURES + 1
     if F2T_SPEEDWALK_CONSECUTIVE_FAILURES >= max_retries then
         f2t_map_speedwalk_fail(string.format("Path appears blocked after %d attempts, stopping speedwalk",
-            max_retries))
+            max_retries), from_room, F2T_SPEEDWALK_LAST_COMMAND)
         return
     end
     cecho(string.format("\n<yellow>[map]<reset> Movement erred, recomputing path... (attempt %d/%d)\n",

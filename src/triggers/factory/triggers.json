@@ -8,7 +8,7 @@
   },
   {
     "name": "flush_success",
-    "patterns": [{"pattern": "^The storage facilities at factory #(\\d+) have been cleared\\.$", "type": "regex"}]
+    "patterns": [{"pattern": "^The storage facilities at factory #(\\d+) \\(.+ on .+\\) have been cleared\\.$", "type": "regex"}]
   },
   {
     "name": "no_factory",

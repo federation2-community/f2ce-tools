@@ -13,19 +13,14 @@ function f2t_map_explore_has_unlocked_stubs(area_id)
     return false
 end
 
+-- Reachability-checked, not a raw flag scan: a stale duplicate room left
+-- over from a system rebuild carries its flag just as readily as a live,
+-- reachable one, and a scan that didn't tell them apart is what let a
+-- "fully explored" verdict stand for a planet whose exchange nothing could
+-- actually walk to (see f2t_map_find_room_with_flag).
 function f2t_map_explore_planet_has_flags(area_id, required_flags)
-    local found_flags = {}
-    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
-        for _, flag in ipairs(required_flags) do
-            if not found_flags[flag] then
-                if getRoomUserData(room_id, string.format("fed2_flag_%s", flag)) == "true" then
-                    found_flags[flag] = true
-                end
-            end
-        end
-    end
     for _, flag in ipairs(required_flags) do
-        if not found_flags[flag] then return false end
+        if not f2t_map_find_room_with_flag(area_id, flag) then return false end
     end
     return true
 end

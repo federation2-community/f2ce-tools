@@ -55,7 +55,11 @@ function f2t_galaxy_scrape()
     F2T_GALAXY.capture_lines  = {}
     setCaptureTriggers(true)
     f2t_galaxy_refresh_open()
-    sendAll("di systems", false)   -- don't echo; triggers delete the output
+    -- "all" (not just plain "di systems") is what makes the server include
+    -- closed systems at all - plain "di systems" silently omits them
+    -- (Star::LIST_OPEN), which is exactly why the client used to have no way
+    -- to learn a system was closed except by being refused a jump into it.
+    sendAll("di systems all", false)   -- don't echo; triggers delete the output
     resetFinishTimer()
 end
 
@@ -79,24 +83,31 @@ function f2t_galaxy_capture_blank()
 end
 
 -- "SystemName - SyndicateName syndicate - CartelName cartel - Rank Owner[tag]: Planet(T) Planet(T) ..."
+-- A closed system prints no planet list at all, just "...: (Closed)"
+-- (Star::ListSystem) - is_closed catches that shape and skips the planet
+-- parse, which would otherwise just find nothing and look like a
+-- zero-planet system rather than one closed to visitors.
 local function parseSystemLine(line)
-    local system_name, syndicate_name, cartel_name, planet_str =
+    local system_name, syndicate_name, cartel_name, rest =
         line:match("^(.+) %- (.+) syndicate %- (.+) cartel %- [^:]+: (.*)$")
     if not system_name then return nil end
     system_name    = system_name:match("^%s*(.-)%s*$")
     syndicate_name = syndicate_name:match("^%s*(.-)%s*$")
     cartel_name    = cartel_name:match("^%s*(.-)%s*$")
 
+    local is_closed = rest:match("^%(Closed%)%s*$") ~= nil
     local planets = {}
-    for planet_name in (planet_str or ""):gmatch("(.-)%([^%)]+%)%s*") do
-        planet_name = planet_name:match("^%s*(.-)%s*$")
-        if planet_name ~= "" then
-            planets[#planets + 1] = {
-                name = planet_name, system = system_name, cartel = cartel_name, syndicate = syndicate_name
-            }
+    if not is_closed then
+        for planet_name in (rest or ""):gmatch("(.-)%([^%)]+%)%s*") do
+            planet_name = planet_name:match("^%s*(.-)%s*$")
+            if planet_name ~= "" then
+                planets[#planets + 1] = {
+                    name = planet_name, system = system_name, cartel = cartel_name, syndicate = syndicate_name
+                }
+            end
         end
     end
-    return system_name, syndicate_name, cartel_name, planets
+    return system_name, syndicate_name, cartel_name, planets, is_closed
 end
 
 -- No-op until cartels is populated; f2t_galaxy_finish_capture re-calls this
@@ -129,15 +140,30 @@ function f2t_galaxy_finish_capture()
 
     local cartels    = {}
     local syndicates = {}
+    -- "di systems all" is ground truth for open/closed, queried live and
+    -- without needing to travel or be refused a jump - reconcile the
+    -- topology model's closed set against it now rather than only ever
+    -- learning a closure reactively (from a jump refusal) or never learning
+    -- a reopening at all (nothing else ever clears it once set).
+    local topology_changed = false
     for _, line in ipairs(F2T_GALAXY.capture_lines) do
-        local sys, syn, cart, planets = parseSystemLine(line)
+        local sys, syn, cart, planets, is_closed = parseSystemLine(line)
         if sys and syn and cart then
             cartels[cart] = cartels[cart] or { name = cart, syndicate = syn, systems = {} }
-            cartels[cart].systems[sys] = { name = sys, cartel = cart, syndicate = syn, planets = planets }
+            cartels[cart].systems[sys] = {
+                name = sys, cartel = cart, syndicate = syn, planets = planets, closed = is_closed,
+            }
             syndicates[syn] = syndicates[syn] or { name = syn, cartels = {} }
             syndicates[syn].cartels[cart] = cartels[cart]   -- same table object, not a copy
+
+            if is_closed then
+                if f2t_map_topology_mark_closed(sys) then topology_changed = true end
+            else
+                if f2t_map_topology_mark_open(sys) then topology_changed = true end
+            end
         end
     end
+    if topology_changed then f2t_map_topology_commit(true) end
 
     F2T_GALAXY.cartels    = cartels
     F2T_GALAXY.syndicates = syndicates
@@ -317,10 +343,19 @@ end
 -- against the room DB (not F2T_GALAXY, which only ever knows what "di
 -- systems" listed). ctx hoists one getAreaTable() call per populate() so
 -- checking a few hundred planets costs plain table lookups, not one Mudlet
--- API round-trip apiece.
+-- API round-trip apiece. spaceAreaBySystem is the same "which area is this
+-- system's live space" resolution f2t_map_get_system_space_area_actual does,
+-- precomputed once per pass instead of once per planet - that function's own
+-- cost is an O(areas) scan, and calling it per-planet across the whole
+-- galaxy (thousands of planets) rather than per-system would multiply into a
+-- real cost on a hot path: populate() reruns on every room move.
 local function buildCoverageCtx()
-    local ctx = { areas = getAreaTable() or {}, lowerAreas = {} }
-    for nm in pairs(ctx.areas) do ctx.lowerAreas[nm:lower()] = true end
+    local ctx = { areas = getAreaTable() or {}, lowerAreas = {}, spaceAreaBySystem = {} }
+    for nm in pairs(ctx.areas) do
+        ctx.lowerAreas[nm:lower()] = true
+        local sys = f2t_map_get_system_from_space_area(nm)
+        if sys then ctx.spaceAreaBySystem[sys:lower()] = nm end
+    end
     return ctx
 end
 
@@ -329,21 +364,41 @@ local function areaKnown(ctx, name)
     return ctx.lowerAreas[name:lower()] ~= nil
 end
 
+-- A planet only counts as mapped when its orbit room actually exists inside
+-- its own system's live space area - not merely when some area happens to
+-- share its name. Plain name existence (the old check) let an unrelated or
+-- stale area answer for a planet that was never actually reached, which is
+-- how the navigator showed a planet "explored" that a speedwalk then refused
+-- as unmapped. This still can't tell a live orbit room apart from a stranded
+-- duplicate within the *same* area (that needs real path reachability, which
+-- is too costly to run for every planet in the galaxy on every room move) -
+-- see f2t_map_find_orbit_room's own preferReachable fallback.
+local function planetMapped(ctx, system_name, planet_name)
+    local space_area_name = ctx.spaceAreaBySystem[system_name:lower()]
+    return space_area_name ~= nil and f2t_map_find_orbit_room(space_area_name, planet_name) ~= nil
+end
+
 local function systemCoverage(ctx, sd)
     local mapped, total = 0, 0
     for _, pd in ipairs(sd.planets or {}) do
         if pd.name ~= (sd.name .. " Space") then
             total = total + 1
-            if areaKnown(ctx, pd.name) then mapped = mapped + 1 end
+            if planetMapped(ctx, sd.name, pd.name) then mapped = mapped + 1 end
         end
     end
     return mapped, total
 end
 
+-- A closed system can't be explored right now, so its unmapped remainder
+-- shouldn't drag down its cartel/syndicate's coverage badge the way a
+-- genuinely unexplored system would - it excludes closed systems from the
+-- rollup entirely rather than counting them as a gap nothing can currently
+-- close. Planets already mapped there stay visible (and green) on the
+-- system's own row; they just don't feed the parent totals.
 local function cartelCoverage(ctx, cd)
     local mapped, total = 0, 0
     for sn, sd in pairs(cd.systems or {}) do
-        if sn ~= (cd.name .. " Space") then
+        if sn ~= (cd.name .. " Space") and not sd.closed then
             local m, t = systemCoverage(ctx, sd)
             mapped = mapped + m; total = total + t
         end
@@ -362,8 +417,12 @@ end
 
 -- A cartel/syndicate/system with zero planets mapped still counts as
 -- "partial" rather than fully unmapped when its own space area is known
--- (e.g. the link room has been logged but no planet visited yet).
-local function coverageState(mapped, total, space_known)
+-- (e.g. the link room has been logged but no planet visited yet). "closed"
+-- (system rows only) overrides all of that: a system currently closed to
+-- visitors can't be explored regardless of how much of it is already
+-- mapped, so its row says so instead of reading as merely unexplored.
+local function coverageState(mapped, total, space_known, closed)
+    if closed then return "closed" end
     if total > 0 and mapped == total then return "mapped" end
     if mapped > 0 or space_known then return "partial" end
     return "unmapped"
@@ -398,8 +457,8 @@ local function poiVisible(flag)
     return v and true or false
 end
 
--- Only called for planets already known to be mapped (see areaKnown), so an
--- unmapped planet never pays for a room scan that can't find anything. Most
+-- Only called for planets already known to be mapped (see planetMapped), so
+-- an unmapped planet never pays for a room scan that can't find anything. Most
 -- player planets cram every service into the shuttlepad's own room, so a
 -- flag whose room matches the shuttlepad's is folded away rather than
 -- stacking a redundant chip next to it.
@@ -489,7 +548,7 @@ local ICONS = {
 -- "mapped" was #7ed99a (pale mint) - too close to "unmapped" grey on some
 -- screens to tell apart at a glance. A richer, more saturated green reads
 -- clearly distinct from both the grey and the amber "partial" state.
-local STATE_COLOR = { mapped = "#22c55e", partial = "#e0b34d", unmapped = "#767b8a" }
+local STATE_COLOR = { mapped = "#22c55e", partial = "#e0b34d", unmapped = "#767b8a", closed = "#ef4444" }
 local BADGE_W    = 20   -- % width of the "n/m" coverage badge (syndicate/cartel/system rows) -
                          -- wide enough for up to 4-digit counts ("9999/9999") at BADGE_FONT_PX
 local BADGE_FONT_PX = 8 -- px; smaller than the row's other labels so 4-digit counts still fit BADGE_W
@@ -514,6 +573,7 @@ local STATE_TOOLTIP = {
     mapped   = "Explored",
     partial  = "Partially Explored — click to continue exploring",
     unmapped = "Unexplored — click to explore",
+    closed   = "Closed to visitors — click to check again",
 }
 local ROW_TYPE_LABEL = { syndicate = "Syndicate", cartel = "Cartel", system = "System", planet = "Planet" }
 -- Name text color, inline (see below) since setStyleSheet's `color:` never
@@ -669,7 +729,9 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
 
     local info_tip = "Click for info (di " .. row_type .. ")"
     if has_badge then
-        nlbl:setToolTip(string.format("%d of %d planets mapped\n%s", cov.mapped, cov.total, info_tip))
+        local mapped_note = string.format("%d of %d planets mapped", cov.mapped, cov.total)
+        if cov.state == "closed" then mapped_note = mapped_note .. " (closed to visitors)" end
+        nlbl:setToolTip(mapped_note .. "\n" .. info_tip)
     elseif row_type == "planet" then
         if cov.state == "unmapped" then
             nlbl:setToolTip("Not yet mapped\n" .. info_tip)
@@ -878,8 +940,8 @@ local function populate(gid)
                                         local sys_cur = (sn == cur_system) and (cn == cur_cartel) and (cur_planet == "")
                                         local sys_mapped, sys_total = systemCoverage(ctx, sd)
                                         local space_known = areaKnown(ctx, sn .. " Space")
-                                        local sys_cov = { state = coverageState(sys_mapped, sys_total, space_known),
-                                            mapped = sys_mapped, total = sys_total }
+                                        local sys_state = coverageState(sys_mapped, sys_total, space_known, sd.closed)
+                                        local sys_cov = { state = sys_state, mapped = sys_mapped, total = sys_total }
                                         createRow(inst, inst.content, sn, "system", 2, y, sd, sys_cur, sys_cov)
                                         y = y + ROW_H
                                         local skey = "system:" .. cn .. ":" .. sn
@@ -892,7 +954,7 @@ local function populate(gid)
                                                         not searching or g.expanded[skey] or planetMatches(pd, q)
                                                     if show_p then
                                                         local pcur = (pd.name == cur_planet) and (sn == cur_system)
-                                                        local p_mapped = areaKnown(ctx, pd.name)
+                                                        local p_mapped = planetMapped(ctx, sn, pd.name)
                                                         local p_cov = { state = p_mapped and "mapped" or "unmapped",
                                                             flags = p_mapped and planetFlags(pd.name) or {} }
                                                         createRow(inst, inst.content, pd.name, "planet", 3, y, pd,

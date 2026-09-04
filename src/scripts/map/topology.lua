@@ -271,6 +271,44 @@ function f2t_map_topology_commit(changed)
     return true
 end
 
+F2T_MAP_TOPOLOGY_VERIFY_FRESH_SECONDS  = F2T_MAP_TOPOLOGY_VERIFY_FRESH_SECONDS or 120
+F2T_MAP_TOPOLOGY_VERIFY_TIMEOUT_SECONDS = F2T_MAP_TOPOLOGY_VERIFY_TIMEOUT_SECONDS or 15
+
+-- Live, no-travel-needed re-check of open/closed status before trusting a
+-- cached closed/exiled mark: "di systems all" (the galaxy navigator's scrape)
+-- tells the server's actual open/closed state for every system up front,
+-- so a mark this session recorded from a jump refusal is never the only way
+-- to learn a system re-opened. Recent F2T_GALAXY data is trusted as-is;
+-- otherwise a fresh scrape is kicked and callback runs once it lands (its
+-- own completion reconciles the topology closed set - see galaxy.lua's
+-- f2t_galaxy_finish_capture), or after a timeout so an offline/dead
+-- connection can't hang an exploration sweep waiting on it forever.
+function f2t_map_topology_verify_live(callback)
+    if F2T_GALAXY and F2T_GALAXY.loaded and F2T_GALAXY.builtAt
+       and (os.time() - F2T_GALAXY.builtAt) < F2T_MAP_TOPOLOGY_VERIFY_FRESH_SECONDS then
+        callback()
+        return
+    end
+    if not f2t_galaxy_scrape then
+        callback()
+        return
+    end
+
+    local done = false
+    local handler_id, timer_id
+    local function finish()
+        if done then return end
+        done = true
+        if handler_id then killAnonymousEventHandler(handler_id) end
+        if timer_id then killTimer(timer_id) end
+        callback()
+    end
+
+    handler_id = registerAnonymousEventHandler("f2tGalaxyIndexed", finish)
+    timer_id = tempTimer(F2T_MAP_TOPOLOGY_VERIFY_TIMEOUT_SECONDS, finish)
+    f2t_galaxy_scrape()
+end
+
 -- The name of a place as the model already spells it, or nil when it is new.
 -- Systems and cartels share a namespace here on purpose: a cartel hub is a
 -- system of the same name, and callers routinely have only one of the two.

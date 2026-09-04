@@ -418,10 +418,19 @@ function f2t_map_navigate_compensate(destination, target_id, opts)
         .. "link -> target %s", f2t_map_describe_room(target_id), tostring(target_system),
         f2t_map_describe_room(link_room), link_reaches and "reachable" or "NOT reachable")
     if link_room and roomExists(link_room) and not link_reaches then
+        -- The target is already proven unreachable even from its own system's
+        -- link room, so reach_system's "walk to the link, then retry" plan
+        -- would only repeat a check that already failed - and for a bare
+        -- flag destination ("exchange"), retrying from the link re-resolves
+        -- it against whatever area that walk ends up in (the system's own
+        -- space), not the planet the hint just diagnosed, silently searching
+        -- the wrong area instead of ever crawling the right one. Hand the
+        -- hint straight to the explore flow that already named the actual
+        -- scope to sweep.
         local hint = f2t_map_navigate_target_hint(target_id, target_system, link_room)
         hint.mapped_but_unreachable = true
         confirmThen(destination, hint, "No mapped route to destination", opts, function(next_opts)
-            f2t_map_navigate_reach_system(destination, target_id, target_system, next_opts)
+            f2t_map_navigate_explore_hint(destination, hint, next_opts)
         end)
         return
     end

@@ -63,7 +63,7 @@ function f2t_map_explore_system_start(system_mode, system_name, on_complete_call
 end
 
 function f2t_map_explore_system_start_with_planets(system_mode, system_name, expected_planet_names,
-                                                   planets_without_exchange, on_complete_callback)
+                                                   planets_without_exchange, on_complete_callback, verified)
     local expected_planets_set = nil
     local expected_planets_found_set = nil
     local expected_planets_remaining_count = nil
@@ -146,16 +146,28 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
     local current_area = current_room and getRoomArea(current_room)
 
     -- A system already proven closed/exiled to us this session isn't worth a
-    -- fresh travel attempt just to get refused again - skip straight to the
-    -- callback (no run was ever claimed, so nothing needs releasing). Only a
-    -- nested call (F2T_MAP_EXPLORE_STATE already active, owned by a parent
-    -- cartel/galaxy sweep) gets a deferred-report line: a standalone call has
-    -- no later summary to show it in, and the cecho below already said it.
+    -- fresh travel attempt just to get refused again - but the mark that
+    -- proved it can be stale (nothing else ever clears it once set, and a
+    -- closure can lift without us ever being told), so it's re-verified live
+    -- via "di systems all" - no travel needed - before it's trusted. `verified`
+    -- guards against re-verifying forever: it's only unset on the first pass,
+    -- so a system still genuinely closed after a fresh check skips straight
+    -- through on the retry rather than looping. Only a nested call
+    -- (F2T_MAP_EXPLORE_STATE already active, owned by a parent cartel/galaxy
+    -- sweep) gets a deferred-report line: a standalone call has no later
+    -- summary to show it in, and the cecho below already said it.
     if (not space_area_id or current_area ~= space_area_id) then
         local barred_reason = f2t_map_topology_barred_reason(system_name)
+        if barred_reason and not verified then
+            f2t_map_topology_verify_live(function()
+                f2t_map_explore_system_start_with_planets(system_mode, system_name, expected_planet_names,
+                    planets_without_exchange, on_complete_callback, true)
+            end)
+            return true
+        end
         if barred_reason then
             cecho(string.format(
-                "\n<yellow>[map-explore]<reset> Skipping %s - known %s\n", system_name, barred_reason))
+                "\n<yellow>[map-explore]<reset> Skipping %s - just confirmed %s\n", system_name, barred_reason))
             if F2T_MAP_EXPLORE_STATE.active then
                 F2T_MAP_EXPLORE_STATE.deferred_report = (F2T_MAP_EXPLORE_STATE.deferred_report or "") ..
                     string.format("<yellow>Skipped %s:<reset> %s\n", system_name, barred_reason)

@@ -1,12 +1,32 @@
 -- f2ce-tools map — room query utilities (ported from map_room_query.lua)
 
+-- Prefer a room the map can actually reach from where we stand. A map can
+-- hold a stranded duplicate of a whole system or planet area (a Dyson
+-- Sphere rebuild, a stale import), and every one of its rooms answers a
+-- flag/name lookup just as readily as the live one - which is how a nav or
+-- an "already explored" check ends up pointing at a room nothing can
+-- actually walk to.
+local function preferReachable(candidates)
+    if #candidates < 2 then return candidates[1] end
+    local here = F2T_MAP_CURRENT_ROOM_ID
+    if here then
+        for _, room_id in ipairs(candidates) do
+            if room_id == here or getPath(here, room_id) then return room_id end
+        end
+    end
+    return candidates[1]
+end
+
 function f2t_map_find_room_with_flag(area_id, flag)
     if not area_id then return nil end
     local flag_key = string.format("fed2_flag_%s", flag)
+    local candidates = {}
     for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
-        if getRoomUserData(room_id, flag_key) == "true" then return room_id end
+        if getRoomUserData(room_id, flag_key) == "true" then
+            candidates[#candidates + 1] = room_id
+        end
     end
-    return nil
+    return preferReachable(candidates)
 end
 
 -- The interstellar link room of an area. A system has exactly one server-side
@@ -29,23 +49,6 @@ function f2t_map_find_link_room(area_id)
         end
     end
     return best
-end
-
--- Prefer a room the map can actually reach from where we stand. A map can
--- hold a stranded duplicate of a whole system (see f2t_map_find_link_room),
--- and every one of its rooms answers a name lookup just as readily as the
--- live one - which is how a nav ends up planning a route out through a system
--- it has no business visiting, to get back into a copy of the one it is
--- already in.
-local function preferReachable(candidates)
-    if #candidates < 2 then return candidates[1] end
-    local here = F2T_MAP_CURRENT_ROOM_ID
-    if here then
-        for _, room_id in ipairs(candidates) do
-            if room_id == here or getPath(here, room_id) then return room_id end
-        end
-    end
-    return candidates[1]
 end
 
 -- The room in a system's space area that orbits a given planet, which is
