@@ -74,6 +74,35 @@ function f2t_hauling_rotation_catalog()
     return f2t_get_all_commodities()
 end
 
+-- Premium hauling already knows its fixed base-price catalog. Queue its saved
+-- unattempted members without polling every commodity up front; each member is
+-- first priced when it becomes current. Exclusions still count as reviewed.
+function f2t_hauling_rotation_queue_catalog(excluded)
+    excluded = type(excluded) == "table" and excluded or {}
+    local data, err = load()
+    if not data then return nil, err end
+    local catalog, catalog_error = f2t_hauling_rotation_catalog()
+    if not catalog then return nil, catalog_error end
+    if #catalog == 0 then return nil, "Commodity catalog unavailable" end
+    local function queue()
+        local rows = {}
+        for _, canonical in ipairs(catalog) do
+            local name = canonical:lower()
+            if excluded[name] then data.done[name] = true
+            elseif not data.done[name] then rows[#rows+1] = {commodity=canonical} end
+        end
+        return rows
+    end
+    local rows = queue()
+    if #rows == 0 then
+        data.round = data.round + 1; data.done = {}
+        rows = queue()
+    end
+    local saved, reason = save(data)
+    if not saved then return nil, reason end
+    return rows, data.round, #catalog
+end
+
 -- Only a complete selected catalog review can roll the round over. Unavailable and
 -- excluded commodities count as reviewed; they never force an unsafe purchase.
 function f2t_hauling_rotation_queue(results, excluded)

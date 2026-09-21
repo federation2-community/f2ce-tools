@@ -167,26 +167,30 @@ test("67 to 21 migration preserves selected attempts without requiring the other
     rows,round=queue(); eq(#rows,21); eq(round,2)
 end)
 
-test("premium analysis requests only the selected twenty-one and retains profit ordering",function()
-    reset(); F2T_HAULING_STATE.rotation="top_base_21"; reviews[67].profit=999999
-    local original=f2t_price_get_all_data; local requested
-    f2t_price_get_all_data=function(cb, selected)
-        requested=selected; local rows={}; for i=1,21 do rows[i]=reviews[i] end; cb(rows)
-    end
+test("premium queues the saved twenty-one without a cycle-start price sweep",function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"
+    local original=f2t_price_get_all_data; local sweeps=0
+    f2t_price_get_all_data=function() sweeps=sweeps+1; return false end
     f2t_hauling_phase_analyze(); f2t_price_get_all_data=original
-    eq(#requested,21); eq(requested[21],"C21"); eq(trips[1],"C1")
+    eq(sweeps,0); eq(#F2T_HAULING_STATE.commodity_queue,21); eq(trips[1],"C1")
+    assert(table.concat(output):find("price-scanned only when processed",1,true))
     f2t_hauling_rotation_status(); assert(table.concat(output):find("1/21",1,true))
 end)
 
-test("premium unprofitable top twenty-one never falls back to lower base commodities",function()
+test("premium advances one commodity at a time without rescanning the batch",function()
     reset(); F2T_HAULING_STATE.rotation="top_base_21"
-    for i=1,21 do reviews[i].profit=0 end
-    f2t_hauling_phase_analyze(); eq(stopped,1); eq(#trips,0)
+    local original=f2t_price_get_all_data; local sweeps=0
+    f2t_price_get_all_data=function() sweeps=sweeps+1; return false end
+    f2t_hauling_phase_analyze(); eq(#trips,1); eq(trips[1],"C1")
+    f2t_hauling_finish_remove_commodity(); eq(#trips,2); eq(trips[2],"C2"); eq(sweeps,0)
+    f2t_price_get_all_data=original
 end)
 
-test("premium still requires every selected commodity and preserves checkpoints on incomplete scan",function()
-    reset(); F2T_HAULING_STATE.rotation="top_base_21"; queue(); assert(f2t_hauling_rotation_claim("C1"))
-    local before=files[p("a")]; table.remove(reviews,21); eq(queue(),nil); eq(files[p("a")],before)
+test("premium exclusions are durably reviewed without a price request",function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"
+    local rows,round,total=f2t_hauling_rotation_queue_catalog({c2=true})
+    eq(#rows,20); eq(round,1); eq(total,21); eq(f2t_hauling_rotation_claim("C2"),nil)
+    eq(files[p("a")],files[p("b")])
 end)
 
 test("regular hauling after premium still includes the other 46",function()

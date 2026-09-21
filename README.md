@@ -9,15 +9,19 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew41**, with **FedHauler 1.17.29**, limits the existing
-Premium Hauler to the **21 highest fixed base-price commodities**. Gold and
-Tracers are both included at the 600ig cutoff. Only those 21 are price-scanned
-and rotated; unavailable, excluded or unprofitable goods are skipped without
-substituting cheaper-base goods. Existing saved attempts carry over, and each
-selected commodity gets one attempt before another round. Ordinary hauling and
-manual price-all retain all 67. Selling is unchanged from ew40; this release
-does not change receipt handling, buyers, profit rules or bulk operations.
-Update both packages while stopped; loading still starts no automation.
+Native candidate **ew42**, with **FedHauler 1.17.29**, limits the existing
+Premium Hauler to the **21 highest fixed base-price commodities** without a
+21-request scan burst at cycle start. Gold and Tracers are both included at the
+600ig cutoff. Each commodity is scanned when its saved turn begins to select a
+supplier, then scanned once more after the counted bulk purchase so the buyer is
+selected from fresh prices against the confirmed receipt cost. If that buyer
+later refuses or no longer clears the whole-load profit floor, retained buyers
+are tried first and one exceptional buyer refresh is allowed only after those
+alternatives are exhausted while cargo remains. Existing saved attempts carry
+over, and each selected commodity gets one attempt before another round.
+Ordinary hauling and manual price-all retain all 67. Bulk purchase/sale commands,
+receipt reconciliation and the greater-than-1ig whole-load profit rule are
+unchanged. Update both packages while stopped; loading still starts no automation.
 
 Included from **ew40**: sale eligibility uses **whole-load profit greater
 than 1ig**, not the most expensive remaining bay. The minimum remaining net bid
@@ -55,9 +59,10 @@ navigation and hauling work; it is not the standalone upstream-based Who build.
 
 Included from **ew36**: a saved, per-profile rotation (67 commodities for ordinary
 hauling; the selected 21 for FedHauler premium mode starting in ew41):
-one load/attempt per commodity before starting another round. Every full market
-review considers the session's selected catalog, skips unavailable/unprofitable
-or excluded goods, and queues all remaining candidates rather than the top five.
+one load/attempt per commodity before starting another round. An ordinary full
+market review considers all 67, while ew42's premium rotation queues its fixed
+catalog without polling it in advance. Unavailable/unprofitable or excluded goods
+are skipped and do not substitute lower-base commodities.
 Progress is saved before travel in two verified `f2ce-hauling-rotation-v1-*.json`
 files in the profile root, outside the package folder. Stops, reconnects and
 package replacement preserve progress; load/reconnect never starts automation.

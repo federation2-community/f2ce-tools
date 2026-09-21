@@ -1,5 +1,31 @@
 # Module API verification
 
+## 2026-09-21 Premium lazy rotation and post-purchase buyer refresh
+
+Candidate `f2ce-tools-3.3.0-native-ew42.mpackage`, SHA256
+`ce13781aff2d6e41bd241e2c1471c14a13ca568dba337d867d909fbe07eb5f87`.
+Companion `fed-hauler-live-1.17.29.mpackage`, SHA256
+`d4cb425d146333c37e20b2006684a5608d0b2b75a1d121d48ede6f0fada03bb9`.
+
+Premium `top_base_21` no longer sends 21 price requests at cycle start. The
+persisted fixed catalog is queued without market traffic. Each commodity receives
+one current snapshot to select its supplier and one post-purchase snapshot to
+select a buyer using the confirmed counted-bulk receipt cost. A selected buyer's
+refusal or price drop consumes the retained alternatives before a single
+exceptional refresh; no remaining profitable buyer stops with cargo preserved.
+
+Counted bulk buying, one-bay guarded selling, receipt/GMCP reconciliation and the
+whole-load greater-than-1ig profit requirement were not relaxed. Ordinary
+67-commodity hauling and manual price-all retain their existing behavior.
+
+All native suites passed on source and reconstructed packaged Lua: 273 syntax
+checks, 32 metadata checks, 233 packaged Lua bodies matched; 85 company API,
+27 API, seven adapter, 30 Walker, 16 counted-bulk/receipt, five catalog,
+86 hauling, 26 rotation and all remaining map/stamina/Who suites passed. All
+538 private FedHauler tests passed, including 122 native integration tests.
+Whitespace checks passed. Tests use mocked transport/GMCP fixtures, not the live
+server. Nothing was installed, started or pushed.
+
 ## 2026-09-20 FedHauler premium top-21 base-price rotation
 
 Candidate `f2ce-tools-3.3.0-native-ew41.mpackage`, SHA256

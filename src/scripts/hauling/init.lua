@@ -30,6 +30,7 @@ F2T_HAULING_STATE = {
     buy_location = nil,         -- {system, planet, price}
     sell_location = nil,        -- {system, planet, price}
     exchange_market = nil,      -- Per-commodity alternatives and refused locations
+    sell_analysis_request = nil,-- Identity guard for the post-purchase premium buyer refresh
 
     -- Profit tracking
     expected_profit = 0,        -- Expected profit per ton when commodity was selected

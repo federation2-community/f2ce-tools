@@ -457,6 +457,53 @@ test("changing purchase prices sum real receipt costs", function()
     equal(#sent,1,"counted bulk purchase preserved")
 end)
 
+test("premium scans once to buy then refreshes buyers after confirmed purchase cost", function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
+    analysis.top_buy={row("Fresh Buyer",180),row("Backup Buyer",170)}
+    for i=1,3 do cargo(i); f2t_bulk_buy_success(7500) end
+    equal(queries,2,"one supplier scan plus one post-purchase buyer scan")
+    equal(navigated[1],"Fresh Buyer"); equal(#navigated,1)
+    equal(F2T_HAULING_STATE.current_phase,"navigating_to_sell")
+    equal(#sent,1,"bulk purchase command remains counted")
+end)
+
+test("premium post-purchase scan rejects buyers below the confirmed whole-load cost", function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
+    analysis.top_buy={row("Stale Buyer",101),row("Lower Buyer",99)}
+    cargo(1); f2t_bulk_buy_success(7500)
+    cargo(2); f2t_bulk_buy_success(7650)
+    cargo(3); f2t_bulk_buy_success(7800)
+    equal(queries,2); equal(stopped,1); equal(#navigated,0)
+    equal(#gmcp.char.ship.cargo,3,"cargo preserved")
+    equal(table.concat(output):find("using confirmed load cost",1,true)~=nil,true)
+end)
+
+test("premium buyer failure exhausts retained alternatives then refreshes once with bays remaining", function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
+    analysis.top_buy={row("Fresh Buyer",180),row("Backup Buyer",170)}
+    for i=1,3 do cargo(i); f2t_bulk_buy_success(7500) end
+    equal(queries,2); equal(navigated[1],"Fresh Buyer")
+    sell(); trigger("sell_error_not_buying")
+    equal(navigated[2],"Backup Buyer"); equal(queries,2,"retained buyer needs no poll")
+    analysis.top_buy={row("Fresh Buyer",180),row("Backup Buyer",170),row("Rescan Buyer",160)}
+    sell(); trigger("sell_error_not_buying")
+    equal(queries,3,"only exhausted retained buyers trigger the extra scan")
+    equal(navigated[3],"Rescan Buyer"); equal(stopped,0)
+    equal(#gmcp.char.ship.cargo,3,"remaining bays retained throughout")
+end)
+
+test("premium pause after purchase defers the buyer refresh until explicit resume", function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
+    analysis.top_buy={row("Fresh Buyer",180)}
+    F2T_HAULING_STATE.paused=true
+    for i=1,3 do cargo(i); f2t_bulk_buy_success(7500) end
+    equal(queries,1); equal(#navigated,0)
+    equal(F2T_HAULING_STATE.current_phase,"selecting_sell")
+    F2T_HAULING_STATE.paused=false
+    f2t_hauling_transition("selecting_sell")
+    equal(queries,2); equal(navigated[1],"Fresh Buyer")
+end)
+
 test("unverifiable purchase receipts stop instead of estimating first-bay cost", function()
     reset(); buy(); cargo(1); f2t_bulk_buy_success(); trigger("buy_error_not_selling")
     equal(stopped,1); equal(#navigated,0); equal(F2T_HAULING_STATE.current_commodity_stats.total_cost,0)

@@ -27,6 +27,7 @@ function f2t_hauling_start(requested_mode, rotation)
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.cycle_count = 0
     F2T_HAULING_STATE.exchange_analysis_request = nil
+    F2T_HAULING_STATE.sell_analysis_request = nil
     F2T_HAULING_STATE.rotation = rotation -- session-local; ordinary starts clear it
     raiseEvent("f2tHaulingStatusChanged")
 
@@ -320,6 +321,7 @@ function f2t_hauling_do_stop()
     -- Invalidate purchase callbacks before the optional safe-room stop delay.
     if f2t_hauling_purchase_cleanup then f2t_hauling_purchase_cleanup() end
     F2T_HAULING_STATE.exchange_market = nil
+    F2T_HAULING_STATE.sell_analysis_request = nil
 
     -- Clear navigation ownership
     if f2t_map_clear_nav_owner then
@@ -431,6 +433,7 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.sell_location = nil
     F2T_HAULING_STATE.exchange_market = nil
     F2T_HAULING_STATE.exchange_analysis_request = nil
+    F2T_HAULING_STATE.sell_analysis_request = nil
     F2T_HAULING_STATE.expected_profit = 0
     F2T_HAULING_STATE.actual_cost = 0
     F2T_HAULING_STATE.current_commodity_stats = {
@@ -833,6 +836,8 @@ function f2t_hauling_transition(new_phase)
         f2t_hauling_phase_buy()
     elseif new_phase == "waiting_buy_cargo" then
         f2t_hauling_purchase_observe()
+    elseif new_phase == "selecting_sell" then
+        f2t_hauling_select_sell_destination()
     elseif new_phase == "navigating_to_sell" then
         f2t_hauling_phase_navigate_to_sell()
     elseif new_phase == "selling" then

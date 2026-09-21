@@ -149,20 +149,54 @@ local function pause_on_nav_failure()
     f2t_hauling_pause(true)
 end
 
--- Phase 1: analyze commodities, queue the most profitable
+local function begin_exchange_queue(tradeable, round, catalog_count, lazy_prices)
+    if #tradeable == 0 then
+        cecho("\n<red>[hauling]<reset> No eligible commodities found\n")
+        f2t_hauling_stop()
+        return
+    end
+    if not lazy_prices then
+        table.sort(tradeable, function(a, b) return a.profit > b.profit end)
+    end
+    F2T_HAULING_STATE.commodity_queue = {}
+    for index, comm in ipairs(tradeable) do
+        table.insert(F2T_HAULING_STATE.commodity_queue, {
+            commodity = comm.commodity,
+            expected_profit = comm.profit
+        })
+        if comm.profit then
+            f2t_debug_log("[hauling] Queued commodity %d: %s (profit: %d ig/ton)",
+                index, comm.commodity, comm.profit)
+        else
+            f2t_debug_log("[hauling] Queued commodity %d: %s (live price pending)", index, comm.commodity)
+        end
+    end
+    F2T_HAULING_STATE.queue_index = 1
+    if lazy_prices then
+        cecho(string.format("\n<green>[hauling]<reset> Premium rotation %d: queued %d of %d; " ..
+            "each commodity will be price-scanned only when processed.\n", round, #tradeable, catalog_count))
+    else
+        cecho(string.format("\n<green>[hauling]<reset> Rotation %d: queued %d unattempted profitable commodities " ..
+            "after reviewing all %d; one load each.\n", round, #tradeable, catalog_count))
+    end
+    f2t_hauling_next_commodity()
+end
+
+-- Phase 1: regular hauling reviews the complete catalog; premium hauling
+-- queues its fixed saved rotation and defers the sole primary quote until use.
 function f2t_hauling_phase_analyze()
     local state, request = F2T_HAULING_STATE, {}
     state.exchange_analysis_request = request
-    local selected
     if state.rotation == "top_base_21" then
-        local err
-        selected, err = f2t_hauling_rotation_catalog()
-        if not selected then
-            cecho("\n<red>[hauling]<reset> " .. tostring(err) .. " No travel or purchase started.\n")
+        local tradeable, round, catalog_count =
+            f2t_hauling_rotation_queue_catalog(parse_excluded_commodities())
+        if not tradeable then
+            cecho("\n<red>[hauling]<reset> " .. tostring(round) .. " No travel or purchase started.\n")
             f2t_hauling_do_stop()
             return
         end
-        cecho("\n<green>[hauling]<reset> Premium rotation: 21 highest base-price commodities.\n")
+        begin_exchange_queue(tradeable, round, catalog_count, true)
+        return
     end
     f2t_debug_log("[hauling] Phase: Analyzing commodities")
     cecho("\n<green>[hauling]<reset> Analyzing commodity prices (this may take a minute)...\n")
@@ -182,35 +216,8 @@ function f2t_hauling_phase_analyze()
             return
         end
 
-        if #tradeable == 0 then
-            cecho("\n<red>[hauling]<reset> No profitable commodities found\n")
-            f2t_hauling_stop()
-            return
-        end
-
-        table.sort(tradeable, function(a, b)
-            return a.profit > b.profit
-        end)
-
-        F2T_HAULING_STATE.commodity_queue = {}
-        local count = #tradeable
-        for i = 1, count do
-            local comm = tradeable[i]
-            table.insert(F2T_HAULING_STATE.commodity_queue, {
-                commodity = comm.commodity,
-                expected_profit = comm.profit
-            })
-            f2t_debug_log("[hauling] Queued commodity %d: %s (profit: %d ig/ton)",
-                i, comm.commodity, comm.profit)
-        end
-
-        F2T_HAULING_STATE.queue_index = 1
-
-        cecho(string.format("\n<green>[hauling]<reset> Rotation %d: queued %d unattempted profitable commodities " ..
-            "after reviewing all %d; one load each.\n", round, count, catalog_count))
-
-        f2t_hauling_next_commodity()
-    end, selected)
+        begin_exchange_queue(tradeable, round, catalog_count, false)
+    end)
 end
 
 -- Move to next commodity in queue
@@ -389,13 +396,20 @@ function f2t_hauling_next_commodity()
     F2T_HAULING_STATE.sell_attempts = 0
     F2T_HAULING_STATE.exchange_market = nil
 
-    f2t_debug_log("[hauling] Starting commodity %d/%d: %s (expected profit: %d ig/ton)",
-        F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue,
-        commodity_data.commodity, commodity_data.expected_profit)
-
-    cecho(string.format(
-        "\n<green>[hauling]<reset> Trading <cyan>%s<reset> (expected profit: <green>%d ig/ton<reset>)\n",
-        commodity_data.commodity, commodity_data.expected_profit))
+    if commodity_data.expected_profit then
+        f2t_debug_log("[hauling] Starting commodity %d/%d: %s (expected profit: %d ig/ton)",
+            F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue,
+            commodity_data.commodity, commodity_data.expected_profit)
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Trading <cyan>%s<reset> (expected profit: <green>%d ig/ton<reset>)\n",
+            commodity_data.commodity, commodity_data.expected_profit))
+    else
+        f2t_debug_log("[hauling] Starting commodity %d/%d: %s (requesting one live quote)",
+            F2T_HAULING_STATE.queue_index, #F2T_HAULING_STATE.commodity_queue, commodity_data.commodity)
+        cecho(string.format(
+            "\n<green>[hauling]<reset> Trading <cyan>%s<reset>; requesting its live market now.\n",
+            commodity_data.commodity))
+    end
 
     f2t_hauling_get_commodity_details(commodity_data.commodity)
 end
@@ -689,9 +703,70 @@ function f2t_hauling_phase_buy()
                 "(cost: %d ig)\n"
             cecho(string.format(bought_msg, lots_bought, commodity, F2T_HAULING_STATE.actual_cost, total_cost))
 
-            if state.paused then state.current_phase = "navigating_to_sell"
-            else f2t_hauling_transition("navigating_to_sell") end
+            local next_phase = state.rotation == "top_base_21" and "selecting_sell" or "navigating_to_sell"
+            if state.paused then state.current_phase = next_phase
+            else f2t_hauling_transition(next_phase) end
         end)
+    end)
+end
+
+-- Premium hauling deliberately refreshes once after the counted bulk purchase.
+-- The supplier quote chose where to buy; this quote chooses where to sell using
+-- the confirmed receipts for the whole load. Refusal/price-drop recovery still
+-- exhausts these retained buyers and may perform one exceptional refresh.
+function f2t_hauling_select_sell_destination()
+    local state = F2T_HAULING_STATE
+    if not state.active or state.paused then return end
+    local market = state.exchange_market
+    local commodity = state.current_commodity
+    local request = {}
+    state.sell_analysis_request = request
+    state.sell_location = nil
+    cecho(string.format(
+        "\n<green>[hauling]<reset> Refreshing buyers for <cyan>%s<reset> using confirmed load cost...\n",
+        commodity))
+
+    f2t_price_check_commodity(commodity, function(_, parsed, analysis)
+        if state ~= F2T_HAULING_STATE or not state.active or state.paused
+            or state.exchange_market ~= market or state.sell_analysis_request ~= request
+            or state.current_phase ~= "selecting_sell" then return end
+        state.sell_analysis_request = nil
+        analysis = remember_market(analysis, parsed)
+        if not analysis then
+            cecho("\n<red>[hauling]<reset> Post-purchase buyer scan was invalid; " ..
+                "stopping with cargo preserved.\n")
+            f2t_hauling_do_stop()
+            return
+        end
+
+        local candidates = available_locations("sell", market.sell)
+        local floor = f2t_hauling_cargo_floor()
+        if not floor then
+            cecho("\n<red>[hauling]<reset> Confirmed load cost did not reconcile; " ..
+                "stopping with cargo preserved.\n")
+            f2t_hauling_do_stop()
+            return
+        end
+        for _, candidate in ipairs(candidates) do
+            local required = f2t_hauling_buyer_floor(candidate)
+            if required and candidate.price >= required then
+                state.sell_location = candidate
+                cecho(string.format(
+                    "\n<green>[hauling]<reset> Fresh buyer selected: <cyan>%s exchange<reset> " ..
+                    "at <yellow>%sig/ton<reset> (minimum %.2fig/ton).\n",
+                    candidate.planet, candidate.price, required))
+                f2t_hauling_transition("navigating_to_sell")
+                return
+            end
+        end
+
+        local best = candidates[1] and candidates[1].price
+        cecho(string.format(
+            "\n<yellow>[hauling]<reset> Post-purchase buyer scan found %d quoted buyer%s; " ..
+            "best bid %s, whole-load minimum %.2fig/ton. Stopping with cargo preserved.\n",
+            #candidates, #candidates == 1 and "" or "s",
+            best and (tostring(best) .. "ig/ton") or "none", floor))
+        f2t_hauling_do_stop()
     end)
 end
 
