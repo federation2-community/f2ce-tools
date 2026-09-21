@@ -9,12 +9,12 @@ end
 
 local STORAGE_KEY = "f2t_hauling_customs_policy_v1"
 local POLICY_VERSION = 1
-local MAX_DUTY = 5
+local DEFAULT_MAX_DUTY = 5
 local DETAIL_TIMEOUT = 8
 
 F2T_HAULING_CUSTOMS_POLICY = {
     version = POLICY_VERSION,
-    max_duty = MAX_DUTY,
+    max_duty = DEFAULT_MAX_DUTY,
     scanned_at = nil,
     cartels = {},
     blocked_systems = {},
@@ -46,11 +46,12 @@ local function clean_systems(values)
     return result
 end
 
-local function rebuild_blocked(cartels)
+local function rebuild_blocked(cartels, max_duty)
+    max_duty = tonumber(max_duty) or DEFAULT_MAX_DUTY
     local blocked = {}
     for cartel, record in pairs(type(cartels) == "table" and cartels or {}) do
         local duty = type(record) == "table" and tonumber(record.duty)
-        if valid_name(cartel) and duty and duty >= 0 and duty <= 100 and duty > MAX_DUTY then
+        if valid_name(cartel) and duty and duty >= 0 and duty <= 100 and duty > max_duty then
             -- The cartel hub is itself a system even if an unusual response
             -- omits it from the member list.
             blocked[normalized(cartel)] = cartel
@@ -72,7 +73,7 @@ local function load_policy()
     if type(raw) ~= "string" or raw == "" then return true end
     local ok, decoded = pcall(yajl.to_value, raw)
     if not ok or type(decoded) ~= "table" or decoded.version ~= POLICY_VERSION
-        or tonumber(decoded.max_duty) ~= MAX_DUTY or type(decoded.cartels) ~= "table" then return true end
+        or type(decoded.cartels) ~= "table" then return true end
     local cartels = {}
     for name, record in pairs(decoded.cartels) do
         local duty = type(record) == "table" and tonumber(record.duty)
@@ -83,7 +84,7 @@ local function load_policy()
     end
     policy.scanned_at = tonumber(decoded.scanned_at)
     policy.cartels = cartels
-    policy.blocked_systems = rebuild_blocked(cartels)
+    policy.blocked_systems = rebuild_blocked(cartels, policy.max_duty)
     return true
 end
 
@@ -93,7 +94,7 @@ local function save_policy()
     local policy = F2T_HAULING_CUSTOMS_POLICY
     local ok, encoded = pcall(yajl.to_string, {
         version = POLICY_VERSION,
-        max_duty = MAX_DUTY,
+        max_duty = policy.max_duty,
         scanned_at = policy.scanned_at,
         cartels = policy.cartels,
     })
@@ -113,12 +114,12 @@ function f2t_hauling_customs_policy_status()
     load_policy()
     local policy, blocked_cartels = F2T_HAULING_CUSTOMS_POLICY, 0
     for _, record in pairs(policy.cartels) do
-        if tonumber(record.duty) and tonumber(record.duty) > MAX_DUTY then blocked_cartels = blocked_cartels + 1 end
+        if tonumber(record.duty) and tonumber(record.duty) > policy.max_duty then blocked_cartels = blocked_cartels + 1 end
     end
     local blocked_systems = 0
     for _ in pairs(policy.blocked_systems) do blocked_systems = blocked_systems + 1 end
     return {
-        max_duty = MAX_DUTY,
+        max_duty = policy.max_duty,
         scanned_at = policy.scanned_at,
         blocked_cartels = blocked_cartels,
         blocked_systems = blocked_systems,
@@ -151,12 +152,19 @@ local function topology_cartels()
     return result
 end
 
-function f2t_hauling_customs_scan_start(done)
+function f2t_hauling_customs_scan_start(done, max_duty)
     load_policy()
+    max_duty = tonumber(max_duty) or DEFAULT_MAX_DUTY
+    if max_duty ~= math.floor(max_duty) or max_duty < 0 or max_duty > 100 then
+        return false, "customs threshold must be an integer from 0 through 100"
+    end
+    local policy = F2T_HAULING_CUSTOMS_POLICY
+    policy.max_duty = max_duty
+    policy.blocked_systems = rebuild_blocked(policy.cartels, max_duty)
     if F2T_HAULING_CUSTOMS_SCAN then return false, "cartel customs scan is already active" end
     if type(done) ~= "function" or type(send) ~= "function" or type(tempRegexTrigger) ~= "function"
         or type(tempTimer) ~= "function" then return false, "customs scan capabilities are unavailable" end
-    if F2T_HAULING_CUSTOMS_POLICY.scanned_session then
+    if policy.scanned_session then
         tempTimer(0, function() done(true, f2t_hauling_customs_policy_status()) end)
         return true
     end
@@ -173,7 +181,7 @@ function f2t_hauling_customs_scan_start(done)
         if ok then
             local policy = F2T_HAULING_CUSTOMS_POLICY
             policy.cartels = scan.records
-            policy.blocked_systems = rebuild_blocked(scan.records)
+            policy.blocked_systems = rebuild_blocked(scan.records, policy.max_duty)
             policy.scanned_at = os.time()
             policy.scanned_session = true
             local saved, why = save_policy()
@@ -232,7 +240,7 @@ function f2t_hauling_customs_scan_start(done)
         send("di cartel " .. scan.current, false)
     end
     cecho(string.format("\n<cyan>[hauling]<reset> Scanning %d cartels; customs above %d%% will be excluded...\n",
-        #cartels, MAX_DUTY))
+        #cartels, max_duty))
     request_next()
     return true
 end

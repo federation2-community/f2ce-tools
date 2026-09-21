@@ -145,16 +145,18 @@ end
 -- Returns a set of lowercase, trimmed commodity names.
 local function parse_excluded_commodities()
     local setting = f2t_settings_get("hauling", "excluded_commodities")
-    if not setting or setting == "" then
-        return {}
-    end
-
     local excluded = {}
-    for commodity in string.gmatch(setting, "[^,]+") do
+    for commodity in string.gmatch(tostring(setting or ""), "[^,]+") do
         local trimmed = commodity:match("^%s*(.-)%s*$")
         if trimmed ~= "" then
             excluded[trimmed:lower()] = true
         end
+    end
+    local policy = F2T_HAULING_STATE and F2T_HAULING_STATE.session_policy
+    for _, commodity in ipairs(type(policy) == "table"
+        and type(policy.excluded_commodities) == "table" and policy.excluded_commodities or {}) do
+        local trimmed = tostring(commodity):match("^%s*(.-)%s*$")
+        if trimmed ~= "" then excluded[trimmed:lower()] = true end
     end
 
     return excluded

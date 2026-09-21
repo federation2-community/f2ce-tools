@@ -34,10 +34,12 @@ local function layerFields()
         expected_planets_remaining = nil, planets_without_exchange = nil,
         system_stats = {planets_explored=0,exchanges_found=0,planets_skipped=0},
         cartel_name = nil, cartel_target_system = nil, cartel_complete_callback = nil,
+        cartel_system_mode = nil,
         system_list = {}, current_system_index = 0,
         cartel_stats = {total_systems=0,systems_explored=0,total_planets=0,total_exchanges=0,total_planets_skipped=0},
         galaxy_cartel_list = {}, galaxy_current_cartel_index = 0,
         galaxy_target_cartel = nil, galaxy_syndicate_filter = nil,
+        galaxy_explore_mode = nil,
         galaxy_stats = {total_cartels=0,cartels_explored=0,cartels_skipped=0,total_systems=0,total_planets=0},
         travel_kind = nil, travel_target = nil, travel_on_arrived = nil, travel_on_failed = nil,
         travel_learned_target = nil,
@@ -51,6 +53,24 @@ local function blankState()
 end
 
 F2T_MAP_EXPLORE_STATE = F2T_MAP_EXPLORE_STATE or blankState()
+
+local F2T_MAP_FULL_EXPLORED_KEY = "f2t_full_explored_v1"
+
+-- A full-area marker lives in Mudlet's map database rather than package
+-- state. It therefore survives reconnects, profile restarts, and package
+-- upgrades, allowing a galaxy-wide full sweep to resume by skipping areas
+-- whose frontier was already exhausted successfully.
+function f2t_map_explore_area_is_fully_explored(area_id)
+    if not area_id or type(getAreaUserData) ~= "function" then return false end
+    local ok, value = pcall(getAreaUserData, area_id, F2T_MAP_FULL_EXPLORED_KEY)
+    return ok and value == "1"
+end
+
+function f2t_map_explore_mark_area_fully_explored(area_id)
+    if not area_id or type(setAreaUserData) ~= "function" then return false end
+    local ok = pcall(setAreaUserData, area_id, F2T_MAP_FULL_EXPLORED_KEY, "1")
+    return ok
+end
 
 function f2t_map_explore_cancel_arrival_handler()
     local handler_id = F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.arrival_handler_id
@@ -794,6 +814,9 @@ function f2t_map_explore_delete_area_rooms(area_id)
     for _, room_id in ipairs(rooms) do
         deleteRoom(room_id)
     end
+    if type(setAreaUserData) == "function" then
+        pcall(setAreaUserData, area_id, F2T_MAP_FULL_EXPLORED_KEY, "")
+    end
     return #rooms
 end
 
@@ -1161,11 +1184,13 @@ function f2t_map_explore_on_room_change()
     -- in an imported map, or a duplicate GMCP arrival can mark it visited
     -- before this layered system sweep observes it.  The helper de-duplicates
     -- expected planets, so checking every space arrival is safe.
-    if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and
+    if (F2T_MAP_EXPLORE_STATE.system_mode == "brief" or
+        F2T_MAP_EXPLORE_STATE.system_mode == "full") and
        F2T_MAP_EXPLORE_STATE.system_phase == "exploring_space" and
        F2T_MAP_EXPLORE_STATE.phase == "navigating" then
         f2t_map_explore_system_check_room_for_planets(current_room)
-        if F2T_MAP_EXPLORE_STATE.expected_planets_remaining and
+        if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and
+           F2T_MAP_EXPLORE_STATE.expected_planets_remaining and
            F2T_MAP_EXPLORE_STATE.expected_planets_remaining == 0 then return end
     end
 
@@ -1225,16 +1250,45 @@ function f2t_map_explore_on_room_change()
             local planet_name = F2T_MAP_EXPLORE_STATE.brief_target_planet
             tempTimer(0.5, function()
                 if not F2T_MAP_EXPLORE_STATE.active then return end
-                if F2T_MAP_EXPLORE_STATE.system_phase == "running_brief" then
+                local system_phase = F2T_MAP_EXPLORE_STATE.system_phase
+                if system_phase == "running_brief" or system_phase == "running_full" then
+                    local planet_mode = system_phase == "running_full" and "full" or "brief"
                     local override_flags = nil
-                    if F2T_MAP_EXPLORE_STATE.planets_without_exchange and
+                    if planet_mode == "brief" and F2T_MAP_EXPLORE_STATE.planets_without_exchange and
                        F2T_MAP_EXPLORE_STATE.planets_without_exchange[planet_name] then
                         override_flags = {}
                         cecho("  <yellow>Note:<reset> Planet has no exchange, skipping exchange flag\n")
                     end
-                    f2t_map_explore_planet_start("brief", planet_name, function()
+                    local started = f2t_map_explore_planet_start(planet_mode, planet_name, function()
+                        if planet_mode == "full" then
+                            local area_id = F2T_MAP_CURRENT_ROOM_ID and getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
+                            f2t_map_explore_mark_area_fully_explored(area_id)
+                            local sys_stats = F2T_MAP_EXPLORE_STATE.system_stats
+                            sys_stats.planets_explored = sys_stats.planets_explored + 1
+                            local exchange_found = area_id and f2t_map_find_room_with_flag(area_id, "exchange")
+                            if exchange_found then
+                                sys_stats.exchanges_found = sys_stats.exchanges_found + 1
+                            end
+                            if F2T_MAP_EXPLORE_STATE.mode == "cartel" or
+                               F2T_MAP_EXPLORE_STATE.mode == "galaxy" then
+                                local c_stats = F2T_MAP_EXPLORE_STATE.cartel_stats
+                                c_stats.total_planets = c_stats.total_planets + 1
+                                if exchange_found then
+                                    c_stats.total_exchanges = c_stats.total_exchanges + 1
+                                end
+                            end
+                        end
                         f2t_map_explore_system_brief_next_planet()
                     end, override_flags)
+                    if not started then
+                        F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped =
+                            F2T_MAP_EXPLORE_STATE.system_stats.planets_skipped + 1
+                        F2T_MAP_EXPLORE_STATE.deferred_report =
+                            (F2T_MAP_EXPLORE_STATE.deferred_report or "") ..
+                            string.format("<yellow>Skipped %s:<reset> surface exploration could not start\n",
+                                tostring(planet_name))
+                        f2t_map_explore_system_brief_next_planet()
+                    end
                 end
             end)
             return

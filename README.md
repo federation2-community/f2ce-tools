@@ -9,7 +9,24 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew43**, with **FedHauler 1.17.30**, adds a persistent cartel
+Native candidate **ew44**, with **FedHauler 1.17.31**, adds validated
+per-session Premium Hauler settings without changing F2CE's saved global
+preferences. A caller may set the maximum accepted cartel customs rate and a
+bounded commodity exclusion list; native validation occurs before command
+authority is acquired. The default remains 5%, and ordinary hauling is
+unchanged. Factory automation also accepts the caller's validated wage,
+factory-total and per-planet limits within the game's existing safety bounds.
+
+The mapper adds `map explore galaxy full`. Unlike the existing brief galaxy
+sweep, full mode exhausts the frontier of every system-space area and every
+reachable planet surface. It uses each authoritative `di system` roster,
+recognizes orbit routes reached through `in`, `out`, `up`, or `down`, reports
+unreachable planets instead of stalling, and stores full-area completion in the
+Mudlet map database. Re-running the command therefore skips completed areas and
+resumes unfinished ones across reconnects and package replacement. `map explore
+galaxy` and `map explore galaxy brief` retain the original brief behavior.
+
+Included from **ew43**, with **FedHauler 1.17.30**: a persistent cartel
 customs policy to Premium Hauler. On the first premium run of a connection it
 reads every mapped cartel with `di cartel`, suppresses the captured reports, and
 excludes the cartel hub and all member systems when customs are **above 5%**.
@@ -137,6 +154,10 @@ Run `f2t` for a full command overview, or `f2t status` to see which components a
 
 **Mapping & Navigation** (`map`, `nav`)
 Automatic room-by-room mapping as you move, syndicate/cartel/system galaxy topology tracking, saved destinations, speedwalk navigation by name/hash/room ID, planet and system exploration (single room, planet, system, cartel, syndicate, or full galaxy), manual room/exit editing, special exits (arrival commands, circuit travel like trains and shuttles), and map import/export.
+
+Use `map explore galaxy full` to walk every reachable system-space and planet
+surface. The command is resumable; `map explore galaxy` remains the faster
+flag-oriented brief sweep.
 
 **Automated Trading** (`haul`)
 Rank-aware automated commodity trading: analyzes exchange prices, buys low, sells high, and repeats across a queue of profitable commodities. Supports Exchange mode and rank-gated modes (Armstrong Cuthbert, Akaturi merchant runs), with configurable profit margins and pause behavior.

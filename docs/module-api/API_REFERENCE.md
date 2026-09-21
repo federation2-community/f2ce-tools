@@ -11,7 +11,7 @@ All data returned across the API boundary is copied. Errors are tables with `cod
 - `API.validateDependency({api=">=1.0.0", f2ce=">=3.3.0", capabilities={...}})`.
 - `API.versions.compare(a,b)` and `API.versions.satisfies(actual, requirement)`; operators are `=`, `>`, `>=`, `<`, `<=`, and `~` (same major/minor, at least the requested patch).
 
-Capabilities include `modules`, `events`, `navigation`, `navigation.status.v33`, `commands`, `commands.native_contention`, `gmcp.snapshots`, `prices.providers`, `hauling`, `hauling.exchange_override`, `hauling.rotation_top_base21`, `hauling.customs_max5`, `map.queries`, and `muxlet.content` when `Mux.registerContent` is available. `hauling.customs_max5` identifies the persistent premium-hauling cartel scan, its greater-than-5% system exclusion, bonded-origin protection and positive-bid cargo disposal policy. The dotted 3.3 capabilities let modules distinguish these native contracts from legacy fallback behavior.
+Capabilities include `modules`, `events`, `navigation`, `navigation.status.v33`, `commands`, `commands.native_contention`, `gmcp.snapshots`, `prices.providers`, `hauling`, `hauling.exchange_override`, `hauling.rotation_top_base21`, `hauling.customs_max5`, `hauling.session_policy`, `map.queries`, and `muxlet.content` when `Mux.registerContent` is available. `hauling.customs_max5` identifies the persistent premium-hauling cartel scan, its default greater-than-5% system exclusion, bonded-origin protection and positive-bid cargo disposal policy. `hauling.session_policy` identifies ew44's validated, session-scoped customs threshold and commodity exclusions. The dotted 3.3 capabilities let modules distinguish these native contracts from legacy fallback behavior.
 
 `API.integration` identifies this API's scope as F2CE gameplay services and identifies Muxlet as the UI/content provider. Visual integrations should call `Mux.registerContent` directly; this API does not wrap Muxlet.
 
@@ -264,6 +264,13 @@ access, change the commodity, or authorize a silent provider fallback.
 
 `API.hauling.start(context,{mode="auto"|"exchange"})` delegates to F2CE's rank-aware state machine. `auto` passes no override; `exchange` is the supported Founder+ exchange override. No hauling algorithm is duplicated. The API verifies that native state actually became active; cargo, rank, or other synchronous native rejection releases the service command lease and returns `E_HAUL_START`. The returned handle exposes `status`, `pause`, `resume`, `cancel` (graceful), and `cancelImmediate`. Top-level equivalents and `API.hauling.status()` are also available.
 
+Native ew44 advertises `hauling.session_policy`. Exchange mode may additionally
+pass `customs_max_percent` (integer 0–100) and
+`excluded_commodities` (dense, unique array of at most 67 safe commodity
+names). Values are copied and validated before command authority is acquired.
+They affect only that hauling session; omitted values preserve native defaults.
+Supplying them to another mode, or to an older adapter, fails closed.
+
 Events: `hauling.started`, `hauling.state`, and `hauling.stopped`. Status copies the established F2CE state fields, including `active`, `paused`, `mode`, `current_phase`, `stopping`, and counters when present.
 
 Native ew41 adds capability `hauling.rotation_top_base21` and the optional
@@ -274,7 +281,7 @@ canonical-name tie ordering, and preserves existing per-profile attempt
 checkpoints. Native ew42 queues that fixed catalog without a cycle-start price
 sweep. It requests one market snapshot when each commodity becomes current, then
 a second snapshot after purchase settlement to select a buyer against confirmed
-receipt cost. Native ew43 also advertises `hauling.customs_max5`: before the
+  receipt cost. Native ew43 also advertises `hauling.customs_max5`: before the
 first premium route of a connection it issues `di cartel <cartelname>` for each
 mapped cartel and excludes every hub/member system whose report shows customs
 above 5%. The complete policy persists in map userdata. Once cargo is aboard,
@@ -283,7 +290,20 @@ one-bay sale, receipt and cargo reconciliation remain mandatory. Buyer refusal
 consumes retained alternatives before one exceptional refresh. Nil keeps the full catalog;
 ordinary starts clear the selection. An unsupported/invalid selection is rejected
 before acquiring command authority. Manual price-all and other price consumers
-are unchanged.
+  are unchanged. Native ew44's `hauling.session_policy` can replace the default
+  5% ceiling for that session and union caller exclusions with F2CE's configured
+  commodity exclusions.
+
+## Full-galaxy exploration
+
+`map explore galaxy full` is a command-level mapper workflow, not a module API
+method. It propagates full mode through galaxy, cartel, system, and planet
+layers. Each system first captures its complete `di system` planet roster, then
+exhausts system space before fully walking each reachable surface. Completion
+markers are stored as `f2t_full_explored_v1` area userdata, so later full sweeps
+skip completed areas while incomplete or unreachable targets remain reportable.
+Deleting/resetting an area clears its marker. The unqualified command retains
+brief behavior.
 
 ## Map queries
 

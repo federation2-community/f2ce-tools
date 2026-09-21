@@ -6,8 +6,10 @@
 -- AND brings the jump model current before any travel. Travel between cartels
 -- uses topology jump chains, legal under syndicate beacon rules.
 
-function f2t_map_explore_galaxy_start()
-    return f2t_map_explore_galaxy_start_with_filter(nil)
+function f2t_map_explore_galaxy_start(explore_mode)
+    explore_mode = string.lower(explore_mode or "brief")
+    if explore_mode ~= "brief" and explore_mode ~= "full" then return false end
+    return f2t_map_explore_galaxy_start_with_filter(nil, explore_mode)
 end
 
 function f2t_map_explore_syndicate_start(syndicate_name)
@@ -31,24 +33,25 @@ function f2t_map_explore_syndicate_start(syndicate_name)
     -- each) from a single click or command, so it always confirms first.
     if f2tShowExploreScopeConfirm then
         f2tShowExploreScopeConfirm("syndicate", syndicate_name,
-            function() f2t_map_explore_galaxy_start_with_filter(syndicate_name) end,
+            function() f2t_map_explore_galaxy_start_with_filter(syndicate_name, "brief") end,
             function() cecho("\n<yellow>[map-explore]<reset> Syndicate exploration cancelled\n") end)
         return true
     end
-    return f2t_map_explore_galaxy_start_with_filter(syndicate_name)
+    return f2t_map_explore_galaxy_start_with_filter(syndicate_name, "brief")
 end
 
-function f2t_map_explore_galaxy_start_with_filter(syndicate_filter)
+function f2t_map_explore_galaxy_start_with_filter(syndicate_filter, explore_mode)
     if F2T_MAP_EXPLORE_STATE.active then
         cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
         return false
     end
 
+    explore_mode = explore_mode == "full" and "full" or "brief"
     if syndicate_filter then
         cecho(string.format(
             "\n<green>[map-explore]<reset> Starting syndicate exploration: <white>%s<reset>\n", syndicate_filter))
     else
-        cecho("\n<green>[map-explore]<reset> Starting galaxy exploration\n")
+        cecho(string.format("\n<green>[map-explore]<reset> Starting galaxy exploration (<cyan>%s mode<reset>)\n", explore_mode))
     end
     cecho("  <dim_grey>Syncing galaxy topology...<reset>\n")
 
@@ -60,6 +63,7 @@ function f2t_map_explore_galaxy_start_with_filter(syndicate_filter)
     F2T_MAP_EXPLORE_STATE.galaxy_cartel_list = {}
     F2T_MAP_EXPLORE_STATE.galaxy_current_cartel_index = 0
     F2T_MAP_EXPLORE_STATE.galaxy_syndicate_filter = syndicate_filter
+    F2T_MAP_EXPLORE_STATE.galaxy_explore_mode = explore_mode
     F2T_MAP_EXPLORE_STATE.galaxy_stats = {
         total_cartels = 0, cartels_explored = 0, cartels_skipped = 0,
         total_systems = 0, total_planets = 0,
@@ -157,7 +161,7 @@ function f2t_map_explore_galaxy_start_cartel_mode(cartel_name)
         F2T_MAP_EXPLORE_STATE.galaxy_stats.cartels_explored + 1
     local success = f2t_map_explore_cartel_start(cartel_name, function()
         f2t_map_explore_galaxy_cartel_complete()
-    end)
+    end, F2T_MAP_EXPLORE_STATE.galaxy_explore_mode)
     if not success then
         cecho(string.format("  <red>Error:<reset> Cartel exploration failed to start for %s\n", cartel_name))
         f2t_map_explore_galaxy_next_cartel()
@@ -184,6 +188,7 @@ function f2t_map_explore_galaxy_abort()
     F2T_MAP_EXPLORE_STATE.galaxy_cartel_list = {}
     F2T_MAP_EXPLORE_STATE.galaxy_current_cartel_index = 0
     F2T_MAP_EXPLORE_STATE.galaxy_syndicate_filter = nil
+    F2T_MAP_EXPLORE_STATE.galaxy_explore_mode = nil
 end
 
 f2t_debug_log("[map] Loaded explore_galaxy.lua")

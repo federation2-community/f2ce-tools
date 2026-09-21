@@ -89,5 +89,15 @@ test("saved customs exclusions load before a reconnect rescan", function()
     equal(status.scanned_session,false)
 end)
 
+test("session customs threshold is validated and changes the blocked systems", function()
+    local ok,result
+    local started,why=f2t_hauling_customs_scan_start(function(value,detail) ok,result=value,detail end,4)
+    equal(started,true,why)
+    response("Borderline",5,{"Edge"}); response("Clear",0,{"Open"}); response("Tariff",10,{"Tariff","Toll"})
+    equal(ok,true); equal(result.max_duty,4); equal(result.blocked_cartels,2)
+    equal(f2t_hauling_customs_system_blocked("Edge"),true)
+    equal(f2t_hauling_customs_scan_start(function() end,101),false,"out-of-range threshold")
+end)
+
 print(string.format("RESULT %d passed, %d failed",passed,failed))
 if failed > 0 then os.exit(1) end

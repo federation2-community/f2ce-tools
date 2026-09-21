@@ -296,12 +296,13 @@ function adapter.haulingStatus()
 end
 adapter.haulingTopBase21 = true
 adapter.haulingCustomsMax5 = true
-function adapter.haulingStart(mode, rotation)
+adapter.haulingSessionPolicy = true
+function adapter.haulingStart(mode, rotation, policy)
     if type(f2t_hauling_start) ~= "function" then
         return false, "f2t_hauling_start is unavailable"
     end
     if active(F2T_HAULING_STATE) then return false, "hauling is already active" end
-    f2t_hauling_start(mode, rotation)
+    f2t_hauling_start(mode, rotation, policy)
     if active(F2T_HAULING_STATE) then return true end
     return false, "native hauling start was rejected"
 end

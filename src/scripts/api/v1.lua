@@ -949,6 +949,37 @@ function hauling.start(context, options)
     if options.rotation and not API.hasCapability("hauling.rotation_top_base21") then
         return nil, api_error("E_CAPABILITY", "top-base-price rotation is unavailable")
     end
+    local policy
+    if options.customs_max_percent ~= nil or options.excluded_commodities ~= nil then
+        if mode ~= "exchange" or not API.hasCapability("hauling.session_policy") then
+            return nil, api_error("E_CAPABILITY", "exchange hauling session policy is unavailable")
+        end
+        local customs = options.customs_max_percent
+        if customs ~= nil and (type(customs) ~= "number" or customs ~= math.floor(customs)
+            or customs < 0 or customs > 100) then
+            return nil, api_error("E_HAUL_POLICY", "customs_max_percent must be an integer from 0 through 100")
+        end
+        local excluded, seen = {}, {}
+        if options.excluded_commodities ~= nil then
+            if type(options.excluded_commodities) ~= "table" or #options.excluded_commodities > 67 then
+                return nil, api_error("E_HAUL_POLICY", "excluded_commodities must be a bounded array")
+            end
+            for key, value in pairs(options.excluded_commodities) do
+                if type(key) ~= "number" or key < 1 or key ~= math.floor(key)
+                    or key > #options.excluded_commodities then
+                    return nil, api_error("E_HAUL_POLICY", "excluded_commodities must be a dense array")
+                end
+                local name = type(value) == "string" and value:match("^%s*(.-)%s*$") or nil
+                local normalized = name and name:lower() or nil
+                if not name or name == "" or #name > 40 or not name:match("^[%a][%a%s%-]*$")
+                    or seen[normalized] then
+                    return nil, api_error("E_HAUL_POLICY", "excluded_commodities contains an invalid or duplicate name")
+                end
+                seen[normalized] = true; excluded[#excluded + 1] = name
+            end
+        end
+        policy = { customs_max_percent = customs, excluded_commodities = excluded }
+    end
     if hauling._owner then
         return nil, api_error("E_HAUL_BUSY", "hauling is already API-owned", { owner = hauling._owner })
     end
@@ -963,7 +994,8 @@ function hauling.start(context, options)
         return nil, api_error("E_CAPABILITY", "hauling adapter unavailable")
     end
     hauling._owner, hauling._command_lease = context.module_id, command_lease
-    local call_ok, accepted, detail = pcall(API._adapter.haulingStart, mode == "exchange" and "exchange" or nil, options.rotation)
+    local call_ok, accepted, detail = pcall(API._adapter.haulingStart,
+        mode == "exchange" and "exchange" or nil, options.rotation, policy)
     if not call_ok or accepted ~= true then
         hauling._owner = nil; command_lease:release("start_rejected"); hauling._command_lease = nil
         return nil, api_error("E_HAUL_START", call_ok and (detail or "hauling start rejected") or tostring(accepted))
@@ -1037,6 +1069,8 @@ function API._install(adapter)
     capability("hauling.rotation_top_base21", adapter.haulingTopBase21 == true, "session-local top 21 fixed base prices")
     capability("hauling.customs_max5", adapter.haulingCustomsMax5 == true,
         "persistent cartel scan excludes systems above five percent customs")
+    capability("hauling.session_policy", adapter.haulingSessionPolicy == true,
+        "validated per-session customs threshold and commodity exclusions")
     capability("map.queries", type(adapter.mapResolve) == "function", adapter.name)
     capability("exchange.capture", type(adapter.exchangeCapture) == "function"
         and type(adapter.exchangeCancel) == "function", "serialized native PO capture")

@@ -28,7 +28,8 @@ end
 
 function f2t_map_explore_system_check_room_for_planets(room_id)
     if not F2T_MAP_EXPLORE_STATE.active then return end
-    if not F2T_MAP_EXPLORE_STATE.system_mode or F2T_MAP_EXPLORE_STATE.system_mode ~= "brief" then return end
+    if F2T_MAP_EXPLORE_STATE.system_mode ~= "brief" and
+       F2T_MAP_EXPLORE_STATE.system_mode ~= "full" then return end
     if F2T_MAP_EXPLORE_STATE.system_phase ~= "exploring_space" then return end
     if not F2T_MAP_EXPLORE_STATE.expected_planets or not F2T_MAP_EXPLORE_STATE.expected_planets_remaining then
         return
@@ -55,7 +56,8 @@ function f2t_map_explore_system_check_room_for_planets(room_id)
         F2T_MAP_EXPLORE_STATE.expected_planets_remaining =
             math.max(0, F2T_MAP_EXPLORE_STATE.expected_planets_remaining - 1)
         cecho(string.format("  <green>✓<reset> Found orbit for expected planet: <yellow>%s<reset>\n", planet_name))
-        if F2T_MAP_EXPLORE_STATE.expected_planets_remaining == 0 then
+        if F2T_MAP_EXPLORE_STATE.expected_planets_remaining == 0 and
+           F2T_MAP_EXPLORE_STATE.system_mode == "brief" then
             cecho("\n<green>[map-explore]<reset> All expected planets found! Space exploration complete.\n\n")
             F2T_MAP_EXPLORE_STATE.frontier_stack = {}
             f2t_map_explore_system_space_complete()

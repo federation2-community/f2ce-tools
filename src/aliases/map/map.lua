@@ -208,7 +208,12 @@ handlers["explore"] = function()
         end
 
     elseif first == "galaxy" then
-        f2t_map_explore_galaxy_start()
+        local galaxy_mode = words[2] and string.lower(words[2]) or "brief"
+        if galaxy_mode ~= "brief" and galaxy_mode ~= "full" then
+            cecho("\n<red>[map]<reset> Usage: map explore galaxy [brief|full]\n")
+        else
+            f2t_map_explore_galaxy_start(galaxy_mode)
+        end
 
     elseif first == "syndicate" then
         local syndicate_name = f2t_parse_rest(words, 2)

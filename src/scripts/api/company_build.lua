@@ -69,7 +69,8 @@ local function validate_options(o)
     if o.exclude_existing_commodity~=nil and type(o.exclude_existing_commodity)~="boolean" then return false end
     if o.factory_limit~=nil and not integer(o.factory_limit,1,15) then return false end
     if o.automation then
-        if o.automation~=true or o.wages~=40 or o.planet_limit~=2 or o.factory_limit~=8
+        if o.automation~=true or not integer(o.wages,1,1000000)
+            or not integer(o.planet_limit,1,2) or not integer(o.factory_limit,1,8)
             or o.require_depot~=true or not integer(o.reserved_workers,0,10000000) then return false end
     elseif o.wages~=nil or o.planet_limit~=nil or o.reserved_workers~=nil then return false end
     if o.depot_only and (not o.require_depot or o.labour~=0 or #o.inputs~=0 or o.commodity~="Depot") then return false end
@@ -164,7 +165,7 @@ local function ready(state,report,o,review_prices)
         end
     end
     if o.automation and not o.depot_only and contribution-o.labour*o.wages<=0 then
-        return nil,failure("factory no longer has positive material contribution after 40ig wages")
+        return nil,failure("factory no longer has positive material contribution after configured wages")
     end
     return {owner=state.owner,ceo=state.ceo,rank=state.rank,planet=o.planet,system=o.system,commodity=o.commodity,
         slot=o.depot_only and 0 or state.slot,cost=cost,company_cash=state.cash,company_reserve=o.company_reserve,

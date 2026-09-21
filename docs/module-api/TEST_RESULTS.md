@@ -1,5 +1,34 @@
 # Module API verification
 
+## 2026-09-21 Session hauling policy and resumable full-galaxy exploration
+
+Candidate `f2ce-tools-3.3.0-native-ew44.mpackage`, SHA256
+`a458ff998c826d186ccb616cb2c783e86d8b865b56894bded3e3b1fcae157161`.
+Companion `fed-hauler-live-1.17.31.mpackage`, SHA256
+`4a662edd4f8c1b1e582125d492ed3428bc64558c495d96195ee8f82dee1dca6d`.
+
+The API now advertises `hauling.session_policy` and validates/copies a
+session-scoped 0–100 customs ceiling plus at most 67 unique commodity
+exclusions before native command authority is acquired. The customs policy is
+re-ranked against that ceiling and caller exclusions are unioned with F2CE's
+own settings. Factory automation accepts validated caller wage, total-factory
+and per-planet limits within the established game bounds.
+
+`map explore galaxy full` now propagates full mode through every exploration
+layer. It captures the authoritative planet roster for every system, exhausts
+system space, fully walks each reachable planet, recognizes non-compass orbit
+arrivals, and records map-database completion markers for resumable reruns.
+Unreachable targets continue to the deferred report without stalling the sweep.
+Brief galaxy exploration is unchanged.
+
+Source and reconstructed-package suites both passed: 276 syntax checks, 32
+metadata checks, and 234 packaged Lua bodies matched. The suites included 85
+company API, 28 API, seven adapter, 30 Walker, 16 counted-bulk, five catalogue,
+three customs, 90 hauling, 26 rotation, six orbit-direction, five full-galaxy,
+11 navigation-resilience, and all other map/stamina/Who checks. Tests use
+mocked command/GMCP fixtures, not the live server. Nothing was installed,
+started, pushed, or merged.
+
 ## 2026-09-21 Cartel customs policy and unrestricted cargo clearing
 
 Candidate `f2ce-tools-3.3.0-native-ew43.mpackage`, SHA256

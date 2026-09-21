@@ -40,6 +40,8 @@ local function reset()
         priceCommandDescription = function(...) return mock:priceCommandDescription(...) end,
         haulingStatus = function(...) return mock:haulingStatus(...) end,
         haulingStart = function(...) return mock:haulingStart(...) end,
+        haulingTopBase21 = true,
+        haulingSessionPolicy = true,
         haulingPause = function(...) return mock:haulingPause(...) end,
         haulingResume = function(...) return mock:haulingResume(...) end,
         haulingStop = function(...) return mock:haulingStop(...) end,
@@ -348,6 +350,16 @@ function tests.hauling_modes_and_release()
     local handle, err = API.hauling.start(context, { mode = "po" }); equal(handle, nil); code(err, "E_HAUL_MODE")
     handle = assert(API.hauling.start(context, { mode = "exchange" })); equal(mock.haul.mode, "exchange")
     mock.haul.active = false; API.hauling._refresh(); equal(API.commands._lease, nil)
+end
+function tests.hauling_session_policy_is_validated_and_copied()
+    reset(); local context=enabled("hauling-policy",{capabilities={"hauling"}})
+    local handle,err=API.hauling.start(context,{mode="exchange",rotation="top_base_21",
+        customs_max_percent=4,excluded_commodities={"Woods","Firewalls"}})
+    truthy(handle,tostring(err)); equal(mock.haul.policy.customs_max_percent,4)
+    equal(mock.haul.policy.excluded_commodities[2],"Firewalls")
+    API.hauling.terminate(); mock.haul.active=false
+    handle,err=API.hauling.start(context,{mode="exchange",customs_max_percent=101})
+    equal(handle,nil); code(err,"E_HAUL_POLICY")
 end
 
 

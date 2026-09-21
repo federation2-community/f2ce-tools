@@ -107,6 +107,18 @@ function tests.expected_planet_matching_is_case_insensitive()
     equal(completed, 1, "case-insensitive completion count")
 end
 
+function tests.full_system_records_orbits_without_finishing_space_early()
+    completed = 0
+    exploration_state(601, "Atlas", "Atlas", "up")
+    F2T_MAP_EXPLORE_STATE.system_mode = "full"
+    f2t_map_explore_on_room_change()
+    check(F2T_MAP_EXPLORE_STATE.expected_planets_found.Atlas,
+        "full system did not retain the discovered orbit")
+    equal(F2T_MAP_EXPLORE_STATE.expected_planets_remaining, 0,
+        "full system expected count")
+    equal(completed, 0, "full system stopped before exhausting the space frontier")
+end
+
 function tests.live_orbit_hash_recovers_missing_room_userdata()
     completed = 0
     exploration_state(402, "Outer Castle", "", "out")

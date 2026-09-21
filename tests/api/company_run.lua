@@ -757,7 +757,7 @@ test("automatic two-per-planet, reserved workforce and positive-after-wages gate
         if case=="planet" then mock.gmcp.char.company.factories[2]={number=2,planet="Example World",output="Firewalls"}; mock:fireEvent("gmcp.char.company") end
         if case=="margin" then mock.gmcp.exchange.commodities.Firewalls.buy=100 end
         if case=="input_margin" then mock.gmcp.exchange.commodities.Semiconductors.sell=10000 end
-        if case=="invalid_wages" then o.wages=41 end
+        if case=="invalid_wages" then o.wages=0 end
         local h,e=API.company.prepareFactory(context,o,function(_,why) err=why end)
         if h then build_fresh(nil,case=="workers" and 299 or 2500); assert(err,case) else assert(e,case) end
         equal(buys(),0); equal(depot_buys(),0); equal(wage_commands(),0)

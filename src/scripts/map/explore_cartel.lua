@@ -10,7 +10,8 @@ F2T_MAP_EXPLORE_CARTEL_CAPTURE = F2T_MAP_EXPLORE_CARTEL_CAPTURE or {
     active = false, cartel_name = nil, lines = {}, in_members = false,
 }
 
-function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
+function f2t_map_explore_cartel_start(cartel_name, on_complete_callback, system_mode)
+    system_mode = system_mode == "full" and "full" or "brief"
     if not on_complete_callback and F2T_MAP_EXPLORE_STATE.active then
         cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
         return false
@@ -35,15 +36,15 @@ function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
     -- larger run's own start and shouldn't ask again per cartel.
     if not on_complete_callback and f2tShowExploreScopeConfirm then
         f2tShowExploreScopeConfirm("cartel", cartel_name,
-            function() f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback) end,
+            function() f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback, system_mode) end,
             function() cecho("\n<yellow>[map-explore]<reset> Cartel exploration cancelled\n") end)
         return true
     end
 
-    return f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback)
+    return f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback, system_mode)
 end
 
-function f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback)
+function f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callback, system_mode)
     cecho(string.format("\n<green>[map-explore]<reset> Starting cartel exploration: <white>%s<reset>\n", cartel_name))
     cecho("  <dim_grey>Capturing system list...<reset>\n")
 
@@ -57,6 +58,7 @@ function f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callbac
             total_planets = 0, total_exchanges = 0, total_planets_skipped = 0,
         }
         F2T_MAP_EXPLORE_STATE.cartel_complete_callback = on_complete_callback
+        F2T_MAP_EXPLORE_STATE.cartel_system_mode = system_mode
     else
         f2t_map_explore_register_safety_hooks()
 
@@ -71,6 +73,7 @@ function f2t_map_explore_cartel_start_confirmed(cartel_name, on_complete_callbac
             total_planets = 0, total_exchanges = 0, total_planets_skipped = 0,
         }
         F2T_MAP_EXPLORE_STATE.cartel_complete_callback = nil
+        F2T_MAP_EXPLORE_STATE.cartel_system_mode = system_mode
         f2t_map_explore_brief_mode_start()
     end
 
@@ -170,7 +173,7 @@ end
 function f2t_map_explore_cartel_start_system_mode(system_name)
     F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored =
         F2T_MAP_EXPLORE_STATE.cartel_stats.systems_explored + 1
-    local success = f2t_map_explore_system_start("brief", system_name, function()
+    local success = f2t_map_explore_system_start(F2T_MAP_EXPLORE_STATE.cartel_system_mode or "brief", system_name, function()
         f2t_map_explore_cartel_next_system()
     end)
     if not success then

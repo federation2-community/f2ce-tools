@@ -131,9 +131,10 @@ end
 function Mock:priceCommandDescription(commodity) return "check price " .. commodity .. " cartel" end
 
 function Mock:haulingStatus() return clone(self.haul) end
-function Mock:haulingStart(mode)
+function Mock:haulingStart(mode, rotation, policy)
     if self.haul.reject then return false, "native hauling start was rejected" end
     self.haul.active, self.haul.mode = true, mode or "auto"
+    self.haul.rotation,self.haul.policy=rotation,policy
     return true
 end
 function Mock:haulingPause() self.haul.paused = true; return true end

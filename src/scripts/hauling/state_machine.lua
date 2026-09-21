@@ -3,7 +3,7 @@
 
 -- Start hauling automation
 --- @param requested_mode string|nil Optional mode override (e.g., "exchange" to force exchange mode for Founder+)
-function f2t_hauling_start(requested_mode, rotation)
+function f2t_hauling_start(requested_mode, rotation, session_policy)
     if F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling already active\n")
         return
@@ -29,6 +29,7 @@ function f2t_hauling_start(requested_mode, rotation)
     F2T_HAULING_STATE.exchange_analysis_request = nil
     F2T_HAULING_STATE.sell_analysis_request = nil
     F2T_HAULING_STATE.rotation = rotation -- session-local; ordinary starts clear it
+    F2T_HAULING_STATE.session_policy = type(session_policy) == "table" and session_policy or nil
     raiseEvent("f2tHaulingStatusChanged")
 
     -- Set navigation ownership for hauling
@@ -196,6 +197,8 @@ function f2t_hauling_start(requested_mode, rotation)
     if mode == "exchange" and rotation == "top_base_21"
         and type(f2t_hauling_customs_scan_start) == "function" then
         F2T_HAULING_STATE.current_phase = "scanning_customs"
+        local max_duty = F2T_HAULING_STATE.session_policy
+            and F2T_HAULING_STATE.session_policy.customs_max_percent or 5
         local scanning, why = f2t_hauling_customs_scan_start(function(ok, result)
             if not F2T_HAULING_STATE.active then return end
             if not ok then
@@ -209,7 +212,7 @@ function f2t_hauling_start(requested_mode, rotation)
                 result.blocked_cartels, result.blocked_cartels == 1 and "" or "s",
                 result.blocked_systems, result.blocked_systems == 1 and "" or "s", result.max_duty))
             begin_hauling()
-        end)
+        end, max_duty)
         if not scanning then
             cecho("\n<red>[hauling]<reset> Cartel customs scan could not start: " .. tostring(why) .. "\n")
             f2t_hauling_do_stop()
