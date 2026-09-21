@@ -9,29 +9,30 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew42**, with **FedHauler 1.17.29**, limits the existing
-Premium Hauler to the **21 highest fixed base-price commodities** without a
-21-request scan burst at cycle start. Gold and Tracers are both included at the
-600ig cutoff. Each commodity is scanned when its saved turn begins to select a
-supplier, then scanned once more after the counted bulk purchase so the buyer is
-selected from fresh prices against the confirmed receipt cost. If that buyer
-later refuses or no longer clears the whole-load profit floor, retained buyers
-are tried first and one exceptional buyer refresh is allowed only after those
-alternatives are exhausted while cargo remains. Existing saved attempts carry
-over, and each selected commodity gets one attempt before another round.
-Ordinary hauling and manual price-all retain all 67. Bulk purchase/sale commands,
-receipt reconciliation and the greater-than-1ig whole-load profit rule are
-unchanged. Update both packages while stopped; loading still starts no automation.
+Native candidate **ew43**, with **FedHauler 1.17.30**, adds a persistent cartel
+customs policy to Premium Hauler. On the first premium run of a connection it
+reads every mapped cartel with `di cartel`, suppresses the captured reports, and
+excludes the cartel hub and all member systems when customs are **above 5%**.
+Exactly 5% remains eligible. The last complete policy is saved in Mudlet map
+userdata, so reconnects and package replacement do not temporarily restore
+excluded routes; an incomplete scan fails closed.
 
-Included from **ew40**: sale eligibility uses **whole-load profit greater
-than 1ig**, not the most expensive remaining bay. The minimum remaining net bid
-is `(actual purchase receipts + 2ig - confirmed net sales) / remaining tons`,
-clamped at zero. The same rule selects alternative buyers and guards local
-sales. Earlier sales from this load count; prior loads/session profit do not.
-The last observed per-bay customs deduction at a buyer is included in subsequent
-quote estimates. Each sale still requires a fresh quote and cargo reconciliation;
-prices and customs may change before execution, so projected profit is not a
-guarantee. Existing new-purchase margin settings are unchanged.
+New purchases still require the configured margin. Once cargo is aboard, however,
+delivery no longer has a profit floor: the best positive off-world bid is used,
+then retained buyers and one exceptional refresh are exhausted if necessary.
+Bonded cargo is never routed back to its origin planet. Each actual sale remains
+one bay at a time and requires a fresh local quote, an exact receipt and cargo
+GMCP reconciliation. A zero/non-buying bid, uncertain receipt or exhausted buyer
+list still stops with the cargo preserved.
+
+Included from **ew42**: Premium Hauler is limited to the **21 highest fixed
+base-price commodities** without a 21-request scan burst at cycle start. Gold
+and Tracers are both included at the 600ig cutoff. Each commodity is scanned when
+its saved turn begins to select a supplier, then once more after the counted bulk
+purchase to choose a buyer. Existing saved attempts carry over, and each selected
+commodity gets one attempt before another round. Ordinary hauling and manual
+price-all retain all 67. Update both packages while stopped; loading starts no
+automation.
 
 Included from **ew39**: both ship-sale receipt wordings ("sold for"
 and "sold to the exchange for"). A preceding cartel-customs notice, including
@@ -72,12 +73,12 @@ one corrupt copy can recover from the other, but two invalid copies require
 repair rather than silently restarting the rotation. This is per profile, not
 a cross-account hauling coordinator.
 
-The price API/table setting now accepts up to **50 buyers and suppliers**;
+The price API/table setting accepts up to **50 buyers and suppliers**;
 FedHauler 1.17.28 requests that limit. Routing still searches the full filtered
 market beyond those shortlists. Counted bulk purchases are retained, with costs
 summed from actual server receipts. **All exchange hauling sales**, including
-the original buyer, check fresh local bids against the whole-load profit target
-and sell one bay at a time. Completed-load/session profits use actual
+the original buyer, require a fresh positive local bid and sell one bay at a
+time; no profit floor applies after purchase. Completed-load/session results use actual
 receipts, not cached quotes or an extrapolated first-bay cost. Existing unexpected
 cargo is preserved, never dumped or jettisoned to start a new purchase.
 
@@ -89,8 +90,8 @@ trade direction until the next commodity pass; they are not map blacklists.
 Routing uses the full, policy-filtered price response, not the UI's bounded
 shortlist. An exhausted cache gets one price refresh. No remaining supplier skips
 the commodity. New purchases retain their margin checks; already-owned recovery
-cargo may clear whenever projected whole-load profit exceeds 1ig. Recovery checks
-the remaining whole-load target against a fresh, current-room bid and sells one bay at a time, waiting
+cargo clears at any positive off-origin bid. Recovery checks a fresh,
+current-room bid and sells one bay at a time, waiting
 for both its cargo reconciliation and a new quote before another sale. A cleared
 load advances to the next commodity. No eligible buyer leaves cargo aboard with an explanatory stop
 message. Uncertain timed-out trades stop without retries. The server does not

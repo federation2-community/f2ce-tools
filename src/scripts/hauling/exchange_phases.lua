@@ -21,14 +21,34 @@ local function reject_location(side, location)
     if key then market_state().rejected[side][key] = true end
 end
 
+local function normalized_planet(value)
+    return tostring(value or ""):match("^%s*(.-)%s*$"):lower()
+end
+
+local function cargo_origins()
+    local origins = {}
+    local cargo = gmcp and gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
+    for _, lot in ipairs(type(cargo) == "table" and cargo or {}) do
+        if normalized_planet(lot.commodity) == normalized_planet(F2T_HAULING_STATE.current_commodity) then
+            local origin = normalized_planet(lot.origin)
+            if origin ~= "" then origins[origin] = true end
+        end
+    end
+    return origins
+end
+
 local function available_locations(side, rows)
     local result, seen = {}, {}
     local rejected = market_state().rejected[side]
+    local origins = side == "sell" and cargo_origins() or {}
     for _, row in ipairs(rows or {}) do
         local key = location_key(row)
         local price = key and tonumber(row.price)
+        local is_origin = side == "sell" and origins[normalized_planet(row.planet)]
+        local customs_blocked = type(f2t_hauling_customs_system_blocked) == "function"
+            and f2t_hauling_customs_system_blocked(row.system)
         if key and price and price > 0 and price < math.huge and not seen[key]
-            and not rejected[key] then
+            and not rejected[key] and not is_origin and not customs_blocked then
             seen[key] = true
             result[#result + 1] = {planet=row.planet, system=row.system, price=price}
         end
@@ -74,10 +94,12 @@ function f2t_hauling_retry_exchange(side)
         local candidates = available_locations(side, market[side])
         local buyer = side == "buy" and available_locations("sell", market.sell)[1]
         for _, candidate in ipairs(candidates) do
-            local cost = side == "buy" and candidate.price or f2t_hauling_buyer_floor(candidate)
+            local cost = side == "buy" and candidate.price or nil
             local bid = side == "sell" and candidate.price or (buyer and buyer.price)
-            local required = cost and (side == "sell" and cost or cost * (1 + state.margin_threshold_pct / 100))
-            if required and bid and bid > 0 and bid >= required and (side == "sell" or bid > cost) then
+            local required = cost and cost * (1 + state.margin_threshold_pct / 100) or nil
+            local eligible = (side == "sell" and bid and bid > 0)
+                or (required and bid and bid > cost and bid >= required)
+            if eligible then
                 market.pending = nil
                 state[side .. "_location"] = candidate
                 if side == "buy" then state.sell_location = buyer end
@@ -113,10 +135,8 @@ function f2t_hauling_retry_exchange(side)
             local best = remaining[1] and remaining[1].price
             cecho(string.format(
                 "\n<yellow>[hauling]<reset> Buyer search for %s: %d quoted, %d untried after refusals; " ..
-                "best remaining bid %s, whole-load minimum net bid %sig/ton (>1ig profit). " ..
-                "Stopping with unsold cargo preserved.\n", state.current_commodity,
-                market.quoted.sell, #remaining, best and (tostring(best) .. "ig/ton") or "none",
-                f2t_hauling_cargo_floor() and string.format("%.2f", f2t_hauling_cargo_floor()) or "unknown"))
+                "best remaining bid %s. Stopping with unsold cargo preserved.\n", state.current_commodity,
+                market.quoted.sell, #remaining, best and (tostring(best) .. "ig/ton") or "none"))
             f2t_hauling_do_stop()
         end
     end)
@@ -454,9 +474,18 @@ function f2t_hauling_get_commodity_details(commodity)
             #analysis.top_buy, #analysis.top_sell, analysis.profit or 0)
 
         -- Each rotation buys only one load, so validate even its first purchase.
+        -- A planet cannot buy bonded cargo that originated on that planet.
         do
-            local best_sell_price = #analysis.top_buy > 0 and analysis.top_buy[1].price or 0
-            local best_buy_price = #analysis.top_sell > 0 and analysis.top_sell[1].price or 0
+            local best_buy = analysis.top_sell[1]
+            local best_buyer
+            for _, candidate in ipairs(analysis.top_buy) do
+                if normalized_planet(candidate.planet) ~= normalized_planet(best_buy.planet) then
+                    best_buyer = candidate
+                    break
+                end
+            end
+            local best_sell_price = best_buyer and best_buyer.price or 0
+            local best_buy_price = best_buy and best_buy.price or 0
 
             if best_buy_price > 0 then
                 local expected_margin_pct = ((best_sell_price - best_buy_price) / best_buy_price) * 100
@@ -494,22 +523,32 @@ function f2t_hauling_get_commodity_details(commodity)
 
         -- top_buy = "exchanges buying" (where WE sell).
         if #analysis.top_buy > 0 then
-            local best_sell = analysis.top_buy[1]
-            F2T_HAULING_STATE.sell_location = {
-                system = best_sell.system,
-                planet = best_sell.planet,
-                price = best_sell.price
-            }
-
-            f2t_debug_log("[hauling] Sell location: %s: %s at %d ig/ton",
-                best_sell.system, best_sell.planet, best_sell.price)
+            for _, best_sell in ipairs(analysis.top_buy) do
+                if normalized_planet(best_sell.planet) ~= normalized_planet(F2T_HAULING_STATE.buy_location.planet) then
+                    F2T_HAULING_STATE.sell_location = {
+                        system = best_sell.system,
+                        planet = best_sell.planet,
+                        price = best_sell.price
+                    }
+                    f2t_debug_log("[hauling] Sell location: %s: %s at %d ig/ton",
+                        best_sell.system, best_sell.planet, best_sell.price)
+                    break
+                end
+            end
+        end
+        if not F2T_HAULING_STATE.sell_location then
+            cecho("\n<yellow>[hauling]<reset> No off-world buyer is available for bonded cargo; " ..
+                "moving to the next commodity.\n")
+            f2t_hauling_remove_current_commodity()
+            return
         end
 
         f2t_hauling_transition("navigating_to_buy")
     end)
 end
 
--- Never abandon or dump owned cargo below cost to advance the rotation.
+-- Never abandon or dump owned cargo to advance the rotation. Once it is
+-- aboard, exhaust positive off-world bids without imposing a profit floor.
 function f2t_hauling_remove_current_commodity()
     local cargo = gmcp.char.ship.cargo
     if cargo and #cargo > 0 then f2t_hauling_find_next_sell_location(); return end
@@ -711,9 +750,9 @@ function f2t_hauling_phase_buy()
 end
 
 -- Premium hauling deliberately refreshes once after the counted bulk purchase.
--- The supplier quote chose where to buy; this quote chooses where to sell using
--- the confirmed receipts for the whole load. Refusal/price-drop recovery still
--- exhausts these retained buyers and may perform one exceptional refresh.
+-- The supplier quote chose where to buy; this quote chooses the best positive
+-- off-world bid. Once cargo is aboard, clearing it takes priority over profit.
+-- Refusal recovery still exhausts retained buyers before one exceptional refresh.
 function f2t_hauling_select_sell_destination()
     local state = F2T_HAULING_STATE
     if not state.active or state.paused then return end
@@ -723,7 +762,7 @@ function f2t_hauling_select_sell_destination()
     state.sell_analysis_request = request
     state.sell_location = nil
     cecho(string.format(
-        "\n<green>[hauling]<reset> Refreshing buyers for <cyan>%s<reset> using confirmed load cost...\n",
+        "\n<green>[hauling]<reset> Refreshing off-world buyers for <cyan>%s<reset> after confirmed purchase...\n",
         commodity))
 
     f2t_price_check_commodity(commodity, function(_, parsed, analysis)
@@ -740,32 +779,21 @@ function f2t_hauling_select_sell_destination()
         end
 
         local candidates = available_locations("sell", market.sell)
-        local floor = f2t_hauling_cargo_floor()
-        if not floor then
-            cecho("\n<red>[hauling]<reset> Confirmed load cost did not reconcile; " ..
-                "stopping with cargo preserved.\n")
-            f2t_hauling_do_stop()
+        local candidate = candidates[1]
+        if candidate then
+            state.sell_location = candidate
+            cecho(string.format(
+                "\n<green>[hauling]<reset> Fresh off-world buyer selected: <cyan>%s exchange<reset> " ..
+                "at <yellow>%sig/ton<reset>.\n",
+                candidate.planet, candidate.price))
+            f2t_hauling_transition("navigating_to_sell")
             return
         end
-        for _, candidate in ipairs(candidates) do
-            local required = f2t_hauling_buyer_floor(candidate)
-            if required and candidate.price >= required then
-                state.sell_location = candidate
-                cecho(string.format(
-                    "\n<green>[hauling]<reset> Fresh buyer selected: <cyan>%s exchange<reset> " ..
-                    "at <yellow>%sig/ton<reset> (minimum %.2fig/ton).\n",
-                    candidate.planet, candidate.price, required))
-                f2t_hauling_transition("navigating_to_sell")
-                return
-            end
-        end
 
-        local best = candidates[1] and candidates[1].price
         cecho(string.format(
-            "\n<yellow>[hauling]<reset> Post-purchase buyer scan found %d quoted buyer%s; " ..
-            "best bid %s, whole-load minimum %.2fig/ton. Stopping with cargo preserved.\n",
-            #candidates, #candidates == 1 and "" or "s",
-            best and (tostring(best) .. "ig/ton") or "none", floor))
+            "\n<yellow>[hauling]<reset> Post-purchase buyer scan found no positive off-world bid " ..
+            "among %d quoted buyer%s. Stopping with cargo preserved.\n",
+            market.quoted.sell or 0, market.quoted.sell == 1 and "" or "s"))
         f2t_hauling_do_stop()
     end)
 end

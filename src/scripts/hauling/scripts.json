@@ -2,6 +2,7 @@
   {"name": "init"},
   {"name": "merchant"},
   {"name": "mode_detection"},
+  {"name": "customs_policy"},
   {"name": "state_machine"},
   {"name": "armstrong_cuthbert"},
   {"name": "ac_phases"},

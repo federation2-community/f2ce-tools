@@ -295,6 +295,7 @@ function adapter.haulingStatus()
     return state
 end
 adapter.haulingTopBase21 = true
+adapter.haulingCustomsMax5 = true
 function adapter.haulingStart(mode, rotation)
     if type(f2t_hauling_start) ~= "function" then
         return false, "f2t_hauling_start is unavailable"

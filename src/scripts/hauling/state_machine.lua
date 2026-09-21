@@ -188,7 +188,35 @@ function f2t_hauling_start(requested_mode, rotation)
         return
     end
 
-    f2t_hauling_transition(starting_phase)
+    local function begin_hauling()
+        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            f2t_hauling_transition(starting_phase)
+        end
+    end
+    if mode == "exchange" and rotation == "top_base_21"
+        and type(f2t_hauling_customs_scan_start) == "function" then
+        F2T_HAULING_STATE.current_phase = "scanning_customs"
+        local scanning, why = f2t_hauling_customs_scan_start(function(ok, result)
+            if not F2T_HAULING_STATE.active then return end
+            if not ok then
+                cecho("\n<red>[hauling]<reset> Cartel customs scan failed: " .. tostring(result) .. "\n")
+                f2t_hauling_do_stop()
+                return
+            end
+            cecho(string.format(
+                "\n<green>[hauling]<reset> Cartel customs scan complete: %d cartel%s / %d system%s " ..
+                "excluded above %d%%.\n",
+                result.blocked_cartels, result.blocked_cartels == 1 and "" or "s",
+                result.blocked_systems, result.blocked_systems == 1 and "" or "s", result.max_duty))
+            begin_hauling()
+        end)
+        if not scanning then
+            cecho("\n<red>[hauling]<reset> Cartel customs scan could not start: " .. tostring(why) .. "\n")
+            f2t_hauling_do_stop()
+        end
+        return
+    end
+    begin_hauling()
 end
 
 -- Gracefully stop hauling automation (finish current cycle first)
@@ -320,6 +348,7 @@ end
 function f2t_hauling_do_stop()
     -- Invalidate purchase callbacks before the optional safe-room stop delay.
     if f2t_hauling_purchase_cleanup then f2t_hauling_purchase_cleanup() end
+    if f2t_hauling_customs_scan_cancel then f2t_hauling_customs_scan_cancel("hauling stopped", false) end
     F2T_HAULING_STATE.exchange_market = nil
     F2T_HAULING_STATE.sell_analysis_request = nil
 

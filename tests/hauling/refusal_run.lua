@@ -294,22 +294,46 @@ test("partially malformed parsed market fails closed", function()
     f2t_hauling_get_commodity_details("NanoFabrics")
     equal(stopped,1); equal(#navigated,0)
 end)
-test("buyer exhaustion explains candidates below the cargo purchase cost", function()
+test("initial routing ignores blocked customs systems on both market sides", function()
+    local saved=f2t_hauling_customs_system_blocked
+    f2t_hauling_customs_system_blocked=function(system) return system=="Tariff" end
+    local ok, err=pcall(function()
+        reset()
+        parsed={
+            buy={row("Blocked Buyer",300,"Tariff"),row("Open Buyer",200,"Clear")},
+            sell={row("Blocked Supplier",50,"Tariff"),row("Open Supplier",100,"Clear")},
+        }
+        analysis={top_buy=parsed.buy,top_sell=parsed.sell,profit=250}
+        f2t_hauling_get_commodity_details("NanoFabrics")
+        equal(F2T_HAULING_STATE.buy_location.planet,"Open Supplier")
+        equal(F2T_HAULING_STATE.sell_location.planet,"Open Buyer")
+    end)
+    f2t_hauling_customs_system_blocked=saved
+    if not ok then error(err) end
+end)
+test("initial routing never pairs a supplier with a buyer on its planet", function()
+    reset()
+    parsed={buy={row("Supplier A",300),row("Buyer B",200)},sell={row("Supplier A",100)}}
+    analysis={top_buy=parsed.buy,top_sell=parsed.sell,profit=200}
+    f2t_hauling_get_commodity_details("NanoFabrics")
+    equal(F2T_HAULING_STATE.buy_location.planet,"Supplier A")
+    equal(F2T_HAULING_STATE.sell_location.planet,"Buyer B")
+end)
+test("buyer recovery accepts the best remaining positive bid below purchase cost", function()
     reset(); F2T_HAULING_STATE.exchange_market.sell[2].price=95; analysis.top_buy[2].price=95
     cargo(3); sell(); trigger("sell_error_not_buying")
-    local messages=table.concat(output)
-    equal(messages:find("2 quoted, 1 untried",1,true) ~= nil,true)
-    equal(messages:find("95ig/ton, whole-load minimum net bid 100.01ig/ton",1,true) ~= nil,true)
+    equal(navigated[1],"Buyer B"); equal(stopped,0)
+    equal(table.concat(output):find("Trying next buyer",1,true) ~= nil,true)
 end)
 test("recovery uses whole-load cost instead of the most expensive remaining bay", function()
     reset(); cargo(3); gmcp.char.ship.cargo[3].cost=195
     sell(); trigger("sell_error_not_buying")
     equal(stopped,0); equal(navigated[1],"Buyer B"); equal(#gmcp.char.ship.cargo,3)
 end)
-test("zero-profit candidate is not eligible under the greater-than-one-groat policy", function()
+test("zero-profit candidate remains eligible for owned cargo", function()
     reset(); F2T_HAULING_STATE.exchange_market.sell[2].price=100; analysis.top_buy[2].price=100
     cargo(3); sell(); trigger("sell_error_not_buying")
-    equal(#navigated,0); equal(stopped,1)
+    equal(navigated[1],"Buyer B"); equal(stopped,0)
 end)
 local function recovery(bid)
     reset(); cargo(3); sell(); trigger("sell_error_not_buying")
@@ -323,14 +347,22 @@ test("recovery sends one bay and waits for a new commodity quote", function()
     equal(#sent,2); equal(F2T_HAULING_STATE.current_commodity_stats.total_revenue,8175)
     local_quote(108,"tick"); equal(#sent,3); equal(sent[3],"sell nanofabrics 1")
 end)
-test("a falling next-bay bid cannot drain remaining cargo below cost", function()
+test("a falling positive next-bay bid continues clearing owned cargo", function()
     recovery(101); cargo(2); f2t_bulk_sell_success("NanoFabrics",100,7500)
     local_quote(99,"tick")
-    equal(#sent,2); equal(#gmcp.char.ship.cargo,2); equal(stopped,1)
+    equal(#sent,3); equal(sent[3],"sell nanofabrics 1")
+    equal(#gmcp.char.ship.cargo,2); equal(stopped,0)
 end)
-test("below-cost arrival quote sends no recovery order", function()
+test("below-cost positive arrival quote sends one guarded recovery order", function()
     recovery(99)
-    equal(#sent,1); equal(stopped,1); equal(#gmcp.char.ship.cargo,3)
+    equal(#sent,2); equal(sent[2],"sell nanofabrics 1")
+    equal(stopped,0); equal(#gmcp.char.ship.cargo,3)
+end)
+test("an origin-planet arrival sends no sale and selects another buyer", function()
+    reset(); cargo(3)
+    F2T_HAULING_STATE.sell_location={planet="Supplier A",system="System",price=500}
+    local_quote(500); F2T_HAULING_STATE.current_phase="selling"; f2t_hauling_phase_sell()
+    equal(#sent,0); equal(navigated[1],"Buyer A"); equal(stopped,0)
 end)
 test("recovery requires a real current-room commodity receipt", function()
     reset(); cargo(3); sell(); trigger("sell_error_not_buying")
@@ -424,9 +456,9 @@ test("reloaded state cannot be mutated by the old recovery timer", function()
     timer.callback(); equal(#sent,2); equal(stopped,0)
     equal(F2T_HAULING_STATE.current_phase,"buying")
 end)
-test("initial buyer quote below actual cost sends no sale", function()
+test("initial positive buyer quote below actual cost sends one guarded sale", function()
     reset(); cargo(3); local_quote(99); f2t_hauling_phase_sell()
-    equal(#sent,0); equal(navigated[1],"Buyer B"); equal(#gmcp.char.ship.cargo,3)
+    equal(#sent,1); equal(sent[1],"sell nanofabrics 1"); equal(#gmcp.char.ship.cargo,3)
 end)
 
 test("normal buyer records actual revenue not a stale remote quote", function()
@@ -467,15 +499,21 @@ test("premium scans once to buy then refreshes buyers after confirmed purchase c
     equal(#sent,1,"bulk purchase command remains counted")
 end)
 
-test("premium post-purchase scan rejects buyers below the confirmed whole-load cost", function()
+test("premium post-purchase scan accepts the best positive off-world bid below cost", function()
     reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
     analysis.top_buy={row("Stale Buyer",101),row("Lower Buyer",99)}
     cargo(1); f2t_bulk_buy_success(7500)
     cargo(2); f2t_bulk_buy_success(7650)
     cargo(3); f2t_bulk_buy_success(7800)
-    equal(queries,2); equal(stopped,1); equal(#navigated,0)
-    equal(#gmcp.char.ship.cargo,3,"cargo preserved")
-    equal(table.concat(output):find("using confirmed load cost",1,true)~=nil,true)
+    equal(queries,2); equal(stopped,0); equal(navigated[1],"Stale Buyer")
+    equal(#gmcp.char.ship.cargo,3,"cargo preserved until sale")
+    equal(table.concat(output):find("Fresh off-world buyer selected",1,true)~=nil,true)
+end)
+test("premium post-purchase scan skips the bonded origin even when it bids highest", function()
+    reset(); F2T_HAULING_STATE.rotation="top_base_21"; buy()
+    analysis.top_buy={row("Supplier A",500),row("Offworld Buyer",90)}
+    for i=1,3 do cargo(i); f2t_bulk_buy_success(7500) end
+    equal(navigated[1],"Offworld Buyer"); equal(stopped,0)
 end)
 
 test("premium buyer failure exhausts retained alternatives then refreshes once with bays remaining", function()
@@ -691,15 +729,13 @@ test("taxed text receipt before cargo waits without retry and accepts a precedin
     equal(F2T_HAULING_STATE.current_commodity_stats.total_revenue,37995)
 end)
 
-test("customs making net proceeds below cost preserves remaining cargo and records net", function()
+test("customs making net proceeds below cost still clears remaining cargo", function()
     library_sale(600); library_cargo(2,600); library_receipt()
     equal(stopped,0); equal(#sent,1); equal(#gmcp.char.ship.cargo,2)
     equal(F2T_HAULING_STATE.current_commodity_stats.lots_sold,1)
     equal(F2T_HAULING_STATE.current_commodity_stats.total_revenue,37995)
     library_quote()
-    equal(stopped,1,"no remaining buyer meets whole-load target"); equal(#sent,1)
-    equal(table.concat(output):find("whole load",1,true)~=nil,true)
-    no_timer()
+    equal(stopped,0); equal(#sent,2); equal(sent[2],"sell libraries 1")
 end)
 
 test("reported thirteen-lot Crystals load clears at 803 despite its 830-cost bay", function()
@@ -745,21 +781,21 @@ test("completed sales fund later below-individual-cost bays within the same load
     equal(completed,1); no_timer()
 end)
 
-test("whole-load target accepts two groats but not one groat or zero", function()
+test("all positive bids sell regardless of whole-load profit", function()
     for _,profit in ipairs({0,1,2}) do
         reset(); cargo(1); local_quote(100)
         F2T_HAULING_STATE.current_commodity_stats.total_cost=7500-profit
         f2t_hauling_phase_sell()
-        equal(#sent,profit>1 and 1 or 0,"whole-load profit "..profit)
+        equal(#sent,1,"whole-load profit "..profit)
     end
 end)
 
-test("previous sessions or cycles cannot subsidize a losing current load", function()
+test("session totals do not prevent clearing a losing current load", function()
     reset(); cargo(1); local_quote(99)
     F2T_HAULING_STATE.session_profit=1000000000
     F2T_HAULING_STATE.commodity_total_profit=1000000000
     equal(f2t_hauling_cargo_floor()>100,true)
-    f2t_hauling_phase_sell(); equal(#sent,0)
+    f2t_hauling_phase_sell(); equal(#sent,1)
 end)
 
 test("missing or inconsistent receipt ledger cannot fall back to a cheap bay", function()

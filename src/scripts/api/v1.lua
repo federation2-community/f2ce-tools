@@ -1035,6 +1035,8 @@ function API._install(adapter)
     capability("hauling", type(adapter.haulingStart) == "function", adapter.name)
     capability("hauling.exchange_override", type(adapter.haulingStart) == "function", adapter.name)
     capability("hauling.rotation_top_base21", adapter.haulingTopBase21 == true, "session-local top 21 fixed base prices")
+    capability("hauling.customs_max5", adapter.haulingCustomsMax5 == true,
+        "persistent cartel scan excludes systems above five percent customs")
     capability("map.queries", type(adapter.mapResolve) == "function", adapter.name)
     capability("exchange.capture", type(adapter.exchangeCapture) == "function"
         and type(adapter.exchangeCancel) == "function", "serialized native PO capture")

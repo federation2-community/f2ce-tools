@@ -1,5 +1,34 @@
 # Module API verification
 
+## 2026-09-21 Cartel customs policy and unrestricted cargo clearing
+
+Candidate `f2ce-tools-3.3.0-native-ew43.mpackage`, SHA256
+`d12ea8f56c25ed333812f76299b602225d12d2904bb7914b79c1f639687f850a`.
+Companion `fed-hauler-live-1.17.30.mpackage`, SHA256
+`505724835475ddcb26a1b420642d6402a03d8cc8577c4f1b74f6f85669b6464f`.
+
+Before the first Premium Hauler run of a connection, the native hauling service
+enumerates mapped cartels and sends exactly `di cartel <cartelname>` for each.
+It parses the command's `Customs dues: N%` and `Member systems:` fields. Exactly
+5% remains eligible; a duty above 5% excludes the cartel hub and every listed
+member system from both supplier and buyer selection. The validated policy is
+persisted in map userdata across reconnects and package replacement, then
+refreshed once per live session. Malformed, incomplete or timed-out reports stop
+before hauling begins.
+
+Cargo already aboard no longer has a profit or purchase-cost sale floor. A
+fresh positive bid at a planet other than the bonded origin is eligible, while
+the receipt ledger, cargo identity, fresh local quote and one-bay receipt/GMCP
+acknowledgements remain fail-closed. New purchases retain the configured entry
+margin test, up to 50 cached buyers and the single exceptional refresh.
+
+All native suites passed on source and reconstructed packaged Lua: 275 syntax
+checks, 32 metadata checks, 234 packaged Lua bodies matched; 85 company API,
+27 API, seven adapter, 30 Walker, 16 counted-bulk/receipt, five catalog, two
+customs-policy, 90 hauling, 26 rotation and all remaining map/stamina/Who suites
+passed. Whitespace checks passed. Tests use mocked command/GMCP fixtures, not
+the live server. Nothing was installed, started or pushed.
+
 ## 2026-09-21 Premium lazy rotation and post-purchase buyer refresh
 
 Candidate `f2ce-tools-3.3.0-native-ew42.mpackage`, SHA256

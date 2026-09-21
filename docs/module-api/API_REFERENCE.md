@@ -11,7 +11,7 @@ All data returned across the API boundary is copied. Errors are tables with `cod
 - `API.validateDependency({api=">=1.0.0", f2ce=">=3.3.0", capabilities={...}})`.
 - `API.versions.compare(a,b)` and `API.versions.satisfies(actual, requirement)`; operators are `=`, `>`, `>=`, `<`, `<=`, and `~` (same major/minor, at least the requested patch).
 
-Capabilities include `modules`, `events`, `navigation`, `navigation.status.v33`, `commands`, `commands.native_contention`, `gmcp.snapshots`, `prices.providers`, `hauling`, `hauling.exchange_override`, `map.queries`, and `muxlet.content` when `Mux.registerContent` is available. The two dotted 3.3 capabilities let modules distinguish the explicit navigation-status and native-contention contracts from the legacy fallback.
+Capabilities include `modules`, `events`, `navigation`, `navigation.status.v33`, `commands`, `commands.native_contention`, `gmcp.snapshots`, `prices.providers`, `hauling`, `hauling.exchange_override`, `hauling.rotation_top_base21`, `hauling.customs_max5`, `map.queries`, and `muxlet.content` when `Mux.registerContent` is available. `hauling.customs_max5` identifies the persistent premium-hauling cartel scan, its greater-than-5% system exclusion, bonded-origin protection and positive-bid cargo disposal policy. The dotted 3.3 capabilities let modules distinguish these native contracts from legacy fallback behavior.
 
 `API.integration` identifies this API's scope as F2CE gameplay services and identifies Muxlet as the UI/content provider. Visual integrations should call `Mux.registerContent` directly; this API does not wrap Muxlet.
 
@@ -268,14 +268,19 @@ Events: `hauling.started`, `hauling.state`, and `hauling.stopped`. Status copies
 
 Native ew41 adds capability `hauling.rotation_top_base21` and the optional
 `rotation="top_base_21"` argument to `hauling.start` in exchange mode only.
-FedHauler 1.17.29 uses it for its existing Premium Hauler. This session-local
+FedHauler 1.17.30 uses it for its existing Premium Hauler. This session-local
 selection rotates the 21 highest `commodities.json` base prices, with
 canonical-name tie ordering, and preserves existing per-profile attempt
 checkpoints. Native ew42 queues that fixed catalog without a cycle-start price
 sweep. It requests one market snapshot when each commodity becomes current, then
 a second snapshot after purchase settlement to select a buyer against confirmed
-receipt cost. Buyer refusal/price recovery consumes retained alternatives before
-one exceptional refresh while cargo remains. Nil keeps the full catalog;
+receipt cost. Native ew43 also advertises `hauling.customs_max5`: before the
+first premium route of a connection it issues `di cartel <cartelname>` for each
+mapped cartel and excludes every hub/member system whose report shows customs
+above 5%. The complete policy persists in map userdata. Once cargo is aboard,
+the best positive off-origin bid is accepted without a profit floor; guarded
+one-bay sale, receipt and cargo reconciliation remain mandatory. Buyer refusal
+consumes retained alternatives before one exceptional refresh. Nil keeps the full catalog;
 ordinary starts clear the selection. An unsupported/invalid selection is rejected
 before acquiring command authority. Manual price-all and other price consumers
 are unchanged.

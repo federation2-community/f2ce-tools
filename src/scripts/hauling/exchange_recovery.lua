@@ -1,6 +1,6 @@
 -- All exchange hauling sales use this guard, not just refused-sale recovery.
--- The next bay requires a new local commodity receipt so a falling bid cannot
--- blindly drain the whole hold. Counted bulk purchases are unchanged.
+-- The next bay requires a new local commodity receipt so an unavailable buyer
+-- cannot blindly drain the whole hold. Counted bulk purchases are unchanged.
 local function normalized(value) return tostring(value or ""):lower() end
 local function room_key()
     local room = gmcp and gmcp.room and gmcp.room.info
@@ -10,6 +10,16 @@ end
 
 local function valid_amount(value)
     return type(value) == "number" and value == value and value >= 0 and value < 2^53
+end
+
+local function is_cargo_origin(planet)
+    local wanted = normalized(planet):match("^%s*(.-)%s*$")
+    local cargo = gmcp and gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
+    for _, lot in ipairs(type(cargo) == "table" and cargo or {}) do
+        if normalized(lot.commodity) == normalized(F2T_HAULING_STATE.current_commodity)
+            and normalized(lot.origin):match("^%s*(.-)%s*$") == wanted then return true end
+    end
+    return false
 end
 
 -- Ship costs validate the cargo identity, not the profit target for each bay.
@@ -27,13 +37,18 @@ function f2t_hauling_cargo_cost()
     return total, #cargo
 end
 
+local function valid_sale_ledger(remaining)
+    local stats = F2T_HAULING_STATE.current_commodity_stats
+    return type(stats) == "table" and valid_amount(stats.total_cost)
+        and valid_amount(stats.total_revenue) and valid_amount(stats.lots_bought)
+        and valid_amount(stats.lots_sold) and stats.lots_bought % 1 == 0
+        and stats.lots_sold % 1 == 0 and stats.lots_bought == stats.lots_sold + remaining
+end
+
 function f2t_hauling_cargo_floor()
     local _, remaining = f2t_hauling_cargo_cost()
     local stats = F2T_HAULING_STATE.current_commodity_stats
-    if not remaining or type(stats) ~= "table" or not valid_amount(stats.total_cost)
-        or not valid_amount(stats.total_revenue) or not valid_amount(stats.lots_bought)
-        or not valid_amount(stats.lots_sold) or stats.lots_bought % 1 ~= 0
-        or stats.lots_sold % 1 ~= 0 or stats.lots_bought ~= stats.lots_sold + remaining then return nil end
+    if not remaining or not valid_sale_ledger(remaining) then return nil end
     -- Groats are integral: more than 1ig of whole-load profit requires 2ig.
     -- Prior NET receipts belong to this load only, never to earlier cycles.
     return math.max(0, stats.total_cost + 2 - stats.total_revenue) / (remaining * 75)
@@ -118,9 +133,15 @@ function f2t_hauling_phase_recovery_sell()
         finish_recovery()
         return
     end
-    local floor = f2t_hauling_buyer_floor(state.sell_location)
-    if not floor or not state.sell_location then
-        stop_recovery("Cargo/cost could not be verified; stopping with cargo preserved.")
+    local cargo_cost, remaining = f2t_hauling_cargo_cost()
+    if not cargo_cost or not valid_sale_ledger(remaining) or not state.sell_location then
+        stop_recovery("Cargo identity or receipt ledger could not be verified; stopping with cargo preserved.")
+        return
+    end
+    if is_cargo_origin(state.sell_location.planet) then
+        cecho("\n<yellow>[hauling]<reset> Bonded cargo cannot be sold back to its origin; " ..
+            "trying another buyer with cargo preserved.\n")
+        f2t_hauling_find_next_sell_location()
         return
     end
     local watch = state.recovery_watch
@@ -149,11 +170,11 @@ function f2t_hauling_phase_recovery_sell()
             or normalized(room.system) ~= normalized(state.sell_location.system)
             or not f2t_has_value(room.flags or {}, "exchange")
             or quote.sequence <= (state.recovery_after_sequence or 0) then return end
-        floor = f2t_hauling_buyer_floor(state.sell_location)
-        if not floor then return end
+        local _, live_remaining = f2t_hauling_cargo_cost()
+        if not live_remaining or not valid_sale_ledger(live_remaining) then return end
         if quote.bid ~= quote.bid or quote.bid == math.huge then return end
-        if quote.bid <= 0 or quote.bid < floor then
-            next_buyer("Local bid no longer projects more than 1ig profit for the whole load")
+        if quote.bid <= 0 then
+            next_buyer("Local exchange is not currently buying this commodity")
             return
         end
         clear_wait(watch)
@@ -186,8 +207,8 @@ function f2t_hauling_phase_recovery_sell()
                 market.sale_deductions = market.sale_deductions or {}
                 market.sale_deductions[buyer_key(state.sell_location)] = gross - revenue
             end
-            -- A below-cost individual bay is not a failed load. Credit its net
-            -- proceeds, settle cargo, then re-evaluate the remaining whole load.
+            -- Credit actual net proceeds even when the sale realizes a loss,
+            -- settle cargo, then re-evaluate availability for the remaining load.
             state.recovery_expected_lots = before - 1
             -- Accept the genuine post-order tick even if it preceded the text
             -- sale receipt. Cargo and receipt still must both reconcile.

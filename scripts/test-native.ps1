@@ -79,6 +79,7 @@ try {
             @('tests/exchange_walker/run.lua', $SourceRoot),
             @('tests/commodities/bulk_counted_run.lua', $SourceRoot),
             @('tests/commodities/catalog_run.lua', $SourceRoot),
+            @('tests/hauling/customs_policy_run.lua', $SourceRoot),
             @('tests/hauling/refusal_run.lua', $SourceRoot),
             @('tests/hauling/rotation_run.lua', $SourceRoot),
             @('tests/player_db_change_detection_run.lua', $SourceRoot),
