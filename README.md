@@ -9,7 +9,15 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew44**, with **FedHauler 1.17.31**, adds validated
+Native candidate **ew45**, with **FedHauler 1.17.38**, reduces factory planning
+report traffic: up to 100 public planet inspections share one final company
+report instead of issuing a company report per planet. Requests are pipelined
+one header at a time, with bounded timeouts, strict report validation and
+rank-correct `di business` / `di company` completion. Purchase, depot and wage
+verification retain their existing fresh checks. See the
+[company API](docs/COMPANY_API.md) for the optional planning-only batch method.
+
+Included from **ew44**, with **FedHauler 1.17.31**: validated
 per-session Premium Hauler settings without changing F2CE's saved global
 preferences. A caller may set the maximum accepted cartel customs rate and a
 bounded commodity exclusion list; native validation occurs before command

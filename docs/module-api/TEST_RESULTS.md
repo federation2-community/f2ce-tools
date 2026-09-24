@@ -1,5 +1,34 @@
 # Module API verification
 
+## 2026-09-24 Batched factory planning reports (ew45)
+
+Candidate `f2ce-tools-3.3.0-native-ew45.mpackage`, SHA256
+`711ee5ef2f7dad0d346eee973d656bc3662a46a928b23d6ff319e3023fa50a11`.
+Companion `fed-hauler-live-1.17.38.mpackage`, SHA256
+`06d17e79ecf7d560f1644c9b5cffc810010d06353c70feb08bf0147567fcda82`.
+
+All 20 native suites passed against source and reconstructed package bytes
+using `scripts/test-native.ps1` with Lua/luac 5.1 and `-PackagePath`.
+This includes 92 company API checks (seven new groups), 276 syntax checks,
+32 metadata checks and 234 packaged script/trigger bodies matched to source.
+Existing purchase, depot and wage confirmation tests remain passing.
+The FedHauler companion passed all 574 checks, including 122 actual-native
+integration tests; game transport/GMCP were mocked, not sent to live accounts.
+
+At both Industrialist and Manufacturer, the new batch fixture inspects
+100 planets with 101 commands: 100 `di planet` requests and one final
+`di business` or `di company`. Each next request waits for the preceding
+expected header. Completion requires all strict planet reports plus final
+company text and fresh GMCP. Tests cover GMCP-before-text, earlier unrelated
+GMCP, invalid/duplicate/oversized targets, malformed/truncated/out-of-order
+reports, premature fences, timeout, cancellation, module disable and identity
+changes. No partial report can imply that a planet has no competing factories.
+
+FedHauler uses the batch only for planning and rechecks only the selected
+planet before building. Transaction evidence/journals and fail-closed behavior
+are unchanged. Older consumers and individual planet/system reads retain their
+existing behavior. Nothing was installed, started, pushed or merged.
+
 ## 2026-09-21 Session hauling policy and resumable full-galaxy exploration
 
 Candidate `f2ce-tools-3.3.0-native-ew44.mpackage`, SHA256

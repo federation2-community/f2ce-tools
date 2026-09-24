@@ -1,5 +1,31 @@
 # Company inspection API (native-ew20)
 
+## Batched planning inspection (native-ew45)
+
+Optional feature marker `API.company.planetBatchVersion=1` exposes
+`API.company.planets(context, targets, callback)`. Pass an ordered array of
+1..100 unique `{planet="Example", system="Elsewhere"}` targets. The returned
+cancellable handle uses the normal module-owned broker lease; it cannot borrow
+a purchase lease. Each target and each send require `company.planet.inspect`
+authorization. Completion returns `{reports={...}, captured_at=...}` with
+ordered reports in the existing `planet` result format.
+
+Send the first `di planet` only, then issue the next request when the current
+expected header arrives. That next header fences the preceding planet report.
+After the final planet header, send one `di business` (Industrialist) or
+`di company` (Manufacturer). The last report requires the ordered company text
+header AND an actual company GMCP receipt after that final command was sent.
+GMCP alone is never proof of a complete public factory list. Parsing still
+validates workforce and factories belonging to every company.
+
+Bounds: 15 seconds per expected response/fence, 120 seconds overall, 1 MiB per
+batch and the existing per-report parser/line limits. Incomplete, malformed,
+out-of-order or identity-changing responses fail the entire batch without
+partial eligible results or retries. Cancel/disable removes observers, timers,
+subscription and command ownership; late replies cannot continue the chain.
+This is for planning only: `planet`, `system` and borrowed purchase checks are
+unchanged. Consumers must obtain fresh transaction evidence before spending.
+
 ## Single-factory preview/confirmation (native-ew27)
 
 Capability `company.factory.build` exposes

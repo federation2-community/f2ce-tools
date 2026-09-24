@@ -961,5 +961,78 @@ test("a different existing commodity permits one new factory, never a duplicate"
     assert(h:confirm(function(v,e) result,err=v,e end)); build_fresh(nil,nil,nil,different)
     equal(buys(),1); h:cancel("test complete"); equal(API.commands._lease,nil)
 end)
+for _,rank in ipairs({"Industrialist","Manufacturer"}) do
+test(rank.." 100 planning planets share one final report without bursting commands",function()
+    build_reset(rank); local result,err; local targets={}
+    for i=1,100 do targets[i]={planet="World "..i,system="Example"} end
+    local h=assert(API.company.planets(context,targets,function(v,e) result,err=v,e end))
+    equal(#mock.sent,1); equal(mock.sent[1].command,"di planet World 1")
+    local channel=rank=="Industrialist" and "business" or "company"
+    -- Earlier GMCP must not count as the final ordered fence.
+    mock:fireEvent("gmcp.char."..channel)
+    for i=1,100 do
+        observer(planet_fixture:gsub("Example World","World "..i)..(i==50 and competing or ""))
+        equal(#mock.sent,i+1); equal(result,nil)
+        if i<100 then equal(mock.sent[#mock.sent].command,"di planet World "..(i+1)) end
+    end
+    equal(mock.sent[101].command,rank=="Industrialist" and "di business" or "di company")
+    observer(rank=="Industrialist" and "Sample Ltd registered business - CEO Industrialist TestOwner" or "Company Report for Sample Ltd:")
+    equal(result,nil); assert(API.commands._lease)
+    mock:fireEvent("gmcp.char."..channel)
+    assert(result,tostring(err)); equal(#result.reports,100)
+    equal(#result.reports[50].planets["world 50"].factories,1)
+    equal(#result.reports[51].planets["world 51"].factories,0)
+    equal(h:status().active,false); equal(API.commands._lease,nil)
+    mock:runTimers(); equal(#mock.sent,101)
+end)
+test(rank.." batch final GMCP can precede text but never replaces the text fence",function()
+    build_reset(rank); local result,err
+    local h=assert(API.company.planets(context,{{planet="Example World",system="Example"}},function(v,e) result,err=v,e end))
+    observer(planet_fixture)
+    mock:fireEvent("gmcp.char."..(rank=="Industrialist" and "business" or "company"))
+    equal(result,nil)
+    observer(rank=="Industrialist" and "Sample Ltd registered business - CEO Industrialist TestOwner" or "Company Report for Sample Ltd:")
+    assert(result,tostring(err)); equal(#result.reports,1); equal(h:status().active,false)
+end)
+end
+test("planet batch rejects invalid duplicate and oversized target lists before sending",function()
+    for _,targets in ipairs({{},{{planet="bad;quit",system="Example"}},
+        {{planet="A",system="One"},{planet="a",system="Two"}}}) do
+        build_reset(); local h,e=API.company.planets(context,targets,function() end)
+        equal(h,nil); code(e,"E_ARGUMENT"); equal(#mock.sent,0)
+    end
+    build_reset(); local targets={}; for i=1,101 do targets[i]={planet="World "..i,system="Example"} end
+    local h,e=API.company.planets(context,targets,function() end)
+    equal(h,nil); code(e,"E_ARGUMENT"); equal(#mock.sent,0)
+end)
+test("incomplete or out-of-order batch reports never imply an empty public factory list",function()
+    for _,how in ipairs({"truncated","out_of_order","early_fence"}) do
+        build_reset(); local result,err
+        local h=assert(API.company.planets(context,{{planet="Example World",system="Example"},
+            {planet="Next",system="Example"}},function(v,e) result,err=v,e end))
+        observer(how=="truncated" and planet_fixture:gsub("Approval rating:","Missing:") or planet_fixture)
+        if how=="out_of_order" then observer(planet_fixture:gsub("Example World","Unexpected")) end
+        if how~="early_fence" then observer(planet_fixture:gsub("Example World","Next")) end
+        if observer then observer("Company Report for Sample Ltd:") end
+        mock:fireEvent("gmcp.char.company")
+        assert(err); equal(result,nil); equal(h:status().active,false); equal(API.commands._lease,nil)
+        equal(buys(),0)
+    end
+end)
+test("batch timeout stop identity change and disabled authority cancel the command chain",function()
+    for _,how in ipairs({"timeout","cancel","disable","identity"}) do
+        build_reset(); local result,err
+        local h=assert(API.company.planets(context,{{planet="Example World",system="Example"},
+            {planet="Next",system="Example"}},function(v,e) result,err=v,e end))
+        local late=observer
+        if how=="cancel" then h:cancel()
+        elseif how=="disable" then API.modules.disable(context.module_id)
+        elseif how=="identity" then mock.gmcp.char.vitals.name="Another"; mock:fireEvent("gmcp.char.vitals"); late(planet_fixture)
+        else mock:runTimers() end
+        equal(result,nil); equal(API.commands._lease,nil); equal(h:status().active,false)
+        late(planet_fixture); late("Company Report for Sample Ltd:"); mock:fireEvent("gmcp.char.company")
+        equal(#mock.sent,1); equal(result,nil)
+    end
+end)
 print(string.format("RESULT %d passed, %d failed",passed,failed))
 if failed>0 then os.exit(1) end

@@ -190,3 +190,119 @@ function API.company._planetWithLease(context,planet,system,callback,lease)
     return read_system(context,system,callback,lease,planet)
 end
 function API.company.planet(context,planet,system,callback) return API.company._planetWithLease(context,planet,system,callback) end
+
+-- Planning-only batch. The next requested planet header fences the previous
+-- report; one final ordered company header + fresh GMCP fences the last one.
+-- Purchase previews/confirmations keep the single-report path above.
+API.company.planetBatchVersion=1
+function API.company.planets(context,targets,callback)
+    if type(targets)~="table" or #targets<1 or #targets>100 or type(callback)~="function" then
+        return nil,S.error("E_ARGUMENT","1..100 planet targets and callback required")
+    end
+    local selected,seen={},{}
+    for _,target in ipairs(targets) do
+        local planet=type(target)=="table" and S.name(target.planet,true)
+        local system=type(target)=="table" and S.name(target.system,true)
+        if not planet or not system or seen[planet:lower()] then return nil,S.error("E_ARGUMENT","invalid or duplicate planet target") end
+        seen[planet:lower()]=true
+        local allowed,why=S.authorize(context,"company.planet.inspect",{planet=planet,system=system})
+        if not allowed then return nil,why end
+        selected[#selected+1]={planet=planet,system=system,header=(planet..", "..system.." system,"):lower()}
+    end
+    local company,why=API.company.snapshot(); if not company then return nil,why end
+    local who=API.data.get("vitals")
+    local channel=who.rank=="Industrialist" and "business" or "company"
+    local adapter=API._adapter
+    if type(adapter.observeLine)~="function" or type(adapter.unobserveLine)~="function" then return nil,S.error("E_CAPABILITY","line observer required") end
+    local lease; lease,why=API.commands.acquire(context,{service="company.planet.inspect"}); if not lease then return nil,why end
+    local active,observer,subscription,token,timer,deadline=true
+    local index,lines,reports,bytes=0,{},{},0
+    local fence_sent,received,fenced=false,false,false
+    local marker=channel=="business" and company.name.." registered business - CEO " or "Company Report for "..company.name..":"
+    local handle={}
+    local function cleanup(reason)
+        if not active then return false end
+        active=false
+        if timer then adapter.cancelTimer(timer) end
+        if deadline then adapter.cancelTimer(deadline) end
+        if observer then adapter.unobserveLine(observer) end
+        if subscription then subscription:cancel() end
+        lease:release(reason); S.forget(context,token); return true
+    end
+    function handle:cancel(reason) cleanup(reason or "planet_batch_cancelled"); return true end
+    function handle:status() return {active=active,operation="company.planet.inspect",completed=#reports,total=#selected} end
+    local function finish(value,err)
+        if not cleanup(err and "planet_batch_failed" or "planet_batch_complete") then return end
+        if S.live(context) then
+            local ok,detail=pcall(callback,S.copy(value),err)
+            if not ok then API.events.emit("api.callback_error",{label="company.planet.inspect",error=tostring(detail)}) end
+        end
+    end
+    local function identity()
+        local current=API.data.get("vitals"); local owner=API.company.snapshot()
+        return current and current.name==who.name and current.rank==who.rank and owner
+            and owner.name==company.name and owner.ceo==company.ceo
+    end
+    local function complete()
+        if not fenced or not received then return end
+        if not identity() then finish(nil,S.error("E_COMPANY_IDENTITY","owner or rank changed during planet batch")); return end
+        finish({reports=reports,captured_at=os.time()})
+    end
+    local function send_next()
+        if not active then return end
+        if not identity() then finish(nil,S.error("E_COMPANY_IDENTITY","owner or rank changed during planet batch")); return end
+        if timer then adapter.cancelTimer(timer) end
+        timer=adapter.timer(15,function() finish(nil,S.error("E_COMPANY_TIMEOUT","planet batch response/fence timed out")) end,false)
+        if not timer then finish(nil,S.error("E_CAPABILITY","planet batch timer unavailable")); return end
+        local target=selected[index+1]
+        local payload=target or {planet=selected[index].planet,system=selected[index].system}
+        local allowed,err=S.authorize(context,"company.planet.inspect",payload)
+        if not allowed then finish(nil,err); return end
+        local command=target and ("di planet "..target.planet) or (channel=="business" and "di business" or "di company")
+        fence_sent=target==nil
+        local sent; sent,err=lease:send(command,{operation="company.planet.inspect",reason="bounded planet planning batch"})
+        if not sent then finish(nil,err) end
+    end
+    local function parse_report(body)
+        local target=selected[index]
+        local report,err=API.company._parsePlanet(body,target.planet,target.system)
+        if not report then finish(nil,S.error("E_SYSTEM_DISPLAY",err)); return false end
+        report.captured_at=os.time(); reports[#reports+1]=report; return true
+    end
+    token=context:own("company.planet.inspect",handle,function(value) value:cancel("module_cleanup") end)
+    subscription=API.events.subscribe("data."..channel,function(event)
+        if not active or not event.received or not fence_sent then return end
+        if not identity() then finish(nil,S.error("E_COMPANY_IDENTITY","owner or rank changed during planet batch")); return end
+        received=true; complete()
+    end)
+    observer=adapter.observeLine(function(value)
+        if not active or fenced then return end
+        value=value:gsub("\27%[[%d;]*m","")
+        bytes=bytes+#value+1
+        if bytes>1048576 then finish(nil,S.error("E_SYSTEM_DISPLAY","planet batch exceeds bounds")); return end
+        for line in (value.."\n"):gmatch("(.-)\n") do
+            if not active or fenced then return end
+            line=line:gsub("\r$","")
+            local first=trim(line):lower(); local target=selected[index+1]
+            if target and first:sub(1,#target.header)==target.header then
+                if index>0 and not parse_report(table.concat(lines,"\n")) then return end
+                index=index+1; lines={line}; send_next()
+            elseif index>0 then
+                if #lines>=2000 then finish(nil,S.error("E_SYSTEM_DISPLAY","planet report exceeds bounds")); return end
+                lines[#lines+1]=line
+                local joined=table.concat(lines,"\n")
+                local pos=joined:find("\n"..pattern(marker))
+                if pos then
+                    if index~=#selected or not fence_sent then finish(nil,S.error("E_SYSTEM_DISPLAY","planet batch ended before every target")); return end
+                    if not parse_report(joined:sub(1,pos-1)) then return end
+                    fenced=true; complete()
+                end
+            end
+        end
+    end)
+    if not observer then cleanup("observer_missing"); return nil,S.error("E_CAPABILITY","planet batch observer unavailable") end
+    deadline=adapter.timer(120,function() finish(nil,S.error("E_COMPANY_TIMEOUT","planet batch exceeded two minutes")) end,false)
+    if not deadline then cleanup("timer_missing"); return nil,S.error("E_CAPABILITY","planet batch deadline unavailable") end
+    send_next()
+    return handle
+end
