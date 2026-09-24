@@ -79,6 +79,9 @@ function f2t_hauling_teleport_try()
 
     local p = {state=state, target=target, name=name, location=state.buy_location,
         handlers={}, stage="inventory", origin={system=info.system,area=info.area,num=info.num}}
+    if norm(info.system) == norm(target.system) and norm(info.area) == norm(target.planet) then
+        p.local_origin = p.origin -- Already on the seller planet: only the local hop is needed.
+    end
     pending = p
     local function current()
         return pending == p and state == F2T_HAULING_STATE and state.active and not state.paused
@@ -104,16 +107,16 @@ function f2t_hauling_teleport_try()
     end
     local function request_ship()
         if not current() then f2t_hauling_teleport_cancel(); return end
-        p.stage = "ship"
-        deadline(8, "fallback", "Fresh ship GMCP did not arrive; using ordinary navigation without teleporting.")
+        p.stage = p.local_origin and "local_ship" or "ship"
+        deadline(8, "fallback", "Fresh ship GMCP did not arrive; using ordinary navigation without another teleport.")
         send("status", false) -- The server sends char.ship with this display.
     end
     p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.char.ship", function(event_name)
         if event_name and event_name ~= "gmcp.char.ship" then return end
-        if not current() or p.stage ~= "ship" then return end
+        if not current() or (p.stage ~= "ship" and p.stage ~= "local_ship") then return end
         if protected() then finish("pause", "Protection recovery takes priority; no teleport sent."); return end
         if not empty_ship() then finish("pause", "Fresh ship data did not confirm an empty hold; no teleport or purchase sent."); return end
-        if not same_place(room(), p.origin) then finish("fallback", "Location changed during teleport checks; using normal navigation."); return end
+        if not same_place(room(), p.local_origin or p.origin) then finish("fallback", "Location changed during teleport checks; using normal navigation."); return end
         -- Re-resolve just before sending: map edits and destination policy must
         -- not turn a previously reviewed hash into a different target.
         local fresh = f2t_map_teleport_exchange_target(p.location)
@@ -121,35 +124,39 @@ function f2t_hauling_teleport_try()
         if f2t_hauling_customs_system_blocked and f2t_hauling_customs_system_blocked(target.system) then
             finish("skip", "Seller system is excluded by route policy; skipping it."); return
         end
-        p.stage, p.sent = "teleport", true
+        p.stage, p.sent, p.settled = p.local_origin and "local_teleport" or "teleport", true, false
         deadline(15, "uncertain", "Teleport arrival was not confirmed; paused without retrying or buying.")
-        message("Teleporting empty ship to seller: " .. target.hash)
-        send("tp " .. target.hash, false)
+        local address = p.local_origin and string.format("%d", target.num) or target.address
+        message(p.local_origin and ("Teleporting locally to seller exchange: " .. address)
+            or ("Teleporting empty ship to seller's shuttle pad: " .. address))
+        send("tp " .. address, false)
     end)
     p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.room.info", function()
-        if not current() or (p.stage ~= "teleport" and p.stage ~= "market") then return end
+        if not current() or (p.stage ~= "teleport" and p.stage ~= "local_teleport" and p.stage ~= "market") then return end
         local live = room()
-        if same_place(live, {system=target.system,area=target.planet,num=target.num}) and flag(live, "exchange") then
+        if p.stage ~= "teleport" and same_place(live, {system=target.system,area=target.planet,num=target.num})
+            and flag(live, "exchange") then
             if p.stage == "market" then return end
             p.stage, p.settled = "market", true
-            -- A full local-market event must follow confirmed arrival. One look
-            -- handles either ordering of the unsolicited arrival payloads.
             deadline(8, "pause", "Seller arrival confirmed, but fresh exchange GMCP is missing; paused before buying.")
             send("look", false)
-        elseif norm(live.system) == norm(target.system) and norm(live.area) == norm(target.planet)
-            and flag(live, "shuttlepad") then
-            finish("fallback", "Teleport landed at the seller planet's landing pad; navigating locally to the exchange.")
-        elseif not same_place(live, p.origin) then
+        elseif p.stage == "teleport" and norm(live.system) == norm(target.system) and norm(live.area) == norm(target.planet)
+            and tonumber(live.num) and flag(live, "shuttlepad") then
+            if protected() then finish("pause", "Protection recovery takes priority; no local navigation or purchase sent."); return end
+            if not empty_ship() then finish("pause", "Cargo changed during teleport; paused with cargo preserved."); return end
+            p.settled = true
+            p.local_origin = {system=live.system,area=live.area,num=live.num}
+            message("Seller shuttle pad confirmed; checking empty hold before the local exchange hop.")
+            request_ship()
+        elseif not same_place(live, p.local_origin or p.origin) then
             finish("uncertain", "Teleport reached an unexpected room; inspect location before resuming. No purchase sent.")
         end
     end)
     p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.exchange.commodities", function(event_name)
         if event_name and event_name ~= "gmcp.exchange.commodities" then return end
-        if current() and p.stage == "market" and protected() then
-            finish("pause", "Protection recovery takes priority; no purchase sent."); return
-        end
-        if current() and p.stage == "market" and f2t_hauling_teleport_at_seller()
-            and tonumber(room().num) == target.num and empty_ship() then
+        if not current() or p.stage ~= "market" then return end
+        if protected() then finish("pause", "Protection recovery takes priority; no purchase sent."); return end
+        if f2t_hauling_teleport_at_seller() and tonumber(room().num) == target.num and empty_ship() then
             finish("arrived", "Seller arrival and fresh exchange GMCP confirmed; continuing bulk purchase.")
         end
     end)
@@ -168,7 +175,7 @@ function f2t_hauling_teleport_try()
                 until_time=os.time() + (days and math.min(3600, math.max(0, days-1)*86400) or 3600)}
             if inventory.owned then request_ship()
             else finish("fallback", "No active Mk1 teleporter in inventory; using ship navigation.") end
-        elseif p.stage == "teleport" then
+        elseif p.stage == "teleport" or p.stage == "local_teleport" then
             if text:match("^You are carrying at least one object that interferes with")
                 or text:match("^Your ship is carrying at least one object that interferes with")
                 or text:match("^I can't find a planet called ") then p.refusal = text

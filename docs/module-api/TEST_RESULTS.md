@@ -1,5 +1,26 @@
 # Module API verification
 
+## 2026-09-24 Planetary shuttle pad plus local exchange hop (ew48)
+
+Candidate `f2ce-tools-3.3.0-native-ew48.mpackage`, SHA256
+`9a110663f32bc34bc3711b3969da0c710fcc50881a68d08b9a078f25ad82d05c`.
+Existing FedHauler 1.17.40 remains compatible without a runtime/package update.
+
+All 21 native suites passed against source and reconstructed package code,
+including 48 teleport checks. The build passed 279 Lua syntax checks, 32
+metadata checks and 236 packaged script/trigger comparisons. The 127-check
+FedHauler/native integration suite also passed with the unchanged consumer.
+
+Commands now distinguish `tp System.Planet` from the subsequent local
+`tp <server room number>`. Tests confirm the shuttle pad before the local hop,
+require new empty-ship GMCP before each command, verify the final exchange and
+fresh market before bulk buying, and reject direct interplanetary exchange
+arrivals. Local refusal uses normal walking; unmapped exchanges retain ship
+navigation/discovery. Tests also cover same-planet local-only teleport, stale
+and duplicate events, second-hop timeout/cargo change, cancellation between
+hops, unexpected destinations and unchanged loaded buyer travel. No live
+profiles were modified or started; live two-hop acceptance remains to be done.
+
 ## 2026-09-24 Optional empty seller-leg teleport (ew47)
 
 Candidate `f2ce-tools-3.3.0-native-ew47.mpackage`, SHA256

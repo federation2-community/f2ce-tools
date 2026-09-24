@@ -9,18 +9,25 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew47**, paired with **FedHauler 1.17.40**, adds optional
+Native candidate **ew48**, compatible with existing **FedHauler 1.17.40**, uses
+two verified teleport hops: `tp Essos.Valyria` to the planet's shuttle pad,
+then `tp 845` to the mapped exchange's server room number. No room number is
+appended to the interplanetary address. Already on the seller planet, it uses
+only the local hop. A confirmed local refusal falls back to ordinary walking;
+an unmapped exchange falls back to normal ship navigation/discovery.
+
+This builds on ew47's optional
 inventory-verified seller-leg teleporting to Premium Hauler. Enable **TELEPORT
 TO SELLER** in FedHauler's Mux Settings and Apply while OFF. The default remains
 OFF. It sends `inv`, verifies an unexpired Mk1 control, and requests fresh ship
-GMCP using `status` before `tp <mapped exchange hash>`. Empty cargo and full free
+GMCP using `status` before each hop. Empty cargo and full free
 hold capacity are mandatory. Arrival at the expected exchange and fresh market
 GMCP are required before the existing bulk buy. Loaded travel and selling stay
 unchanged. No teleporter rental or renewal is automated.
 
 Unmapped/invalid/locked hashes, missing ownership, and confirmed ordinary
-refusals use normal navigation/discovery. Landing-pad arrivals use local
-navigation. Pending map discovery cannot use an old speedwalk completion;
+refusals use normal navigation/discovery. Landing-pad arrivals trigger the
+verified local teleport. Pending map discovery cannot use an old speedwalk completion;
 failed discovery skips that supplier. Unknown teleport outcomes pause without
 retrying or automatic safe-room travel; inspect then explicitly stop/start.
 Cargo/exile contradictions pause; closed systems are skipped. Stop, pause,
