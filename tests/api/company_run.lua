@@ -1034,5 +1034,61 @@ test("batch timeout stop identity change and disabled authority cancel the comma
         equal(#mock.sent,1); equal(result,nil)
     end
 end)
+for _,rank in ipairs({"Industrialist","Manufacturer"}) do
+test(rank.." TQuarks can follow foreign NanoFabrics or one verified owned TQuarks",function()
+    for _,own in ipairs({false,true}) do
+        build_reset(rank); local channel=rank=="Industrialist" and "business" or "company"
+        local c=mock.gmcp.char[channel]; c.factories=own and {{number=1,planet="Example World",output="TQuarks"}} or {}
+        mock:fireEvent("gmcp.char."..channel)
+        mock.gmcp.exchange.commodities={TQuarks={buy=900},Lasers={stock=6000,sell=100},Droids={stock=6000,sell=100}}
+        local o=auto_options(); o.commodity="TQuarks"; o.labour=30; o.reserved_workers=own and 30 or 0
+        o.exclude_existing_commodity=true; o.allow_owned_commodity=true
+        o.inputs={{commodity="Lasers",required=20,minimum_stock=5000,price_limit=100},
+            {commodity="Droids",required=20,minimum_stock=5000,price_limit=100}}
+        local commercial="\nCommercial Activities:\n  Factories:\n    "..(own and "sAmPlE lTd #1 plant producing tQuArKs" or "Foreign Holdings #1 plant producing NanoFabrics").."\n"
+        local result,err
+        local h=assert(API.company.prepareFactory(context,o,function(v,e) result,err=v,e end))
+        build_fresh(rank,own and 60 or 30,nil,commercial); assert(result,tostring(err))
+        equal(result.workers_required,own and 60 or 30); equal(buys(),0)
+        assert(h:confirm(function(v,e) result,err=v,e end)); build_fresh(rank,own and 60 or 30,nil,commercial)
+        equal(buys(),1)
+        local command; for _,sent in ipairs(mock.sent) do if sent.command:match("^buy factory ") then command=sent.command end end
+        equal(command,"buy factory TQuarks")
+        h:cancel("synthetic purchase boundary checked")
+    end
+end)
+test(rank.." owned-commodity permission never bypasses competition, cap or fresh resource checks",function()
+    for _,how in ipairs({"foreign","third","workers","stock","bid","wrong_slot","missing_public","confirm_competitor"}) do
+        build_reset(rank); local channel=rank=="Industrialist" and "business" or "company"
+        local c=mock.gmcp.char[channel]; c.factories={{number=1,planet="Example World",output="Firewalls"}}
+        if how=="third" then c.factories[2]={number=2,planet="Example World",output="Firewalls"} end
+        mock:fireEvent("gmcp.char."..channel)
+        local o=auto_options(); o.allow_owned_commodity=true; o.exclude_existing_commodity=true
+        local commercial="\nCommercial Activities:\n  Factories:\n    Sample Ltd #1 plant producing Firewalls\n"
+        if how=="foreign" then commercial=commercial.."    Foreign Holdings #1 plant producing Firewalls\n"
+        elseif how=="stock" then mock.gmcp.exchange.commodities.Semiconductors.stock=4999
+        elseif how=="bid" then mock.gmcp.exchange.commodities.Firewalls.buy=nil
+        elseif how=="wrong_slot" then commercial=commercial:gsub("#1","#7")
+        elseif how=="missing_public" then commercial="" end
+        local result,err
+        local h=assert(API.company.prepareFactory(context,o,function(v,e) result,err=v,e end))
+        build_fresh(rank,how=="workers" and 299 or 2500,nil,commercial)
+        if how=="confirm_competitor" then
+            assert(result,tostring(err)); result=nil
+            assert(h:confirm(function(v,e) result,err=v,e end))
+            build_fresh(rank,nil,nil,commercial.."    Foreign Holdings #2 plant producing Firewalls\n")
+        end
+        assert(err,how); equal(result,nil); equal(buys(),0); equal(API.commands._lease,nil)
+    end
+end)
+end
+
+test("owned-commodity exemption requires explicit exclusion policy and a boolean",function()
+    for _,value in ipairs({true,"yes",2}) do
+        build_reset(); local o=site_options(); o.allow_owned_commodity=value
+        local h,err=API.company.prepareFactory(context,o,function() end)
+        equal(h,nil); code(err,"E_ARGUMENT"); equal(#mock.sent,0)
+    end
+end)
 print(string.format("RESULT %d passed, %d failed",passed,failed))
 if failed>0 then os.exit(1) end

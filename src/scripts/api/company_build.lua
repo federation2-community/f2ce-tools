@@ -9,6 +9,7 @@ API.company.factorySiteVersion=1
 API.company.factoryPriceReviewVersion=1
 API.company.factoryAutomationVersion=1
 API.company.factoryCompetitionVersion=1
+API.company.factoryOwnedCommodityVersion=1
 local limits={Industrialist=8,Manufacturer=15}
 local function norm(v) return type(v)=="string" and v:lower() or "" end
 local function integer(v,lo,hi) return type(v)=="number" and v==math.floor(v) and v>=lo and v<=hi end
@@ -67,6 +68,8 @@ local function validate_options(o)
     if o.depot_only~=nil and type(o.depot_only)~="boolean" then return false end
     if o.review_prices~=nil and type(o.review_prices)~="boolean" then return false end
     if o.exclude_existing_commodity~=nil and type(o.exclude_existing_commodity)~="boolean" then return false end
+    if o.allow_owned_commodity~=nil and type(o.allow_owned_commodity)~="boolean" then return false end
+    if o.allow_owned_commodity and o.exclude_existing_commodity~=true then return false end
     if o.factory_limit~=nil and not integer(o.factory_limit,1,15) then return false end
     if o.automation then
         if o.automation~=true or not integer(o.wages,1,1000000)
@@ -88,7 +91,7 @@ local function ready(state,report,o,review_prices)
     if o.depot_only then
         if not state.local_factory or not needs_depot then return nil,failure("depot-only build requires an owned factory and no depot on this planet") end
     elseif not state.slot then return nil,failure("no free factory slot under the configured limit")
-    elseif o.automation and state.local_count>=o.planet_limit then return nil,failure("two-factory planet limit reached") end
+    elseif (o.automation or o.allow_owned_commodity) and state.local_count>=(o.planet_limit or 2) then return nil,failure("two-factory planet limit reached") end
     if needs_depot and state.depot_count>=(state.rank=="Industrialist" and 16 or 15) then return nil,failure("no free depot slot") end
     local cost=(o.depot_only and 0 or COST)+(needs_depot and DEPOT_COST or 0)
     local labour=o.labour+(needs_depot and DEPOT_WORKERS or 0)+(o.reserved_workers or 0)
@@ -104,16 +107,20 @@ local function ready(state,report,o,review_prices)
         if not workers or workers.factories_verified~=true or type(workers.factories)~="table" then
             return nil,failure("public planet factory list unavailable; duplicate commodity exclusion cannot be verified")
         end
+        local owned={}
         for _,f in pairs(state.roster) do
             if norm(f.planet)==norm(o.planet) and norm(f.output)==norm(o.commodity) then
-                return nil,failure("planet already has a "..o.commodity.." factory; no duplicate commodity build")
+                if not o.allow_owned_commodity then return nil,failure("planet already has a "..o.commodity.." factory; no duplicate commodity build") end
+                owned[f.number]=true
             end
         end
         for _,f in ipairs(workers.factories) do
             if norm(f.output)==norm(o.commodity) then
-                return nil,failure("planet already has a "..o.commodity.." factory ("..f.owner.."); no duplicate commodity build")
+                if o.allow_owned_commodity and norm(f.owner)==norm(state.owner) and owned[f.number] then owned[f.number]=nil
+                else return nil,failure("planet already has a "..o.commodity.." factory ("..f.owner.."); no competing or unverified commodity build") end
             end
         end
+        if next(owned) then return nil,failure("owned factory roster and public commodity report disagree") end
     end
     if not workers or norm(report.system)~=norm(o.system) or workers.closed
         or not integer(workers.available,0,1000000000) or workers.available<labour

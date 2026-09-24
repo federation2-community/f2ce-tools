@@ -1,5 +1,28 @@
 # Company inspection API (native-ew20)
 
+## Owned commodity exception (native-ew46)
+
+Feature marker `API.company.factoryOwnedCommodityVersion=1` supports optional
+`allow_owned_commodity=true` alongside `exclude_existing_commodity=true` in
+factory proposals. Without that opt-in, the previous all-company duplicate
+exclusion remains unchanged for older consumers.
+
+With opt-in, a public matching factory is exempt only when its owner matches
+the current company AND its numbered slot, planet and output match the fresh
+owned roster. Missing public ownership or roster disagreement is rejected.
+Another company's matching commodity still blocks construction. A different
+commodity (for example foreign NanoFabrics when building TQuarks) does not.
+At most two owned factories total are allowed per planet, including manual
+opt-in builds. Automation may configure a stricter one-factory limit. Fresh
+stock, output bid, reserved workers, cash, depot, wage and journal checks remain
+separate and unchanged. This permits ONE factory per confirmed API operation,
+not two purchases under one confirmation.
+
+FedHauler 1.17.39 uses batches of ten with independent validated recovery on
+report failure. The underlying batch API remains strict/all-or-nothing and
+does not publish unfenced partial results; healthy earlier batches survive in
+the consumer's pass-scoped cache. Authority/refusal errors are never retried.
+
 ## Batched planning inspection (native-ew45)
 
 Optional feature marker `API.company.planetBatchVersion=1` exposes

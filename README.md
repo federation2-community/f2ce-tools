@@ -9,7 +9,15 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew45**, with **FedHauler 1.17.38**, reduces factory planning
+Native candidate **ew46**, with **FedHauler 1.17.39**, permits a second
+same-commodity factory owned by the requesting company. Public ownership must
+match the owned roster; foreign matching commodities, two-per-planet limits,
+workforce, stock, bid, reserve, depot and wage checks remain enforced. The
+consumer also fixes planning failure recovery with independently completed
+ten-planet batches and bounded individual fallback. See the
+[company API](docs/COMPANY_API.md). No account is started by installation.
+
+Included from **ew45**, with **FedHauler 1.17.38**, reduces factory planning
 report traffic: up to 100 public planet inspections share one final company
 report instead of issuing a company report per planet. Requests are pipelined
 one header at a time, with bounded timeouts, strict report validation and

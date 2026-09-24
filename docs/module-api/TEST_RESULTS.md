@@ -1,5 +1,28 @@
 # Module API verification
 
+## 2026-09-24 Factory recovery and owned-commodity exception (ew46)
+
+Candidate `f2ce-tools-3.3.0-native-ew46.mpackage`, SHA256
+`dbf5179f4e60eb8d6989c682cfb32a479f2346f250c256be7d8005704f511181`.
+Companion `fed-hauler-live-1.17.39.mpackage`, SHA256
+`d4ff1d8f656c948659dcb72d9b128272393d9cd1134a7a90a03456441084f8eb`.
+
+All 20 native suites passed against source and reconstructed package code:
+97 company checks, 276 Lua syntax checks, 32 metadata checks and 234 packaged
+script/trigger matches. Native tests at both Industrialist and Manufacturer
+allow TQuarks after foreign NanoFabrics or one verified owned TQuarks factory.
+They reject foreign matching production, a third owned factory, insufficient
+workers/stock, missing output bids, mismatched slots, absent public ownership
+and a competitor appearing between preview and confirmation. The ownership
+exception is explicit; older callers retain strict all-company exclusion.
+
+All 587 FedHauler checks passed, including 124 actual-native integrations,
+38 comparison checks and 13 builder checks. The actual native parser failure
+fixture confirms bounded independent read recovery, retained valid planets,
+released command ownership and no construction during research. Source/package
+hashes match for all 31 FedHauler package files. No live account, installation,
+public-server purchase or automatic restart was performed by these tests.
+
 ## 2026-09-24 Batched factory planning reports (ew45)
 
 Candidate `f2ce-tools-3.3.0-native-ew45.mpackage`, SHA256
