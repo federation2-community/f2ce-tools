@@ -10,6 +10,7 @@ API.company.factoryPriceReviewVersion=1
 API.company.factoryAutomationVersion=1
 API.company.factoryCompetitionVersion=1
 API.company.factoryOwnedCommodityVersion=1
+API.company.factoryRankLimitsVersion=1
 local limits={Industrialist=8,Manufacturer=15}
 local function norm(v) return type(v)=="string" and v:lower() or "" end
 local function integer(v,lo,hi) return type(v)=="number" and v==math.floor(v) and v>=lo and v<=hi end
@@ -73,7 +74,7 @@ local function validate_options(o)
     if o.factory_limit~=nil and not integer(o.factory_limit,1,15) then return false end
     if o.automation then
         if o.automation~=true or not integer(o.wages,1,1000000)
-            or not integer(o.planet_limit,1,2) or not integer(o.factory_limit,1,8)
+            or not integer(o.planet_limit,1,2) or not integer(o.factory_limit,1,15)
             or o.require_depot~=true or not integer(o.reserved_workers,0,10000000) then return false end
     elseif o.wages~=nil or o.planet_limit~=nil or o.reserved_workers~=nil then return false end
     if o.depot_only and (not o.require_depot or o.labour~=0 or #o.inputs~=0 or o.commodity~="Depot") then return false end

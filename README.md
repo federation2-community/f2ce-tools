@@ -9,7 +9,14 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew49**, compatible with existing **FedHauler 1.17.40**, fixes
+Native candidate **ew50**, paired with **FedHauler 1.17.41**, allows Manufacturer
+automation up to **15 owned factories total**, while Industrialist remains at
+**8**. Native checks clamp requested limits to actual rank slots; lower caps
+and two per planet remain enforced. The new optional `factoryRankLimitsVersion=1`
+marker detects this support without breaking eight-factory clients. Purchases,
+wages, resource checks and journals are unchanged. See the [company API](docs/COMPANY_API.md).
+
+Included from **ew49**, compatible with **FedHauler 1.17.40**, is the fix for
 the post-teleport seller pause in ew48: arrival no longer sends `look` and waits
 for a full commodity snapshot that the server does not guarantee. It checks
 fresh empty-ship data with one `status` at the verified exchange, then continues

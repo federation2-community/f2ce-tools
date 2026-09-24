@@ -1090,5 +1090,43 @@ test("owned-commodity exemption requires explicit exclusion policy and a boolean
         equal(h,nil); code(err,"E_ARGUMENT"); equal(#mock.sent,0)
     end
 end)
+for _,rank in ipairs({"Industrialist","Manufacturer"}) do
+test(rank.." automatic final rank slot reconciles purchase and wages with a requested cap of fifteen",function()
+    build_reset(rank); local channel=rank=="Industrialist" and "business" or "company"
+    local maximum=rank=="Industrialist" and 8 or 15; local c=mock.gmcp.char[channel]
+    for i=2,maximum-1 do c.factories[i]={number=i,planet="Elsewhere "..i,output="Firewalls"} end
+    mock:fireEvent("gmcp.char."..channel)
+    local o=auto_options(); o.factory_limit=15
+    local proposal,result,err
+    local h=assert(API.company.prepareFactory(context,o,function(v,e) proposal,err=v,e end)); build_fresh(rank)
+    assert(proposal,tostring(err)); equal(proposal.slot,maximum)
+    assert(h:confirm(function(v,e) result,err=v,e end)); build_fresh(rank); equal(buys(),1)
+    c.cash=5000000; c.factories[maximum]={number=maximum,planet="Example World",output="Firewalls"}
+    mock:fireEvent("gmcp.char."..channel)
+    equal(mock.sent[#mock.sent].command,"set factory "..maximum.." wages 40")
+    observer("The wages for workers in factory #"..maximum.." (Firewalls on Example World) have been set to 40.")
+    equal(mock.sent[#mock.sent].command,"display factory "..maximum)
+    for _,line in ipairs(lines(fixture:gsub("Facility #1","Facility #"..maximum))) do observer(line) end
+    assert(result,tostring(err)); equal(result.wages_confirmed,true); equal(result.slot,maximum); equal(API.commands._lease,nil)
+    equal(buys(),1); equal(wage_commands(),1)
+end)
+test(rank.." full rank roster refuses automation even when the caller requests fifteen",function()
+    build_reset(rank); local channel=rank=="Industrialist" and "business" or "company"
+    local maximum=rank=="Industrialist" and 8 or 15
+    for i=2,maximum do mock.gmcp.char[channel].factories[i]={number=i,planet="Elsewhere "..i,output="Firewalls"} end
+    mock:fireEvent("gmcp.char."..channel)
+    local o=auto_options(); o.factory_limit=15; local err
+    assert(API.company.prepareFactory(context,o,function(_,e) err=e end)); build_fresh(rank)
+    assert(err); equal(buys(),0); equal(wage_commands(),0); equal(API.commands._lease,nil)
+end)
+end
+test("factory rank-limit marker and automatic cap bounds",function()
+    build_reset(); equal(API.company.factoryRankLimitsVersion,1)
+    for _,limit in ipairs({0,16,1.5,"15"}) do
+        local o=auto_options(); o.factory_limit=limit
+        local h,err=API.company.prepareFactory(context,o,function() end)
+        equal(h,nil); code(err,"E_ARGUMENT"); equal(#mock.sent,0)
+    end
+end)
 print(string.format("RESULT %d passed, %d failed",passed,failed))
 if failed>0 then os.exit(1) end

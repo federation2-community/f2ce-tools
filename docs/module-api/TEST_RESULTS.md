@@ -1,5 +1,27 @@
 # Module API verification
 
+## 2026-09-24 Rank-specific factory automation caps (ew50)
+
+Candidate `f2ce-tools-3.3.0-native-ew50.mpackage`, SHA256
+`4bcf3a49185de77738a039ca62fa9b573df8a0522bb54655de225d5690459439`.
+Companion `fed-hauler-live-1.17.41.mpackage`, SHA256
+`05e617d4146f4de07801b5d42036f1887f2958777c2f83ae4bd66f7ef57d6031`.
+
+All 21 native suites passed against source and reconstructed package code,
+including 102 company checks and 59 unchanged teleport checks. Validation passed
+279 Lua syntax checks, 32 metadata checks and 236 packaged script/trigger matches.
+New tests confirm the last Industrialist/Manufacturer slot (8/15), one purchase,
+matching wage acknowledgement/display, completed reconciliation, and refusal at
+the full rank roster even with a requested limit of 15. Invalid automatic caps
+are rejected before commands. The new optional `factoryRankLimitsVersion=1`
+marker preserves compatibility with existing eight-factory consumers.
+
+All 602 FedHauler source checks passed. The extracted consumer package passed
+209 main tests and 131 integration tests against this reconstructed native
+package. All 31 consumer package files match source. No live accounts, profiles,
+servers or shared services were used or changed; nothing was installed or pushed.
+Live acceptance remains pending user installation with automation stopped.
+
 ## 2026-09-24 Teleport seller handoff without a commodity snapshot (ew49)
 
 Candidate `f2ce-tools-3.3.0-native-ew49.mpackage`, SHA256

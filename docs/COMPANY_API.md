@@ -1,5 +1,17 @@
 # Company inspection API (native-ew20)
 
+## Rank-specific automatic factory limits (native-ew50)
+
+`API.company.factoryRankLimitsVersion=1` advertises automatic `factory_limit`
+values from 1 through 15. Effective available slots remain clamped to the
+character's actual rank: Industrialist 8, Manufacturer 15. Existing factories
+count toward the limit. A lower requested cap is honored. Eight-factory clients
+remain compatible; `factoryAutomationVersion=1` and other feature markers are
+unchanged. No extra factories can be bought by supplying a Manufacturer cap at
+Industrialist. A full roster blocks another purchase, while final wage
+reconciliation is allowed for the just-confirmed last slot. Per-planet caps,
+competition, labour, cash reserve, stock, depot and journal checks are unchanged.
+
 ## Owned commodity exception (native-ew46)
 
 Feature marker `API.company.factoryOwnedCommodityVersion=1` supports optional
