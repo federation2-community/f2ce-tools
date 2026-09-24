@@ -28,8 +28,10 @@ function f2t_hauling_start(requested_mode, rotation, session_policy)
     F2T_HAULING_STATE.cycle_count = 0
     F2T_HAULING_STATE.exchange_analysis_request = nil
     F2T_HAULING_STATE.sell_analysis_request = nil
+    F2T_HAULING_STATE.teleport_ship_route = nil
     F2T_HAULING_STATE.rotation = rotation -- session-local; ordinary starts clear it
     F2T_HAULING_STATE.session_policy = type(session_policy) == "table" and session_policy or nil
+    if f2t_hauling_teleport_reset then f2t_hauling_teleport_reset() end
     raiseEvent("f2tHaulingStatusChanged")
 
     -- Set navigation ownership for hauling
@@ -349,6 +351,8 @@ end
 
 -- Internal function to actually stop hauling (preserves statistics)
 function f2t_hauling_do_stop()
+    if f2t_hauling_teleport_cancel then f2t_hauling_teleport_cancel() end
+    F2T_HAULING_STATE.teleport_ship_route = nil
     -- Invalidate purchase callbacks before the optional safe-room stop delay.
     if f2t_hauling_purchase_cleanup then f2t_hauling_purchase_cleanup() end
     if f2t_hauling_customs_scan_cancel then f2t_hauling_customs_scan_cancel("hauling stopped", false) end
@@ -368,7 +372,8 @@ function f2t_hauling_do_stop()
     local use_safe_room = f2t_settings_get("hauling", "use_safe_room")
     local safe_room = f2t_settings_get("hauling", "safe_room")
 
-    if use_safe_room and safe_room and safe_room ~= "" then
+    if use_safe_room and safe_room and safe_room ~= ""
+        and not (f2t_hauling_teleport_uncertain and f2t_hauling_teleport_uncertain()) then
         cecho(string.format("\n<green>[hauling]<reset> Returning to safe room: <cyan>%s<reset>\n", safe_room))
         f2t_debug_log("[hauling] Navigating to safe room: %s", safe_room)
 
@@ -554,6 +559,7 @@ function f2t_hauling_pause(immediate)
     end
 
     if immediate then
+        if f2t_hauling_teleport_cancel then f2t_hauling_teleport_cancel() end
         -- Immediate pause (system-initiated): stop everything now
         -- Supersedes any pending deferred pause
         F2T_HAULING_STATE.pause_requested = false

@@ -82,6 +82,7 @@ try {
             @('tests/hauling/customs_policy_run.lua', $SourceRoot),
             @('tests/hauling/refusal_run.lua', $SourceRoot),
             @('tests/hauling/rotation_run.lua', $SourceRoot),
+            @('tests/hauling/teleport_run.lua', $SourceRoot),
             @('tests/player_db_change_detection_run.lua', $SourceRoot),
             @('tests/who_render_cache_run.lua', $SourceRoot),
             @('tests/table_system_row_refresh_run.lua', $SourceRoot),

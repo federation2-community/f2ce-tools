@@ -6,6 +6,7 @@
   {"name": "style"},
   {"name": "capture"},
   {"name": "room_query"},
+  {"name": "teleport"},
   {"name": "helpers"},
   {"name": "room"},
   {"name": "exit"},

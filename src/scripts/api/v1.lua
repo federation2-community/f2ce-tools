@@ -950,6 +950,14 @@ function hauling.start(context, options)
         return nil, api_error("E_CAPABILITY", "top-base-price rotation is unavailable")
     end
     local policy
+    if options.teleport_to_seller ~= nil then
+        if type(options.teleport_to_seller) ~= "boolean" or mode ~= "exchange" then
+            return nil, api_error("E_HAUL_POLICY", "teleport_to_seller must be an exchange-only boolean")
+        end
+        if options.teleport_to_seller and not API.hasCapability("hauling.teleport_seller") then
+            return nil, api_error("E_CAPABILITY", "empty seller-leg teleport support is unavailable")
+        end
+    end
     if options.customs_max_percent ~= nil or options.excluded_commodities ~= nil then
         if mode ~= "exchange" or not API.hasCapability("hauling.session_policy") then
             return nil, api_error("E_CAPABILITY", "exchange hauling session policy is unavailable")
@@ -979,6 +987,10 @@ function hauling.start(context, options)
             end
         end
         policy = { customs_max_percent = customs, excluded_commodities = excluded }
+    end
+    if options.teleport_to_seller ~= nil then
+        policy = policy or {}
+        policy.teleport_to_seller = options.teleport_to_seller
     end
     if hauling._owner then
         return nil, api_error("E_HAUL_BUSY", "hauling is already API-owned", { owner = hauling._owner })
@@ -1071,6 +1083,8 @@ function API._install(adapter)
         "persistent cartel scan excludes systems above five percent customs")
     capability("hauling.session_policy", adapter.haulingSessionPolicy == true,
         "validated per-session customs threshold and commodity exclusions")
+    capability("hauling.teleport_seller", adapter.haulingTeleportSeller == true,
+        "inventory-verified empty seller teleport with normal-navigation fallback")
     capability("map.queries", type(adapter.mapResolve) == "function", adapter.name)
     capability("exchange.capture", type(adapter.exchangeCapture) == "function"
         and type(adapter.exchangeCancel) == "function", "serialized native PO capture")

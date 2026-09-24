@@ -586,7 +586,7 @@ function f2t_hauling_finish_remove_commodity()
 end
 
 -- Phase 2: navigate to buy location
-function f2t_hauling_phase_navigate_to_buy()
+function f2t_hauling_phase_navigate_to_buy(skip_teleport)
     if not F2T_HAULING_STATE.buy_location then
         cecho("\n<red>[hauling]<reset> No buy location set\n")
         f2t_hauling_stop()
@@ -595,26 +595,52 @@ function f2t_hauling_phase_navigate_to_buy()
 
     local planet = F2T_HAULING_STATE.buy_location.planet
     local destination = string.format("%s exchange", planet)
+    local state, location = F2T_HAULING_STATE, F2T_HAULING_STATE.buy_location
+    state.teleport_ship_route = nil
+    if not skip_teleport and f2t_hauling_teleport_try and f2t_hauling_teleport_try() then return end
+    local route
+    if state.session_policy and state.session_policy.teleport_to_seller then
+        route = {ready=false}
+        state.teleport_ship_route = route
+    end
+    local function route_current()
+        return not route or (state == F2T_HAULING_STATE and state.teleport_ship_route == route
+            and state.buy_location == location and state.current_phase == "navigating_to_buy")
+    end
 
     cecho(string.format("\n<green>[hauling]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n", planet))
     f2t_debug_log("[hauling] Navigating to: %s", destination)
 
     local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+        on_result = function(success, status)
+            if not route_current() or not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
-            if not success then pause_on_nav_failure() end
+            if route then
+                route.ready = success
+                if not success then
+                    state.teleport_ship_route = nil
+                    cecho("\n<yellow>[hauling]<reset> Seller navigation/discovery failed; trying the next supplier.\n")
+                    f2t_hauling_retry_exchange("buy"); return
+                end
+                if status == "arrived" and f2t_hauling_teleport_at_seller() then
+                    f2t_hauling_transition("buying"); return
+                end
+                -- A discovery chain may settle as already-arrived without
+                -- another room event. The checker still validates the seller.
+                if not F2T_SPEEDWALK_ACTIVE then f2t_hauling_check_nav_to_buy_complete() end
+            elseif not success then pause_on_nav_failure() end
             -- success: a real speedwalk is now in flight; f2t_hauling_check_nav_to_buy_complete
             -- (wired to gmcp.room.info) picks up its completion normally.
         end,
     })
+    if route and nav_result ~= "pending" then route.ready = f2t_map_navigate_ok(nav_result) end
 
     -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
     if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Already at buy location, waiting for GMCP update")
         tempTimer(0.5, function()
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+            if not route_current() or not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
             f2t_debug_log("[hauling] GMCP ready, proceeding to buy")
@@ -661,6 +687,12 @@ end
 
 -- Phase 3: buy commodity
 function f2t_hauling_phase_buy()
+    if f2t_hauling_teleport_busy and f2t_hauling_teleport_busy() then return end
+    if F2T_HAULING_STATE.session_policy and F2T_HAULING_STATE.session_policy.teleport_to_seller
+        and (f2t_hauling_teleport_uncertain() or not f2t_hauling_teleport_at_seller()) then
+        cecho("\n<red>[hauling]<reset> Seller location is not confirmed; paused before buying.\n")
+        f2t_hauling_pause(true); return
+    end
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then return end
     if F2T_HAULING_STATE.purchase_settlement then
         -- A repeated arrival/resume transition must not erase the pending phase.
@@ -887,6 +919,9 @@ end
 -- Exchange event handlers
 
 function f2t_hauling_check_nav_to_buy_complete()
+    if f2t_hauling_teleport_busy and f2t_hauling_teleport_busy() then return end
+    local route = F2T_HAULING_STATE.teleport_ship_route
+    if route and not route.ready then return end
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
         return
     end
@@ -904,6 +939,10 @@ function f2t_hauling_check_nav_to_buy_complete()
         -- handlers) since they only transition phase; buying/selling verify location themselves.
 
         if result == "completed" then
+            if route and not f2t_hauling_teleport_at_seller() then
+                F2T_HAULING_STATE.teleport_ship_route = nil
+                f2t_hauling_retry_exchange("buy"); return
+            end
             f2t_debug_log("[hauling] Navigation to buy location complete")
             f2t_hauling_transition("buying")
 
@@ -913,6 +952,10 @@ function f2t_hauling_check_nav_to_buy_complete()
             f2t_hauling_stop()
 
         elseif result == "failed" then
+            if route then
+                F2T_HAULING_STATE.teleport_ship_route = nil
+                f2t_hauling_retry_exchange("buy"); return
+            end
             -- Exchange mode stops on a blocked path (the chosen commodity/location was
             -- the best option); AC mode instead fetches a new job since many exist.
             local buy_loc = F2T_HAULING_STATE.buy_location

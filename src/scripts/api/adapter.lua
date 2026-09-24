@@ -462,6 +462,8 @@ function adapter.priceDisplay(commodity, analysis) f2t_price_display_commodity(c
 local function install()
     local current = F2CE and F2CE.API and F2CE.API.v1
     if current and current._install then
+        adapter.haulingTeleportSeller = type(f2t_hauling_teleport_try) == "function"
+            and type(f2t_map_teleport_exchange_target) == "function"
         current._install(adapter)
         if type(raiseEvent) == "function" then raiseEvent("f2ceApiReady") end
     end

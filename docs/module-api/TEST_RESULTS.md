@@ -1,5 +1,32 @@
 # Module API verification
 
+## 2026-09-24 Optional empty seller-leg teleport (ew47)
+
+Candidate `f2ce-tools-3.3.0-native-ew47.mpackage`, SHA256
+`d007814ca42bb6d33d14198971b9883a1ecd0237913f26e5169415b60b928fcb`.
+Companion `fed-hauler-live-1.17.40.mpackage`, SHA256
+`8eb0a0f4f68ed1f44f531746d4a88c1fc6e20ab9f3ded7dc1bf6cf233cfd59d2`.
+
+All 21 native suites passed against source and reconstructed package code.
+This includes 38 new teleport checks, 90 existing trade/refusal checks, 26
+rotation checks and 97 company checks. All 279 Lua syntax checks, 32 metadata
+checks and 236 packaged script/trigger comparisons passed.
+
+All 591 FedHauler checks passed, including 127 actual-native API integration
+checks. The extracted FedHauler package also passed the 209-check main suite
+and the 127-check native integration suite. All 31 packaged files hash-match
+the source. Settings migration defaults teleport OFF, booleans are validated,
+older/missing API support fails before commands, and ordinary hauling never
+receives the teleport option.
+
+Tests cover the actual Mudlet `getRoomHashByID` and `roomLocked` interfaces,
+missing/mismatched mappings, inventory framing and expiry, full fresh ship
+updates, exact exchange/landing-pad/wrong-room arrival, market ordering,
+known refusals, lost replies, cancellation, protection priority, asynchronous
+map discovery and unchanged loaded buyer navigation. No live profile was
+installed, controlled, rented a teleporter or started. Live full-hash behavior
+remains an acceptance item; legacy full-hash refusals safely use ship navigation.
+
 ## 2026-09-24 Factory recovery and owned-commodity exception (ew46)
 
 Candidate `f2ce-tools-3.3.0-native-ew46.mpackage`, SHA256
