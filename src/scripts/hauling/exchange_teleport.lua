@@ -113,16 +113,30 @@ function f2t_hauling_teleport_try()
     end
     p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.char.ship", function(event_name)
         if event_name and event_name ~= "gmcp.char.ship" then return end
-        if not current() or (p.stage ~= "ship" and p.stage ~= "local_ship") then return end
-        if protected() then finish("pause", "Protection recovery takes priority; no teleport sent."); return end
+        if not current() or (p.stage ~= "ship" and p.stage ~= "local_ship" and p.stage ~= "seller_ship") then return end
+        local at_seller = p.stage == "seller_ship"
+        if protected() then finish("pause", "Protection recovery takes priority; no teleport or purchase sent."); return end
         if not empty_ship() then finish("pause", "Fresh ship data did not confirm an empty hold; no teleport or purchase sent."); return end
-        if not same_place(room(), p.local_origin or p.origin) then finish("fallback", "Location changed during teleport checks; using normal navigation."); return end
+        if at_seller then
+            if not f2t_hauling_teleport_at_seller() or tonumber(room().num) ~= target.num then
+                finish("pause", "Seller location changed before purchase; paused without buying."); return
+            end
+        elseif not same_place(room(), p.local_origin or p.origin) then
+            finish("fallback", "Location changed during teleport checks; using normal navigation."); return
+        end
         -- Re-resolve just before sending: map edits and destination policy must
         -- not turn a previously reviewed hash into a different target.
         local fresh = f2t_map_teleport_exchange_target(p.location)
-        if not fresh or fresh.hash ~= target.hash then finish("fallback", "Mapped seller address changed; using normal navigation."); return end
+        if not fresh or fresh.hash ~= target.hash then
+            if at_seller then finish("pause", "Mapped seller address changed before purchase; paused without buying.")
+            else finish("fallback", "Mapped seller address changed; using normal navigation.") end
+            return
+        end
         if f2t_hauling_customs_system_blocked and f2t_hauling_customs_system_blocked(target.system) then
             finish("skip", "Seller system is excluded by route policy; skipping it."); return
+        end
+        if at_seller then
+            finish("arrived", "Seller arrival and fresh empty hold confirmed; continuing bulk purchase."); return
         end
         p.stage, p.sent, p.settled = p.local_origin and "local_teleport" or "teleport", true, false
         deadline(15, "uncertain", "Teleport arrival was not confirmed; paused without retrying or buying.")
@@ -132,14 +146,19 @@ function f2t_hauling_teleport_try()
         send("tp " .. address, false)
     end)
     p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.room.info", function()
-        if not current() or (p.stage ~= "teleport" and p.stage ~= "local_teleport" and p.stage ~= "market") then return end
+        if not current() or (p.stage ~= "teleport" and p.stage ~= "local_teleport" and p.stage ~= "seller_ship") then return end
         local live = room()
         if p.stage ~= "teleport" and same_place(live, {system=target.system,area=target.planet,num=target.num})
             and flag(live, "exchange") then
-            if p.stage == "market" then return end
-            p.stage, p.settled = "market", true
-            deadline(8, "pause", "Seller arrival confirmed, but fresh exchange GMCP is missing; paused before buying.")
-            send("look", false)
+            if p.stage == "seller_ship" then return end
+            p.stage, p.settled = "seller_ship", true
+            if protected() then finish("pause", "Protection recovery takes priority; no purchase sent."); return end
+            if not empty_ship() then finish("pause", "Cargo changed during teleport; paused with cargo preserved."); return end
+            -- Local teleport and look send room data, not a guaranteed commodity
+            -- snapshot. The existing bulk buyer needs ship capacity, not that
+            -- snapshot: confirm it afresh after arrival without polling prices.
+            deadline(8, "pause", "Seller arrival confirmed, but fresh ship GMCP is missing; paused before buying.")
+            send("status", false)
         elseif p.stage == "teleport" and norm(live.system) == norm(target.system) and norm(live.area) == norm(target.planet)
             and tonumber(live.num) and flag(live, "shuttlepad") then
             if protected() then finish("pause", "Protection recovery takes priority; no local navigation or purchase sent."); return end
@@ -148,16 +167,10 @@ function f2t_hauling_teleport_try()
             p.local_origin = {system=live.system,area=live.area,num=live.num}
             message("Seller shuttle pad confirmed; checking empty hold before the local exchange hop.")
             request_ship()
+        elseif p.stage == "seller_ship" then
+            finish("pause", "Seller location changed before purchase; paused without buying.")
         elseif not same_place(live, p.local_origin or p.origin) then
             finish("uncertain", "Teleport reached an unexpected room; inspect location before resuming. No purchase sent.")
-        end
-    end)
-    p.handlers[#p.handlers+1] = registerAnonymousEventHandler("gmcp.exchange.commodities", function(event_name)
-        if event_name and event_name ~= "gmcp.exchange.commodities" then return end
-        if not current() or p.stage ~= "market" then return end
-        if protected() then finish("pause", "Protection recovery takes priority; no purchase sent."); return end
-        if f2t_hauling_teleport_at_seller() and tonumber(room().num) == target.num and empty_ship() then
-            finish("arrived", "Seller arrival and fresh exchange GMCP confirmed; continuing bulk purchase.")
         end
     end)
     p.trigger = tempRegexTrigger("^.*$", function()

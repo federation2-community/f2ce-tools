@@ -1,4 +1,4 @@
-# Two-hop empty seller-leg teleport (native-ew48)
+# Two-hop empty seller-leg teleport (native-ew49)
 
 `API.hauling.start(context, {mode="exchange", teleport_to_seller=true})` is
 opt-in and requires `hauling.teleport_seller`. The option must be a boolean;
@@ -32,8 +32,11 @@ mismatched mapping uses the normal seller navigation/discovery chain.
 5. Refresh and verify the empty hold again, recheck the local origin and mapped
    target, then send `tp <server room number>` once, such as `tp 845`. This is
    never the Mudlet room ID or a full room hash. Confirm the exact seller's
-   system, area, server room and exchange flag. Then one `look` fences
-   a fresh full local commodity update before the existing bulk-buy phase.
+   system, area, server room and exchange flag. Send one final `status` and
+   require a full `gmcp.char.ship` confirming the empty hold at that exact
+   exchange. Recheck the mapping, customs exclusion and protection priority,
+   then enter the existing bulk-buy phase exactly once. No `look`, commodity
+   snapshot, price poll or additional teleport is required for this handoff.
 6. Confirmed ordinary refusals at either hop use normal navigation from the
    current location. A local refusal walks from the shuttle pad to the exchange.
    No guessed alternate teleport or automatic retry is issued. All loaded buyer legs remain ordinary
@@ -41,7 +44,7 @@ mismatched mapping uses the normal seller navigation/discovery chain.
 
 Inventory and ship waits are bounded at eight seconds. Each teleport arrival waits
 at most 15 seconds, then pauses without retrying. A confirmed exchange arrival with no
-fresh market update pauses after eight seconds. Known ordinary refusals permit
+fresh ship update pauses after eight seconds. Known ordinary refusals permit
 normal navigation, cargo/exile refusals pause, and closed systems skip the
 supplier. Unknown output is not interpreted as a safe refusal. Stop/immediate
 pause/disconnect/reload cancel pending callbacks. An unanswered or interrupted
@@ -52,18 +55,26 @@ and requires location inspection followed by explicit stop/start.
 
 The [game guide](https://federation2.com/guide/#sec-60.70) and the user's confirmed
 syntax distinguish interplanetary landing-pad addresses from local numeric
-addresses. ew48 replaces ew47's incorrect direct full-hash command. The public
-hauling option/capability are unchanged; existing FedHauler 1.17.40 can use ew48
-without a consumer package update. Live two-hop behavior has not been exercised
-by these offline tests.
+addresses. ew48 replaced ew47's incorrect direct full-hash command. ew49 fixes
+ew48's post-arrival commodity wait: in the inspected server source,
+`Player::TeleportLocal` and `FedMap::Look` update room data without invoking
+`SendGMCPExchangeSnapshot`. The old offline success fixture supplied a commodity
+event that need not occur live; the regression now intentionally supplies none.
+`status` supplies the full ship data used by the existing bulk buyer.
+The public hauling option/capability are unchanged; existing FedHauler 1.17.40
+can use ew49 without a consumer package update. This correction is offline-tested,
+not live-installed or live-exercised by the agent.
 
 Offline regressions cover inventory framing, rental expiry, mapping identity,
-locks, full versus stale ship data before both hops, landing-pad/local/wrong arrival,
-market ordering, refusals, discovery fallback, cancellation and loaded travel.
+locks, full versus stale ship data before both hops and after final arrival,
+landing-pad/local/wrong arrival, absent commodity events, duplicates, changed
+cargo/location/mapping/protection, refusals, discovery fallback, cancellation
+and loaded travel.
 Before enabling unattended use, stop other automation on one test profile,
 enable the option, start Premium Hauler, verify `inv` -> `status` ->
-`tp System.Planet` -> confirmed shuttle pad -> `status` -> `tp number`,
-and confirm the correct exchange and bulk order. Test an unmapped seller and
+`tp System.Planet` -> confirmed shuttle pad -> `status` -> `tp number` ->
+confirmed exchange -> `status` -> confirmed empty hold -> bulk buy.
+Test an unmapped seller and
 Stop while waiting. Never test exile or dangerous destinations deliberately.
 
 This change does not alter bulk-buy/sell commands, sale policy, buyer retention,

@@ -1,5 +1,31 @@
 # Module API verification
 
+## 2026-09-24 Teleport seller handoff without a commodity snapshot (ew49)
+
+Candidate `f2ce-tools-3.3.0-native-ew49.mpackage`, SHA256
+`da3e80771b7efeec2b91256a9f903b372ec749246360cd850aec27a7a33324c1`.
+Existing FedHauler 1.17.40 is unchanged; only the native F2CE package needs updating.
+
+The reported seller-arrival pause was reproduced with the old worker: it sent
+`look` and waited for `gmcp.exchange.commodities`, while the inspected server's
+local teleport/look paths only guaranteed room data. The former success fixture
+incorrectly supplied a commodity event. The corrected worker requests one
+`status` after exact exchange arrival, then requires full empty-ship GMCP and
+revalidates location, mapping, customs policy and protection before bulk buying.
+No price polling, extra teleport or transaction-policy change was introduced.
+
+All 21 native suites passed against source and reconstructed package code.
+This includes 59 teleport checks, with no commodity snapshot, full versus partial
+ship events, final cargo/location/mapping changes, protection recovery, late or
+duplicate events, same-planet arrival, timeout, stop/pause/disconnect/reload and
+unchanged loaded travel. A real bulk-buyer integration test sends exactly one
+`buy woods 7` command and does not resend it after duplicate events/phase entry.
+The 127-check FedHauler/native integration suite passed with the unchanged consumer.
+All 279 Lua syntax checks, 32 metadata checks and 236 packaged script/trigger
+comparisons passed. Documentation updated; no live profile modified, gameplay
+command sent, package installed or remote push performed. Live acceptance remains
+to be confirmed after installation with automation stopped.
+
 ## 2026-09-24 Planetary shuttle pad plus local exchange hop (ew48)
 
 Candidate `f2ce-tools-3.3.0-native-ew48.mpackage`, SHA256

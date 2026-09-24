@@ -71,6 +71,9 @@ local function arrive(num,flags)
     event("gmcp.room.info")
 end
 local function clean() eq(next(timers),nil,"timers cleaned"); eq(next(triggers),nil,"trigger cleaned"); eq(f2t_hauling_teleport_busy(),false) end
+local function seller_arrival()
+    port(); arrive(1600,{"shuttlepad"}); event("gmcp.char.ship"); arrive()
+end
 
 test("disabled feature leaves ordinary navigation unchanged",function()
     reset(); F2T_HAULING_STATE.session_policy.teleport_to_seller=false; start()
@@ -129,14 +132,16 @@ test("old speedwalk completion cannot advance while teleport worker is pending",
     reset(); start(); F2T_SPEEDWALK_LAST_RESULT="completed"; f2t_hauling_check_nav_to_buy_complete()
     f2t_hauling_phase_buy(); eq(#transitions,0); eq(buys,0)
 end)
-test("two verified hops and fresh market precede the unchanged bulk purchase",function()
+test("two verified hops and fresh seller ship data allow bulk purchase without exchange GMCP",function()
     reset(); port(); event("gmcp.exchange.commodities"); eq(#transitions,0)
     arrive(1600,{"shuttlepad"}); eq(sent[4],"status"); eq(#nav,0); eq(#transitions,0)
     event("gmcp.exchange.commodities"); eq(#transitions,0)
     event("gmcp.char.ship"); eq(sent[5],"tp 1637"); eq(#transitions,0)
-    arrive(); eq(sent[6],"look"); eq(#transitions,0)
-    event("gmcp.exchange.commodities"); eq(transitions[1],"buying"); clean()
+    gmcp.exchange=nil -- Local teleport and look need not send any commodity snapshot.
+    arrive(); eq(sent[6],"status"); eq(#transitions,0)
+    event("gmcp.char.ship"); eq(transitions[1],"buying"); eq(paused,0); clean()
     f2t_hauling_phase_buy(); eq(buys,1)
+    eq(#sent,6); eq(#nav,0)
 end)
 test("local teleport refusal uses normal local exchange navigation",function()
     reset(); port(); arrive(1600,{"shuttlepad"}); event("gmcp.char.ship")
@@ -284,13 +289,111 @@ test("stop between hops cannot send the local teleport from late ship GMCP",func
     reset(); port(); arrive(1600,{"shuttlepad"}); F2T_HAULING_STATE.active=false; f2t_hauling_teleport_cancel()
     event("gmcp.char.ship"); eq(#sent,4); eq(#nav,0); eq(f2t_hauling_teleport_uncertain(),false); clean()
 end)
-test("confirmed local exchange still waits for fresh market before buying",function()
-    reset(); port(); arrive(1600,{"shuttlepad"}); event("gmcp.char.ship"); arrive(); timeout(8)
+test("missing seller ship response pauses rather than buying from cached empty hold",function()
+    reset(); seller_arrival(); eq(sent[6],"status"); timeout(8)
     eq(paused,1); eq(buys,0); eq(f2t_hauling_teleport_uncertain(),false); clean()
+end)
+
+test("commodity snapshot and partial ship event cannot replace final full ship confirmation",function()
+    reset(); seller_arrival(); event("gmcp.exchange.commodities"); eq(#transitions,0)
+    for id in pairs(handlers) do if id.event=="gmcp.char.ship" then id.fn("gmcp.char.ship.fuel") end end
+    eq(#transitions,0); event("gmcp.char.ship"); eq(transitions[1],"buying"); clean()
+end)
+
+test("repeated seller arrival and late events cannot duplicate the final status or purchase transition",function()
+    reset(); seller_arrival(); arrive(); arrive(); eq(#sent,6); eq(sent[6],"status")
+    event("gmcp.char.ship"); arrive(); event("gmcp.char.ship"); event("gmcp.exchange.commodities")
+    eq(#transitions,1); eq(transitions[1],"buying"); eq(#sent,6); eq(#nav,0); clean()
+end)
+
+test("fresh final cargo must be empty and internally consistent",function()
+    for _,kind in ipairs({"loaded","missing","inconsistent"}) do
+        reset(); seller_arrival()
+        if kind=="loaded" then gmcp.char.ship.cargo={{commodity="Woods"}}
+        elseif kind=="missing" then gmcp.char.ship.cargo=nil else gmcp.char.ship.hold.cur=450 end
+        event("gmcp.char.ship"); eq(paused,1); eq(#transitions,0); eq(#nav,0); clean()
+    end
+end)
+
+test("protection recovery at the final exchange blocks purchasing",function()
+    for _,when in ipairs({"arrival","ship"}) do
+        reset(); port(); arrive(1600,{"shuttlepad"}); event("gmcp.char.ship")
+        if when=="arrival" then F2T_DEATH_STATE={active=true} end
+        arrive()
+        if when=="ship" then F2T_STAMINA_STATE={current_phase="navigating_to_food"} end
+        event("gmcp.char.ship"); eq(paused,1); eq(#transitions,0); eq(#nav,0); clean()
+    end
+end)
+
+test("changed final room or missing exchange flag cannot authorize buying",function()
+    for _,kind in ipairs({"room","system","planet","flag"}) do
+        reset(); seller_arrival()
+        if kind=="room" then gmcp.room.info.num=999
+        elseif kind=="system" then gmcp.room.info.system="Other"
+        elseif kind=="planet" then gmcp.room.info.area="Other"
+        else gmcp.room.info.flags={} end
+        event("gmcp.char.ship"); eq(paused,1); eq(#transitions,0); eq(#nav,0); clean()
+    end
+end)
+
+test("room movement while awaiting seller ship data pauses with no movement uncertainty",function()
+    reset(); seller_arrival(); arrive(999,{"exchange"}); event("gmcp.char.ship")
+    eq(paused,1); eq(#transitions,0); eq(#nav,0); eq(f2t_hauling_teleport_uncertain(),false); clean()
+end)
+
+test("final seller map and customs policy are rechecked before buying",function()
+    reset(); seller_arrival(); hash="Sol.The Lattice.999"; event("gmcp.char.ship")
+    eq(paused,1); eq(#transitions,0); eq(#nav,0); clean()
+    reset(); seller_arrival(); f2t_hauling_customs_system_blocked=function() return true end
+    event("gmcp.char.ship"); eq(skipped,1); eq(#transitions,0); eq(#nav,0); clean()
+end)
+
+test("stop pause disconnect and reload discard final seller ship callbacks",function()
+    for _,kind in ipairs({"stop","pause","disconnect","reload"}) do
+        reset(); seller_arrival()
+        if kind=="stop" then F2T_HAULING_STATE.active=false; f2t_hauling_teleport_cancel()
+        elseif kind=="pause" then f2t_hauling_pause(true)
+        elseif kind=="disconnect" then event("sysDisconnectionEvent")
+        else dofile(root.."/src/scripts/hauling/exchange_teleport.lua") end
+        event("gmcp.char.ship"); arrive(); eq(#transitions,0); eq(#sent,6)
+        eq(f2t_hauling_teleport_uncertain(),false); clean()
+    end
+end)
+
+test("changed supplier or character cannot consume a late final ship response",function()
+    for _,kind in ipairs({"supplier","character"}) do
+        reset(); seller_arrival()
+        if kind=="supplier" then F2T_HAULING_STATE.buy_location={system="Elsewhere",planet="Other"}
+        else gmcp.char.vitals.name="Another Pilot" end
+        event("gmcp.char.ship"); eq(#transitions,0); timeout(8); eq(paused,0); clean()
+    end
+end)
+
+test("same planet local-only teleport also buys without a commodity snapshot",function()
+    reset(); gmcp.room.info={system="Sol",area="The Lattice",num=1600,flags={"shuttlepad"}}
+    start(); owned(); event("gmcp.char.ship"); arrive(); eq(sent[4],"status")
+    gmcp.exchange=nil; event("gmcp.char.ship"); eq(transitions[1],"buying"); eq(#sent,4); clean()
 end)
 test("wrong second-hop exchange cannot authorize a purchase",function()
     reset(); port(); arrive(1600,{"shuttlepad"}); event("gmcp.char.ship"); arrive(1234,{"exchange"})
     eq(#nav,0); eq(buys,0); eq(paused,1); ok(f2t_hauling_teleport_uncertain()); clean()
+end)
+
+test("real bulk buyer sends one counted seven-bay order after final ship confirmation without market data",function()
+    reset(); seller_arrival(); gmcp.exchange=nil
+    F2T_BULK_STATE={}
+    f2t_resolve_commodity=function(value) return value,false end
+    f2t_has_value=function(values,wanted)
+        for _,value in pairs(values) do if value==wanted then return true end end
+        return false
+    end
+    f2t_bulk_watchdog_start=function() end
+    dofile(root.."/src/scripts/commodities/bulk_buy.lua")
+    event("gmcp.char.ship"); eq(transitions[1],"buying"); clean()
+    f2t_hauling_phase_buy(); eq(sent[7],"buy woods 7"); eq(#sent,7)
+    event("gmcp.char.ship"); arrive(); event("gmcp.exchange.commodities"); f2t_hauling_phase_buy()
+    eq(#sent,7); eq(#transitions,1); eq(#nav,0); eq(paused,0)
+    eq(F2T_BULK_STATE.active,true); eq(F2T_BULK_STATE.batched,true)
 end)
 print(string.format("Teleport hauling: %d passed, %d failed",passed,failed))
 if failed>0 then os.exit(1) end

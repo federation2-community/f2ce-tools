@@ -9,7 +9,13 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew48**, compatible with existing **FedHauler 1.17.40**, uses
+Native candidate **ew49**, compatible with existing **FedHauler 1.17.40**, fixes
+the post-teleport seller pause in ew48: arrival no longer sends `look` and waits
+for a full commodity snapshot that the server does not guarantee. It checks
+fresh empty-ship data with one `status` at the verified exchange, then continues
+the existing bulk purchase. No buying or selling policy changes are included.
+
+The seller leg uses
 two verified teleport hops: `tp Essos.Valyria` to the planet's shuttle pad,
 then `tp 845` to the mapped exchange's server room number. No room number is
 appended to the interplanetary address. Already on the seller planet, it uses
@@ -21,8 +27,8 @@ inventory-verified seller-leg teleporting to Premium Hauler. Enable **TELEPORT
 TO SELLER** in FedHauler's Mux Settings and Apply while OFF. The default remains
 OFF. It sends `inv`, verifies an unexpired Mk1 control, and requests fresh ship
 GMCP using `status` before each hop. Empty cargo and full free
-hold capacity are mandatory. Arrival at the expected exchange and fresh market
-GMCP are required before the existing bulk buy. Loaded travel and selling stay
+hold capacity are mandatory. Arrival at the exact expected exchange and fresh
+empty-ship GMCP are required before the existing bulk buy. Loaded travel and selling stay
 unchanged. No teleporter rental or renewal is automated.
 
 Unmapped/invalid/locked hashes, missing ownership, and confirmed ordinary
