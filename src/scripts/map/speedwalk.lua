@@ -205,7 +205,7 @@ end
 -- for the two paths that give up on a circuit rather than finishing it.
 local function signalNavigationStateChanged()
     -- A blocked move can terminate on a timer with no room GMCP event. Wake
-    -- the API on the next tick so it can observe the terminal result and
+    -- the API and native hauling on the next tick so they observe the terminal result and
     -- compare-and-release its lease instead of waiting forever for movement
     -- that has already stopped.
     tempTimer(0, function()
@@ -213,6 +213,7 @@ local function signalNavigationStateChanged()
         if navigation and type(navigation._tick) == "function" then
             pcall(navigation._tick)
         end
+        if type(raiseEvent) == "function" then raiseEvent("f2tMapNavigationStateChanged") end
     end)
 end
 

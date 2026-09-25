@@ -9,7 +9,18 @@
 > for native Walker or FedHauler 1.16.0. Walker adds a Founder+ tab beside
 > Who/Events/Exchange, with a sortable remote exchange table and bottom controls.
 
-Native candidate **ew50**, paired with **FedHauler 1.17.41**, allows Manufacturer
+Native candidate **ew51**, compatible with the existing **FedHauler 1.17.43**,
+adds automatic Premium Hauler navigation recovery. A failed seller/buyer route
+requests fresh ship data with `status`. Confirmed cargo triggers a fresh price
+check and travel to another eligible off-world buyer; an empty ship tries the
+next supplier. Failed destinations are excluded for the current commodity.
+Missing/inconsistent cargo evidence pauses, and manual stops, disconnects,
+uncertain trades and protection operations cannot authorize automatic recovery.
+Bulk purchasing, selling policy, customs exclusions and saved rotation are
+unchanged. Update only F2CE while automation is stopped; no account starts on
+load. See [navigation recovery](docs/module-api/HAULING_NAVIGATION_RECOVERY.md).
+
+Included from **ew50**, paired with **FedHauler 1.17.41**, allows Manufacturer
 automation up to **15 owned factories total**, while Industrialist remains at
 **8**. Native checks clamp requested limits to actual rank slots; lower caps
 and two per planet remain enforced. The new optional `factoryRankLimitsVersion=1`

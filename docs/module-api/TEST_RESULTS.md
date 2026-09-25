@@ -1,5 +1,26 @@
 # Module API verification
 
+## 2026-09-25 Premium Hauler navigation recovery (ew51)
+
+Candidate `f2ce-tools-3.3.0-native-ew51.mpackage`, SHA256
+`f6d0e4ad16be486e80f4271570bc5b46a5d15f88c8cd371e4a138ef8360b968b`.
+The existing FedHauler 1.17.43 package is compatible and unchanged.
+
+All 22 native suites passed against source and reconstructed package code:
+281 Lua syntax checks, 32 metadata checks and 237 packaged script/trigger
+matches. The new navigation suite has 23 cases, including real speedwalk failure
+notification without room GMCP, fresh status/ship confirmation, loaded and empty
+recovery, repeated failed-buyer exclusion, positive bids below purchase cost,
+customs/origin exclusion, missing/inconsistent data, protection, timeouts,
+disconnect during prices, explicit resume and stale route/arrival callbacks.
+The 90 refusal/sale checks and 59 teleport checks also remain passing.
+
+All 614 FedHauler source checks passed, plus 134 native-consumer integration
+checks against the reconstructed ew51 package. No live accounts, profiles or
+shared services were used or changed. Nothing was installed or pushed; live
+acceptance remains pending user installation with automation stopped. See the
+[recovery contract and acceptance steps](HAULING_NAVIGATION_RECOVERY.md).
+
 ## 2026-09-24 Rank-specific factory automation caps (ew50)
 
 Candidate `f2ce-tools-3.3.0-native-ew50.mpackage`, SHA256

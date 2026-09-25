@@ -12,6 +12,7 @@
   {"name": "exchange_rotation"},
   {"name": "exchange_recovery"},
   {"name": "exchange_teleport"},
+  {"name": "exchange_navigation_recovery"},
   {"name": "exchange_phases"},
   {"name": "po_discovery"},
   {"name": "po_queue"},

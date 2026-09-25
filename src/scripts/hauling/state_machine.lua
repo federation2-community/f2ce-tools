@@ -29,6 +29,8 @@ function f2t_hauling_start(requested_mode, rotation, session_policy)
     F2T_HAULING_STATE.exchange_analysis_request = nil
     F2T_HAULING_STATE.sell_analysis_request = nil
     F2T_HAULING_STATE.teleport_ship_route = nil
+    F2T_HAULING_STATE.exchange_route = nil
+    if f2t_hauling_navigation_recovery_cancel then f2t_hauling_navigation_recovery_cancel(true) end
     F2T_HAULING_STATE.rotation = rotation -- session-local; ordinary starts clear it
     F2T_HAULING_STATE.session_policy = type(session_policy) == "table" and session_policy or nil
     if f2t_hauling_teleport_reset then f2t_hauling_teleport_reset() end
@@ -226,6 +228,7 @@ end
 
 -- Gracefully stop hauling automation (finish current cycle first)
 function f2t_hauling_stop()
+    if F2T_HAULING_STATE.navigation_recovery_side then f2t_hauling_do_stop(); return end
     if not F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling not active\n")
         return
@@ -351,6 +354,8 @@ end
 
 -- Internal function to actually stop hauling (preserves statistics)
 function f2t_hauling_do_stop()
+    if f2t_hauling_navigation_recovery_cancel then f2t_hauling_navigation_recovery_cancel(true) end
+    F2T_HAULING_STATE.exchange_route = nil
     if f2t_hauling_teleport_cancel then f2t_hauling_teleport_cancel() end
     F2T_HAULING_STATE.teleport_ship_route = nil
     -- Invalidate purchase callbacks before the optional safe-room stop delay.
@@ -548,6 +553,11 @@ end
 --- @param immediate boolean|nil If true, pause immediately (used by system-initiated pauses e.g.
 --- Akaturi room finding). If false/nil, defer pause to next phase boundary.
 function f2t_hauling_pause(immediate)
+    if F2T_HAULING_STATE.navigation_recovery_side then
+        if f2t_hauling_navigation_recovery_cancel then f2t_hauling_navigation_recovery_cancel() end
+        F2T_HAULING_STATE.current_phase = "recovering_navigation"
+        immediate = true
+    end
     if not F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling not active\n")
         return
@@ -566,7 +576,8 @@ function f2t_hauling_pause(immediate)
         F2T_HAULING_STATE.paused = true
 
         -- Store speedwalk destination before stopping (so we can recompute on resume)
-        if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_DESTINATION_ROOM_ID then
+        if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_DESTINATION_ROOM_ID
+            and not F2T_HAULING_STATE.navigation_recovery_side then
             F2T_HAULING_STATE.paused_speedwalk_destination = F2T_SPEEDWALK_DESTINATION_ROOM_ID
             f2t_debug_log("[hauling] Stored speedwalk destination: %d", F2T_SPEEDWALK_DESTINATION_ROOM_ID)
         else
@@ -876,6 +887,8 @@ function f2t_hauling_transition(new_phase)
         f2t_hauling_purchase_observe()
     elseif new_phase == "selecting_sell" then
         f2t_hauling_select_sell_destination()
+    elseif new_phase == "recovering_navigation" then
+        f2t_hauling_navigation_recover(F2T_HAULING_STATE.navigation_recovery_side)
     elseif new_phase == "navigating_to_sell" then
         f2t_hauling_phase_navigate_to_sell()
     elseif new_phase == "selling" then

@@ -165,7 +165,8 @@ end
 -- f2t_map_navigate() now self-heals an unmapped destination on its own
 -- (auto-exploring and retrying); this is only the last-resort action for when
 -- that ultimately fails too.
-local function pause_on_nav_failure()
+local function pause_on_nav_failure(side)
+    if f2t_hauling_navigation_recover and f2t_hauling_navigation_recover(side) then return end
     cecho("\n<red>[hauling]<reset> Navigation could not be started, pausing hauling\n")
     cecho("<dim_grey>Resolve the issue above (e.g. explore/map the destination) and run 'haul resume'<reset>\n")
     f2t_hauling_pause(true)
@@ -202,6 +203,24 @@ local function begin_exchange_queue(tradeable, round, catalog_count, lazy_prices
             "after reviewing all %d; one load each.\n", round, #tradeable, catalog_count))
     end
     f2t_hauling_next_commodity()
+end
+
+function f2t_hauling_navigation_recovered(side, lots)
+    local state = F2T_HAULING_STATE
+    -- Reachability is independent of trading side for this commodity's route.
+    reject_location("buy", state[side .. "_location"])
+    reject_location("sell", state[side .. "_location"])
+    if lots > 0 then
+        state.sell_recovery = true
+        state.recovery_after_sequence, state.recovery_expected_lots = nil, nil
+        cecho("\n<cyan>[hauling]<reset> Cargo confirmed; requesting fresh buyers and excluding the failed destination.\n")
+        f2t_hauling_transition("selecting_sell")
+    else
+        f2t_hauling_navigation_recovery_cancel(true)
+        if side == "sell" then
+            f2t_hauling_complete_commodity_cycle(); f2t_hauling_remove_current_commodity()
+        else f2t_hauling_retry_exchange("buy") end
+    end
 end
 
 -- Phase 1: regular hauling reviews the complete catalog; premium hauling
@@ -586,6 +605,16 @@ function f2t_hauling_finish_remove_commodity()
 end
 
 -- Phase 2: navigate to buy location
+local function settle_arrival(attempt, current, phase)
+    if attempt.arrival_scheduled then return end
+    attempt.arrival_scheduled = true
+    tempTimer(0.5, function()
+        if current() and F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused then
+            f2t_hauling_transition(phase)
+        end
+    end)
+end
+
 function f2t_hauling_phase_navigate_to_buy(skip_teleport)
     if not F2T_HAULING_STATE.buy_location then
         cecho("\n<red>[hauling]<reset> No buy location set\n")
@@ -596,6 +625,7 @@ function f2t_hauling_phase_navigate_to_buy(skip_teleport)
     local planet = F2T_HAULING_STATE.buy_location.planet
     local destination = string.format("%s exchange", planet)
     local state, location = F2T_HAULING_STATE, F2T_HAULING_STATE.buy_location
+    local attempt = {ready=false}; state.exchange_route = attempt
     state.teleport_ship_route = nil
     if not skip_teleport and f2t_hauling_teleport_try and f2t_hauling_teleport_try() then return end
     local route
@@ -604,8 +634,9 @@ function f2t_hauling_phase_navigate_to_buy(skip_teleport)
         state.teleport_ship_route = route
     end
     local function route_current()
-        return not route or (state == F2T_HAULING_STATE and state.teleport_ship_route == route
-            and state.buy_location == location and state.current_phase == "navigating_to_buy")
+        return state == F2T_HAULING_STATE and state.exchange_route == attempt
+            and state.buy_location == location and state.current_phase == "navigating_to_buy"
+            and (not route or state.teleport_ship_route == route)
     end
 
     cecho(string.format("\n<green>[hauling]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n", planet))
@@ -616,6 +647,8 @@ function f2t_hauling_phase_navigate_to_buy(skip_teleport)
             if not route_current() or not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
+            attempt.ready = success
+            if not success and f2t_hauling_navigation_recover and f2t_hauling_navigation_recover("buy") then return end
             if route then
                 route.ready = success
                 if not success then
@@ -629,23 +662,19 @@ function f2t_hauling_phase_navigate_to_buy(skip_teleport)
                 -- A discovery chain may settle as already-arrived without
                 -- another room event. The checker still validates the seller.
                 if not F2T_SPEEDWALK_ACTIVE then f2t_hauling_check_nav_to_buy_complete() end
-            elseif not success then pause_on_nav_failure() end
+            elseif not success then pause_on_nav_failure("buy")
+            elseif status == "arrived" then settle_arrival(attempt, route_current, "buying") end
             -- success: a real speedwalk is now in flight; f2t_hauling_check_nav_to_buy_complete
             -- (wired to gmcp.room.info) picks up its completion normally.
         end,
     })
+    if nav_result ~= "pending" then attempt.ready = f2t_map_navigate_ok(nav_result) end
     if route and nav_result ~= "pending" then route.ready = f2t_map_navigate_ok(nav_result) end
 
     -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
     if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Already at buy location, waiting for GMCP update")
-        tempTimer(0.5, function()
-            if not route_current() or not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            f2t_debug_log("[hauling] GMCP ready, proceeding to buy")
-            f2t_hauling_transition("buying")
-        end)
+        settle_arrival(attempt, route_current, "buying")
     end
 end
 
@@ -793,17 +822,23 @@ function f2t_hauling_select_sell_destination()
     local market = state.exchange_market
     local commodity = state.current_commodity
     local request = {}
+    local navigation_recovery = state.navigation_recovery_side ~= nil
     state.sell_analysis_request = request
     state.sell_location = nil
     cecho(string.format(
-        "\n<green>[hauling]<reset> Refreshing off-world buyers for <cyan>%s<reset> after confirmed purchase...\n",
-        commodity))
+        "\n<green>[hauling]<reset> Refreshing off-world buyers for <cyan>%s<reset> after %s...\n",
+        commodity, navigation_recovery and "navigation failure and fresh cargo check" or "confirmed purchase"))
 
     f2t_price_check_commodity(commodity, function(_, parsed, analysis)
         if state ~= F2T_HAULING_STATE or not state.active or state.paused
             or state.exchange_market ~= market or state.sell_analysis_request ~= request
             or state.current_phase ~= "selecting_sell" then return end
         state.sell_analysis_request = nil
+        if navigation_recovery and not f2t_hauling_navigation_recovery_cargo_valid() then
+            state.current_phase = "recovering_navigation"
+            cecho("\n<yellow>[hauling]<reset> Cargo/location changed during buyer refresh; paused without movement or trade.\n")
+            f2t_hauling_pause(true); return
+        end
         analysis = remember_market(analysis, parsed)
         if not analysis then
             cecho("\n<red>[hauling]<reset> Post-purchase buyer scan was invalid; " ..
@@ -815,6 +850,7 @@ function f2t_hauling_select_sell_destination()
         local candidates = available_locations("sell", market.sell)
         local candidate = candidates[1]
         if candidate then
+            if navigation_recovery then f2t_hauling_navigation_recovery_cancel(true) end
             state.sell_location = candidate
             cecho(string.format(
                 "\n<green>[hauling]<reset> Fresh off-world buyer selected: <cyan>%s exchange<reset> " ..
@@ -841,32 +877,36 @@ function f2t_hauling_phase_navigate_to_sell()
     end
 
     local planet = F2T_HAULING_STATE.sell_location.planet
+    local state, location = F2T_HAULING_STATE, F2T_HAULING_STATE.sell_location
+    local attempt = {ready=false}; state.exchange_route = attempt
+    local function current()
+        return state == F2T_HAULING_STATE and state.active and not state.paused
+            and state.exchange_route == attempt and state.sell_location == location
+            and state.current_phase == "navigating_to_sell"
+    end
     local destination = string.format("%s exchange", planet)
 
     cecho(string.format("\n<green>[hauling]<reset> Navigating to sell location: <cyan>%s exchange<reset>\n", planet))
     f2t_debug_log("[hauling] Navigating to: %s", destination)
 
     local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+        on_result = function(success, status)
+            if not current() then
                 return
             end
-            if not success then pause_on_nav_failure() end
+            attempt.ready = success
+            if not success then pause_on_nav_failure("sell")
+            elseif status == "arrived" then settle_arrival(attempt, current, "selling") end
             -- success: a real speedwalk is now in flight; f2t_hauling_check_nav_to_sell_complete
             -- (wired to gmcp.room.info) picks up its completion normally.
         end,
     })
+    if nav_result ~= "pending" then attempt.ready = f2t_map_navigate_ok(nav_result) end
 
     -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
     if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[hauling] Already at sell location, waiting for GMCP update")
-        tempTimer(0.5, function()
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            f2t_debug_log("[hauling] GMCP ready, proceeding to sell")
-            f2t_hauling_transition("selling")
-        end)
+        settle_arrival(attempt, current, "selling")
     end
 end
 
@@ -919,6 +959,8 @@ end
 -- Exchange event handlers
 
 function f2t_hauling_check_nav_to_buy_complete()
+    local attempt = F2T_HAULING_STATE.exchange_route
+    if attempt and not attempt.ready then return end
     if f2t_hauling_teleport_busy and f2t_hauling_teleport_busy() then return end
     local route = F2T_HAULING_STATE.teleport_ship_route
     if route and not route.ready then return end
@@ -952,6 +994,7 @@ function f2t_hauling_check_nav_to_buy_complete()
             f2t_hauling_stop()
 
         elseif result == "failed" then
+            if f2t_hauling_navigation_recover and f2t_hauling_navigation_recover("buy") then return end
             if route then
                 F2T_HAULING_STATE.teleport_ship_route = nil
                 f2t_hauling_retry_exchange("buy"); return
@@ -973,6 +1016,8 @@ function f2t_hauling_check_nav_to_buy_complete()
 end
 
 function f2t_hauling_check_nav_to_sell_complete()
+    local attempt = F2T_HAULING_STATE.exchange_route
+    if attempt and not attempt.ready then return end
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
         return
     end
@@ -997,6 +1042,7 @@ function f2t_hauling_check_nav_to_sell_complete()
             f2t_hauling_stop()
 
         elseif result == "failed" then
+            if f2t_hauling_navigation_recover and f2t_hauling_navigation_recover("sell") then return end
             local sell_loc = F2T_HAULING_STATE.sell_location
             local location_str = sell_loc and string.format("%s:%s", sell_loc.system, sell_loc.planet)
                 or "sell location"
@@ -1077,6 +1123,18 @@ function f2t_exchange_register_handlers()
         end)
     end)
     F2T_HAULING_STATE.recovery_handlers = {
+        registerAnonymousEventHandler("sysDisconnectionEvent", function()
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.navigation_recovery_side then
+                cecho("\n<yellow>[hauling]<reset> Disconnected during navigation recovery; explicit resume is required.\n")
+                f2t_hauling_pause(true)
+            end
+        end),
+        registerAnonymousEventHandler("f2tMapNavigationStateChanged", function()
+            if F2T_HAULING_STATE.rotation == "top_base_21" and F2T_SPEEDWALK_LAST_RESULT == "failed" then
+                f2t_hauling_check_nav_to_buy_complete(); f2t_hauling_check_nav_to_sell_complete()
+            end
+        end),
         registerAnonymousEventHandler("gmcp.exchange.commodities", function() f2t_hauling_recovery_observe("full") end),
         registerAnonymousEventHandler("gmcp.exchange.commodity", function() f2t_hauling_recovery_observe("tick") end),
         registerAnonymousEventHandler("gmcp.char.ship", function()
@@ -1091,6 +1149,7 @@ end
 
 --- @param handler_id string Event handler ID to kill
 function f2t_exchange_cleanup_handlers(handler_id)
+    if f2t_hauling_navigation_recovery_cancel then f2t_hauling_navigation_recovery_cancel(true) end
     f2t_hauling_purchase_cleanup()
     f2t_hauling_recovery_cleanup()
     for _, id in ipairs(F2T_HAULING_STATE.recovery_handlers or {}) do killAnonymousEventHandler(id) end
