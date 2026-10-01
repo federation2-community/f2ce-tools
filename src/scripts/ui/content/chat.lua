@@ -32,6 +32,9 @@ local FILTERS = {
     { id = "say",  label = "S", matches = { say = true, self_say = true },    tip = "Say only" },
 }
 
+-- Base point size; Muxlet's per-pane/tab Text Size scales it.
+local CONSOLE_FONT_SIZE = 9
+
 -- Per-pane state, keyed by target._gid
 local instances = {}
 
@@ -199,7 +202,7 @@ local function buildContent(target)
 
     local mc = Geyser.MiniConsole:new({
         name = gid .. "_chatmc", x = 0, y = 0, width = "100%", height = "100%",
-        fontSize = 9,
+        fontSize = Mux.scaledFontSize(target, CONSOLE_FONT_SIZE),
     }, target.content)
     mc:setColor(18, 18, 26)
     mc:enableAutoWrap()
@@ -308,6 +311,13 @@ local function buildChatDef()
         onReveal = function(target)
             local inst = instances[target._gid]
             if inst then replay(inst) end
+        end,
+        -- Replay re-wraps the existing history at the new font width.
+        onTextScale = function(target)
+            local inst = instances[target._gid]
+            if not (inst and inst.console) then return end
+            inst.console:setFontSize(Mux.scaledFontSize(target, CONSOLE_FONT_SIZE))
+            replay(inst)
         end,
     }
 end
