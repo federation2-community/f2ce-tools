@@ -19,8 +19,12 @@ local H_HDR = 20    -- status header strip height (px)
 local H_COL = 20    -- column header bar height (px)
 local ROW_H = 18    -- row height (px)
 local SB_W  = 17    -- scrollbar pixel allowance
+local CELL_PT   = 10     -- cell font size (pt), not web-shrunk
+local LABEL_PT  = 8      -- column header font size (pt)
+local STATUS_PT = 6.75   -- status header font size (pt): 9px
 
-local SF   = "font-size:10pt;font-family:Consolas,Monaco,monospace;"
+-- Size comes from the cell label's fontSize (f2tTableSetScrollbox's cellPt).
+local SF   = "font-family:Consolas,Monaco,monospace;"
 local C_W  = "#d8d8d8"
 local C_GR = "#888888"
 local C_G  = "#44cc44"
@@ -43,7 +47,7 @@ local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -307,6 +311,9 @@ function f2tFuturesMarketRows()
     return rows
 end
 
+-- Cell font size for futures tables, shared with Exchange's futures view.
+function f2tFuturesCellPt(target) return f2tTextPt(target, CELL_PT) end
+
 function f2tFuturesMarketCols()
     return {
         {
@@ -493,7 +500,7 @@ local function refreshMarket(gid)
         if inst.mode == "away" then return end
         inst.mode = "away"
         if inst.hdr then
-            inst.hdr:echo("<span style='font-size:9px;color:#888888;padding-left:6px;'>"
+            inst.hdr:echo("<span style='color:#888888;padding-left:6px;'>"
                 .. "Not at an exchange — contracts show live at an exchange.</span>")
         end
         f2tTableSetData(inst.tableId, {})
@@ -506,11 +513,11 @@ local function refreshMarket(gid)
     if inst.hdr then
         if hasData then
             inst.hdr:echo(string.format(
-                "<span style='font-size:9px;color:#cccc44;padding-left:6px;'>%s</span>" ..
-                " <span style='font-size:9px;color:#888888;'>live</span>", planet or "?"))
+                "<span style='color:#cccc44;padding-left:6px;'>%s</span>" ..
+                " <span style='color:#888888;'>live</span>", planet or "?"))
         else
             inst.hdr:echo(
-                "<span style='font-size:9px;color:#888888;padding-left:6px;'>" ..
+                "<span style='color:#888888;padding-left:6px;'>" ..
                 "No exchange data — visit an exchange.</span>")
         end
     end
@@ -721,13 +728,13 @@ local function refreshOwned(gid)
     local rows, totalPl = buildOwnedRows()
     if inst.hdr then
         if #rows == 0 then
-            inst.hdr:echo("<span style='font-size:9px;color:#888888;padding-left:6px;'>No contracts held.</span>")
+            inst.hdr:echo("<span style='color:#888888;padding-left:6px;'>No contracts held.</span>")
         else
             local plColor = totalPl > 0 and C_G or (totalPl < 0 and C_R or C_GR)
             inst.hdr:echo(string.format(
-                "<span style='font-size:9px;color:#888888;padding-left:6px;'>" ..
+                "<span style='color:#888888;padding-left:6px;'>" ..
                 "%d contract%s &nbsp; Total P&amp;L:</span>" ..
-                " <span style='font-size:9px;color:%s;'>%s</span>",
+                " <span style='color:%s;'>%s</span>",
                 #rows, #rows ~= 1 and "s" or "", plColor, fmtIgSigned(totalPl)))
         end
     end
@@ -760,8 +767,11 @@ local function buildPanel(target, registry, idPrefix, cols, refreshFn)
         return string.format("%s_%s_%d", gid, idPrefix, wc)
     end
 
+    local hdrH = f2tScaled(target, H_HDR)
+    local colH = f2tScaled(target, H_COL)
+
     local hdr = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_HDR,
+        name = wid(), x = 0, y = 0, width = "100%", height = hdrH, fontSize = f2tTextPt(target, STATUS_PT),
     }, target.content)
     hdr:setStyleSheet([[
         background-color: rgba(15, 18, 30, 200);
@@ -770,7 +780,7 @@ local function buildPanel(target, registry, idPrefix, cols, refreshFn)
     ]])
 
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_HDR, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = hdrH, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -778,7 +788,7 @@ local function buildPanel(target, registry, idPrefix, cols, refreshFn)
         border-bottom: 1px solid rgba(60, 65, 100, 180);
     ]])
 
-    local scrollTop = H_HDR + H_COL
+    local scrollTop = hdrH + colH
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
         x = 0, y = scrollTop,
@@ -794,7 +804,8 @@ local function buildPanel(target, registry, idPrefix, cols, refreshFn)
 
     local tableId = idPrefix .. "_" .. gid
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll,
+        f2tFuturesCellPt(target))
 
     local colHdrs = {}
     local xPct    = 0
@@ -803,6 +814,7 @@ local function buildPanel(target, registry, idPrefix, cols, refreshFn)
             name  = wid(),
             x = xPct .. "%", y = 0,
             width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = f2tTextPt(target, LABEL_PT),
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -859,6 +871,7 @@ local function makeDef(name, description, registry, idPrefix, colsFn, refreshFn)
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshFn(target._gid) end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 

@@ -7,6 +7,7 @@
 --   cargo = { {commodity, base, cost, origin}, ... } }   -- each entry = one 75-ton lot.
 
 local LOT_TONS = 75
+local CONSOLE_FONT_SIZE = 9
 local consoles = {}   -- target._gid → MiniConsole
 
 local function shipData() return gmcp and gmcp.char and gmcp.char.ship or nil end
@@ -82,7 +83,7 @@ local function buildCargoDef()
             if not mc then
                 mc = Geyser.MiniConsole:new({
                     name = target._gid .. "_cargomc", x = 0, y = 0, width = "100%", height = "100%",
-                    scrollBar = false, fontSize = 9,
+                    scrollBar = false, fontSize = Mux.scaledFontSize(target, CONSOLE_FONT_SIZE),
                 }, target.content)
                 mc:setColor(18, 18, 26)
                 consoles[target._gid] = mc
@@ -100,6 +101,12 @@ local function buildCargoDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) renderConsole(consoles[target._gid]) end,
+        onTextScale = function(target)
+            local mc = consoles[target._gid]
+            if not mc then return end
+            mc:setFontSize(Mux.scaledFontSize(target, CONSOLE_FONT_SIZE))
+            renderConsole(mc)
+        end,
     }
 end
 

@@ -53,29 +53,30 @@ local BUTTON_CSS = [[
     }
 ]]
 
--- Point sizes, applied with setFontSize. 11 on desktop is exactly what the strip
--- rendered before; the readouts scale down on web via F2T_UI_FONT_SCALE.
-local CELL_PT = f2t_ui_fs(11)
--- The button does NOT scale. It is the only thing here you click, it sits in a
--- fixed-width cell so shrinking it buys the other cells nothing, and 7pt (what
--- the scale gives) is too small to read comfortably.
+-- Point sizes at 100% text size, applied with setFontSize. 11 on desktop is
+-- exactly what the strip rendered before; the readouts scale down on web via
+-- F2T_UI_FONT_SCALE.
+local CELL_PT = 11
+-- The button does NOT take the web shrink. It is the only thing here you click,
+-- it sits in a fixed-width cell so shrinking it buys the other cells nothing, and
+-- 7pt (what the shrink gives) is too small to read comfortably.
 local BTN_PT  = 8
 
 
 -- Fuel cell is a fixed width sized to its readout + Buy Fuel button (see layout
 -- note in buildContent). The readout must fit "Fuel: 999/999" -- 94px at 9pt and
--- 115px at 11pt (measured, see CH_W) plus the cell's padding -- and the button
+-- 115px at 11pt (measured, see charW in stripLayout) plus the cell's padding -- and the button
 -- keeps a real margin to its right rather than the 2px it used to have, which
 -- left it looking jammed against the next cell's divider.
 --
 -- Three digits is enough: the widest max_fuel in the live ship table is 589.
 -- The old 96/104 was too narrow at BOTH sizes, so the button overlapped the
 -- readout and ate its last digit ("Fuel: 360/40").
+--
+-- These are the 100% text size widths; stripLayout scales them with the text.
 local FUEL_READOUT_W = WEB and 112 or 136
-local FUEL_BTN_X     = FUEL_READOUT_W + 2
 local FUEL_BTN_W     = WEB and 90 or 84
 local FUEL_RIGHT_PAD = 8
-local FUEL_CELL_W    = FUEL_BTN_X + FUEL_BTN_W + FUEL_RIGHT_PAD  -- 230 desktop, 212 web
 
 -- The cells, left to right. All but Fuel share the leftover width in proportion
 -- to how long their text actually gets, rather than splitting it evenly -- the
@@ -101,7 +102,7 @@ local FUEL_CELL_W    = FUEL_BTN_X + FUEL_BTN_W + FUEL_RIGHT_PAD  -- 230 desktop,
 -- a table constructor leaves a hole that stops ipairs dead at the gap.
 local CELLS = {
     { key = "rank", label = "Rank",                      tail = 15 },
-    { key = "fuel", label = "Fuel",                      fixed = FUEL_CELL_W },
+    { key = "fuel", label = "Fuel",                      fixed = true },
     { key = "stam", label = WEB and "STM" or "Stamina",  tail =  9 },
     { key = "cash", label = "Groats",                    tail = 15 },
 }
@@ -116,22 +117,43 @@ end
 -- measures about one extra cell beyond its single count.
 CELLS[#CELLS + 1] = { key = "hold", label = "Hold", tail = 14 }
 
--- One character's width in the strip's font. Geyser sizes labels in POINTS and
--- the browser lays them out in px, hence the 4/3.
---
--- 0.600 em is MEASURED, not guessed: rendering this exact font stack and markup
--- in Chromium gives 7.2px/char at 9pt and 8.8px/char at 11pt, dead flat across
--- every readout. The previous 0.55 guess was 9% light, which is precisely how a
--- cap ends up sitting on top of the last character of its own text.
-local CH_W    = CELL_PT * (4 / 3) * 0.600
 local CELL_PX = (WEB and 10 or 16) + 4   -- cell padding, both sides, plus air
 
 local LBL, FLEX_TOTAL = {}, 0
 for _, c in ipairs(CELLS) do
     LBL[c.key] = c.label
     c.weight   = c.tail and (#c.label + c.tail) or nil
-    c.maxW     = c.weight and (math.ceil(c.weight * CH_W) + CELL_PX) or nil
     FLEX_TOTAL = FLEX_TOTAL + (c.weight or 0)
+end
+
+-- Font sizes and the widths that follow from them, at the surface's text size.
+local function stripLayout(target)
+    local scale  = f2tTextScale(target)
+    local cellPt = f2t_ui_fs(CELL_PT * scale)
+    -- One character's width in the strip's font. Geyser sizes labels in POINTS
+    -- and the browser lays them out in px, hence the 4/3.
+    --
+    -- 0.600 em is MEASURED, not guessed: rendering this exact font stack and
+    -- markup in Chromium gives 7.2px/char at 9pt and 8.8px/char at 11pt, dead
+    -- flat across every readout. The previous 0.55 guess was 9% light, which is
+    -- precisely how a cap ends up sitting on top of the last character of its
+    -- own text.
+    local charW = cellPt * (4 / 3) * 0.600
+    local maxW  = {}
+    for _, c in ipairs(CELLS) do
+        if c.weight then maxW[c.key] = math.ceil(c.weight * charW) + CELL_PX end
+    end
+    local readoutW = f2tScaled(target, FUEL_READOUT_W)
+    local buttonW  = f2tScaled(target, FUEL_BTN_W)
+    return {
+        cellPt    = cellPt,
+        buttonPt  = f2tTextPt(target, BTN_PT),
+        maxW      = maxW,
+        readoutW  = readoutW,
+        buttonX   = readoutW + 2,
+        buttonW   = buttonW,
+        fuelCellW = readoutW + 2 + buttonW + FUEL_RIGHT_PAD,   -- 230 desktop, 212 web at 100%
+    }
 end
 
 -- Groats target per rank (archive UI.magic_cash_numbers): the "promotion cash"
@@ -255,19 +277,20 @@ local function layoutCells(inst)
     if not inst or not inst.cells or not inst.host then return end
     local W = inst.host.get_width and inst.host:get_width() or 0
     if not W or W <= 0 then return end
-    local flex = math.max(0, W - FUEL_CELL_W)
+    local layout = inst.layout
+    local flex = math.max(0, W - layout.fuelCellW)
     local x, last = 0, #CELLS
     for i, spec in ipairs(CELLS) do
         local w
         if spec.fixed then
-            w = spec.fixed
+            w = layout.fuelCellW
         elseif i == last then
             w = math.max(40, W - x)                     -- fill remainder
         else
             w = math.max(40, math.floor(flex * spec.weight / FLEX_TOTAL))
             -- Never wider than the longest value it can hold: past that the
             -- extra is dead space, and belongs to the last cell instead.
-            if w > spec.maxW then w = spec.maxW end
+            if w > layout.maxW[spec.key] then w = layout.maxW[spec.key] end
         end
         local cell = inst.cells[i]
         if cell then pcall(function() cell:move(x, 0); cell:resize(w, "100%") end) end
@@ -309,6 +332,7 @@ local function buildContent(target)
     --
     -- `cells` is positional (layoutCells walks it alongside CELLS); `labels` is
     -- keyed, so refreshInstance never has to know which platform dropped what.
+    local layout = stripLayout(target)
     local cells, labels, fuelCell = {}, {}, nil
     for i, spec in ipairs(CELLS) do
         local cell = Geyser.Label:new({ name = wid(), x = 0, y = 0, width = 10, height = "100%" }, target.content)
@@ -317,31 +341,31 @@ local function buildContent(target)
         if spec.key == "fuel" then
             fuelCell = cell            -- gets inner widgets below, not text of its own
         else
-            pcall(function() cell:setFontSize(CELL_PT) end)
+            pcall(function() cell:setFontSize(layout.cellPt) end)
             labels[spec.key] = cell
         end
     end
 
     -- Fuel cell: inner readout (left) + small Buy Fuel button right after it.
     local fuelText = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = FUEL_READOUT_W, height = "100%",
+        name = wid(), x = 0, y = 0, width = layout.readoutW, height = "100%",
     }, fuelCell)
     fuelText:setStyleSheet(CELL_TEXT_CSS)
-    pcall(function() fuelText:setFontSize(CELL_PT) end)
+    pcall(function() fuelText:setFontSize(layout.cellPt) end)
     labels.fuel = fuelText
 
     local buyBtn = Geyser.Label:new({
-        name = wid(), x = FUEL_BTN_X, y = "20%", width = FUEL_BTN_W, height = "60%",
+        name = wid(), x = layout.buttonX, y = "20%", width = layout.buttonW, height = "60%",
     }, fuelCell)
     buyBtn:setStyleSheet(BUTTON_CSS)
-    pcall(function() buyBtn:setFontSize(BTN_PT) end)
+    pcall(function() buyBtn:setFontSize(layout.buttonPt) end)
     buyBtn:echo("<center>⛽&nbsp;Buy&nbsp;Fuel</center>")
     buyBtn:setToolTip("Buy fuel at a shuttlepad")
     buyBtn:setClickCallback(function() send("buy fuel") end)
 
     labels.hold:setToolTip("Cargo hold")   -- legacy inline cargo panel is now fed2_cargo
 
-    instances[gid] = { labels = labels, buyBtn = buyBtn, cells = cells, host = target.content }
+    instances[gid] = { labels = labels, buyBtn = buyBtn, cells = cells, host = target.content, layout = layout }
     layoutCells(instances[gid])
     refreshInstance(gid)
 end
@@ -372,6 +396,7 @@ local function buildPlayerInfoDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 

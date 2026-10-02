@@ -10,18 +10,22 @@ local H_HDR     = 24    -- header strip height (px)
 local H_COL     = 20    -- column header bar height (px)
 local WHO_ROW_H = 22    -- row height (px)
 local SB_W      = 17    -- scrollbar pixel allowance
+local TOGGLE_W  = 72    -- Online/All button width (px)
+local CELL_PT   = 12    -- cell font size (pt)
+local LABEL_PT  = 8     -- header strip and column header font size (pt)
 
 local RC_DEFAULT = "#c8c8c8"
 local RC_OFFLINE = "#888888"
 local RC_STAFF   = "#6b8e23"   -- Plutocrat with a staff role
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(12)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the cell label's fontSize (f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -145,6 +149,19 @@ local function buildCols()
     }
 end
 
+-- Switch Online ↔ All: button label, tooltip and table data.
+local function setShowAll(inst, showAll)
+    inst.showAll = showAll
+    if showAll then
+        inst.toggleBtn:echo("<center>All</center>")
+        inst.toggleBtn:setToolTip("Showing all known players — click for Online only")
+    else
+        inst.toggleBtn:echo("<center>Online</center>")
+        inst.toggleBtn:setToolTip("Showing online only — click for All known players")
+    end
+    f2tTableSetData(inst.tableId, buildTableData(showAll))
+end
+
 local function buildContent(target)
     local gid = target._gid
 
@@ -166,9 +183,14 @@ local function buildContent(target)
         return string.format("%s_who_%d", gid, wc)
     end
 
+    local hdrH    = f2tScaled(target, H_HDR)
+    local colH    = f2tScaled(target, H_COL)
+    local toggleW = f2tScaled(target, TOGGLE_W)
+    local labelPt = f2tTextPt(target, LABEL_PT)
+
     -- ── Header strip (count + toggle) ────────────────────────────────────────
     local hdrStrip = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_HDR,
+        name = wid(), x = 0, y = 0, width = "100%", height = hdrH,
     }, target.content)
     hdrStrip:setStyleSheet([[
         background-color: rgba(15, 18, 30, 200);
@@ -177,18 +199,18 @@ local function buildContent(target)
     ]])
 
     local hdrCount = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "-80", height = H_HDR,
+        name = wid(), x = 0, y = 0, width = "-" .. (toggleW + 8), height = hdrH, fontSize = labelPt,
     }, hdrStrip)
     hdrCount:setStyleSheet([[
         background: transparent; border: none;
         color: rgba(140, 150, 195, 255);
-        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        font-family: "Consolas","Monaco",monospace;
         padding: 0 6px;
     ]])
     hdrCount:echo("  👥  Online: —")
 
     local toggleBtn = Geyser.Label:new({
-        name = wid(), x = "-76", y = 2, width = 72, height = H_HDR - 4,
+        name = wid(), x = "-" .. (toggleW + 4), y = 2, width = toggleW, height = hdrH - 4, fontSize = labelPt,
     }, hdrStrip)
     toggleBtn:setStyleSheet([[
         QLabel {
@@ -196,7 +218,7 @@ local function buildContent(target)
             color: rgba(150,165,205,255);
             border: 1px solid rgba(72,85,128,180);
             border-radius: 3px;
-            font-size: 9px; font-family: "Consolas","Monaco",monospace;
+            font-family: "Consolas","Monaco",monospace;
             qproperty-alignment: AlignCenter;
         }
         QLabel::hover {
@@ -209,7 +231,7 @@ local function buildContent(target)
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_HDR, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = hdrH, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -218,7 +240,7 @@ local function buildContent(target)
     ]])
 
     -- ── ScrollBox ─────────────────────────────────────────────────────────────
-    local scrollTop = H_HDR + H_COL
+    local scrollTop = hdrH + colH
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
         x = 0, y = scrollTop,
@@ -236,7 +258,8 @@ local function buildContent(target)
     local tableId = "who_" .. gid
     local cols    = buildCols()
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, WHO_ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, WHO_ROW_H), scroll,
+        f2tUiPt(target, CELL_PT))
 
     -- Column header labels (sortable, click to toggle sort)
     local colHdrs = {}
@@ -246,6 +269,7 @@ local function buildContent(target)
             name  = wid(),
             x = xPct .. "%", y = 0,
             width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = labelPt,
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -271,19 +295,9 @@ local function buildContent(target)
         contentW     = contentW,
     }
 
-    -- Toggle click: switch Online ↔ All, update button label and table data
     toggleBtn:setClickCallback(function()
         local inst = instances[gid]
-        if not inst then return end
-        inst.showAll = not inst.showAll
-        if inst.showAll then
-            toggleBtn:echo("<center>All</center>")
-            toggleBtn:setToolTip("Showing all known players — click for Online only")
-        else
-            toggleBtn:echo("<center>Online</center>")
-            toggleBtn:setToolTip("Showing online only — click for All known players")
-        end
-        f2tTableSetData(inst.tableId, buildTableData(inst.showAll))
+        if inst then setShowAll(inst, not inst.showAll) end
     end)
 
     refreshInstance(gid)
@@ -327,6 +341,14 @@ local function buildWhoDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
+        onTextScale = function(target)
+            local inst = instances[target._gid]
+            local showAll = inst and inst.showAll
+            f2tRebuildForTextScale(target, function()
+                local rebuilt = instances[target._gid]
+                if rebuilt and showAll then setShowAll(rebuilt, true) end
+            end)
+        end,
     }
 end
 

@@ -15,8 +15,13 @@ local H_STAT = 18
 local H_COL  = 20
 local ROW_H  = 20
 local SB_W   = 17
+local CELL_PT    = 10     -- cell, dropdown and empty-state font size (pt)
+local LABEL_PT   = 8      -- column header and button font size (pt)
+local STATUS_PT  = 6.75   -- status strip font size (pt): 9px
+local CONSOLE_PT = 9      -- Find Best console font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 -- Same vertical gradient as Galaxy Navigator's header strip, for a
 -- consistent header look across content types.
@@ -35,7 +40,7 @@ local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -48,7 +53,7 @@ local _DROP_CSS = [[
         color: rgba(210,220,240,255);
         border: 1px solid rgba(72,85,128,180);
         border-radius: 4px;
-        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        font-family: "Consolas","Monaco",monospace;
         padding: 0 8px;
     }
     QLabel::hover {
@@ -67,7 +72,7 @@ local function actionBtnCss(accent, accentHover)
             border: 1px solid rgba(72,85,128,180);
             border-left: 3px solid %s;
             border-radius: 4px;
-            font-size: 10px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+            font-weight: bold; font-family: "Consolas","Monaco",monospace;
             qproperty-alignment: AlignCenter;
         }
         QLabel::hover {
@@ -85,7 +90,7 @@ local _ITEM_CSS = [[
     QLabel {
         background-color: rgba(24,26,38,220);
         border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        font-family: "Consolas","Monaco",monospace;
         padding: 0 6px;
     }
     QLabel::hover {
@@ -273,9 +278,13 @@ end
 
 -- ── Instance refresh ──────────────────────────────────────────────────────────
 
+-- Kept so a panel built later (or rebuilt at a new text size) shows it too.
+local lastStatus = ""
+
 local function setStatus(text)
+    lastStatus = text or ""
     for _, inst in pairs(instances) do
-        if inst.status then inst.status:echo(text or "") end
+        if inst.status then inst.status:echo(lastStatus) end
     end
 end
 
@@ -346,6 +355,50 @@ local function searchConsoles(fn)
     end
 end
 
+local function printSearchHeader(mc, ps)
+    mc:cecho(string.format("<yellow>Searching %d commodities for best profit...\n\n", ps.totalCount))
+end
+
+local function printSearchResult(mc, result)
+    mc:cecho(string.format("<%s>%-20s: %+5dig/ton<reset>\n",
+        result.profit > 0 and "green" or "red", result.commodity,
+        result.profit ~= -math.huge and result.profit or 0))
+end
+
+local function printSearchVerdict(mc, ps)
+    mc:cecho("\n<white>==========================================\n")
+    if ps.best then
+        local best = ps.results[1]
+        local bestName = canonicalCommodityName(best.commodity)
+        mc:cecho("<yellow>BEST PROFIT: <reset>")
+        mc:cechoLink("<green><b>" .. bestName .. "</b><reset>",
+            function()
+                F2T_PRICE_CHECKER.selectedCommodity = bestName
+                updateSelectorButtons()
+                if f2tPriceCheckerCheck then f2tPriceCheckerCheck() end
+            end,
+            "View full cartel prices for " .. bestName, true)
+        mc:cecho(string.format(" | <green>%dig/ton profit<reset>\n", best.profit))
+        mc:cecho(string.format("Buy at %dig, sell at %dig\n", best.bestBuy, best.bestSell))
+    else
+        mc:cecho("<red>No profitable commodities found<reset>\n")
+    end
+    mc:cecho("<white>==========================================<reset>\n")
+    mc:cecho("<dim_grey>Click the commodity name to load full cartel prices.<reset>\n")
+end
+
+-- Redraws the current or finished scan into a fresh console. Results are in
+-- scan order while it runs and best-first once it's done, as they were printed.
+local function replaySearch(mc)
+    local ps = F2T_PRICE_CHECKER.profitSearch
+    mc:clear()
+    printSearchHeader(mc, ps)
+    for _, result in ipairs(ps.results) do printSearchResult(mc, result) end
+    if not ps.active then printSearchVerdict(mc, ps) end
+    mc:show()
+    mc:raise()
+end
+
 local function searchNext()
     local ps = F2T_PRICE_CHECKER.profitSearch
     if not ps.active then return end
@@ -356,31 +409,13 @@ local function searchNext()
         ps.active = false
         pcall(disableTrigger, "price_checker_profit_tick")   -- catch-all ^$ pattern; armed only while scanning
         table.sort(ps.results, function(a, b) return a.profit > b.profit end)
-        searchConsoles(function(mc)
-            mc:cecho("\n<white>==========================================\n")
-            if ps.best then
-                local best = ps.results[1]
-                local bestName = canonicalCommodityName(best.commodity)
-                mc:cecho("<yellow>BEST PROFIT: <reset>")
-                mc:cechoLink("<green><b>" .. bestName .. "</b><reset>",
-                    function()
-                        F2T_PRICE_CHECKER.selectedCommodity = bestName
-                        updateSelectorButtons()
-                        if f2tPriceCheckerCheck then f2tPriceCheckerCheck() end
-                    end,
-                    "View full cartel prices for " .. bestName, true)
-                mc:cecho(string.format(" | <green>%dig/ton profit<reset>\n", best.profit))
-                mc:cecho(string.format("Buy at %dig, sell at %dig\n", best.bestBuy, best.bestSell))
-                F2T_PRICE_CHECKER.selectedCommodity = bestName
-                updateSelectorButtons()
-            else
-                mc:cecho("<red>No profitable commodities found<reset>\n")
-            end
-            mc:cecho("<white>==========================================<reset>\n")
-            mc:cecho("<dim_grey>Click the commodity name to load full cartel prices.<reset>\n")
-        end)
+        searchConsoles(function(mc) printSearchVerdict(mc, ps) end)
+        if ps.best then
+            F2T_PRICE_CHECKER.selectedCommodity = canonicalCommodityName(ps.results[1].commodity)
+            updateSelectorButtons()
+        end
         setStatus(string.format(
-            "<span style='font-size:9px;color:#8896c0;padding-left:6px;'>Scan complete — best: %s</span>",
+            "<span style='color:#8896c0;padding-left:6px;'>Scan complete — best: %s</span>",
             ps.best or "none"))
         return
     end
@@ -388,7 +423,7 @@ local function searchNext()
     ps.data = {}
     F2T_PRICE_CHECKER.currentCommodity = commodity
     setStatus(string.format(
-        "<span style='font-size:9px;color:#8896c0;padding-left:6px;'>Scanning %d/%d — %s</span>",
+        "<span style='color:#8896c0;padding-left:6px;'>Scanning %d/%d — %s</span>",
         ps.index, ps.totalCount, commodity))
     send("c price " .. commodity:lower() .. " cartel", false)
 end
@@ -406,19 +441,14 @@ function f2tPriceCheckerProfitTick()
     local profit = (bestBuy ~= math.huge and bestSell ~= -1) and (bestSell - bestBuy) or -math.huge
 
     local commodity = F2T_PRICE_CHECKER.currentCommodity
-    table.insert(ps.results, {
-        commodity = commodity, profit = profit, bestBuy = bestBuy, bestSell = bestSell,
-    })
+    local result = { commodity = commodity, profit = profit, bestBuy = bestBuy, bestSell = bestSell }
+    table.insert(ps.results, result)
     if profit > ps.bestProfit then
         ps.bestProfit = profit
         ps.best       = commodity
     end
 
-    searchConsoles(function(mc)
-        mc:cecho(string.format("<%s>%-20s: %+5dig/ton<reset>\n",
-            profit > 0 and "green" or "red", commodity,
-            profit ~= -math.huge and profit or 0))
-    end)
+    searchConsoles(function(mc) printSearchResult(mc, result) end)
 
     ps.data  = {}
     ps.index = ps.index + 1
@@ -456,7 +486,7 @@ local function findBestProfit()
         mc:clear()
         mc:show()
         mc:raise()
-        mc:cecho(string.format("<yellow>Searching %d commodities for best profit...\n\n", ps.totalCount))
+        printSearchHeader(mc, ps)
     end)
     pcall(enableTrigger, "price_checker_profit_tick")
     searchNext()
@@ -478,7 +508,7 @@ function f2tPriceCheckerCheck()
         if inst.searchConsole then inst.searchConsole:hide() end
     end
     setStatus(string.format(
-        "<span style='font-size:9px;color:#8896c0;padding-left:6px;'>Cartel prices: %s</span>",
+        "<span style='color:#8896c0;padding-left:6px;'>Cartel prices: %s</span>",
         F2T_PRICE_CHECKER.selectedCommodity))
 
     armAwaitingCheckCommand()
@@ -497,12 +527,13 @@ local function toggleDropdown(inst, target)
     inst.dropGen = (inst.dropGen or 0) + 1
     local gen  = inst.dropGen
     local list = commodityList()
-    local rowH = 22
-    local ddH  = math.min(#list * rowH, math.max(80, target.content:get_height() - H_BAR - 4))
+    local rowH = f2tScaled(target, 22)
+    local ddH  = math.min(#list * rowH, math.max(80, target.content:get_height() - inst.barH - 4))
+    local cellPt = f2tUiPt(target, CELL_PT)
 
     local dd = Geyser.Container:new({
         name = string.format("%s_pcddd_%d", target._gid, gen),
-        x = 4, y = H_BAR, width = 210, height = ddH,
+        x = 4, y = inst.barH, width = f2tScaled(target, 210), height = ddH,
     }, target.content)
 
     local bg = Geyser.Label:new({
@@ -523,7 +554,7 @@ local function toggleDropdown(inst, target)
     for i, item in ipairs(list) do
         local lbl = Geyser.Label:new({
             name = string.format("%s_pcdddi_%d_%d", target._gid, gen, i),
-            x = 0, y = (i - 1) * rowH, width = "100%-17px", height = rowH,
+            x = 0, y = (i - 1) * rowH, width = "100%-17px", height = rowH, fontSize = cellPt,
         }, sbx)
         lbl:setStyleSheet(_ITEM_CSS)
         local icon = f2tCommodityIconPrefix and f2tCommodityIconPrefix(item.name) or ""
@@ -567,20 +598,26 @@ local function buildContent(target)
         return string.format("%s_pc_%d", gid, wc)
     end
 
+    local barH    = f2tScaled(target, H_BAR)
+    local statH   = f2tScaled(target, H_STAT)
+    local colH    = f2tScaled(target, H_COL)
+    local cellPt  = f2tUiPt(target, CELL_PT)
+    local labelPt = f2tTextPt(target, LABEL_PT)
+
     -- ── Controls bar ──────────────────────────────────────────────────────────
     local bar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_BAR,
+        name = wid(), x = 0, y = 0, width = "100%", height = barH,
     }, target.content)
     bar:setStyleSheet(_HDR_BAR_CSS)
 
     local dropBtn = Geyser.Label:new({
-        name = wid(), x = 5, y = 4, width = "48%", height = H_BAR - 8,
+        name = wid(), x = 5, y = 4, width = "48%", height = barH - 8, fontSize = labelPt,
     }, bar)
     dropBtn:setStyleSheet(_DROP_CSS)
     dropBtn:setToolTip("Select a commodity")
 
     local checkBtn = Geyser.Label:new({
-        name = wid(), x = "51%", y = 4, width = "24%", height = H_BAR - 8,
+        name = wid(), x = "51%", y = 4, width = "24%", height = barH - 8, fontSize = labelPt,
     }, bar)
     checkBtn:setStyleSheet(_CHECK_BTN_CSS)
     checkBtn:echo("<center>🔍 Check</center>")
@@ -588,7 +625,7 @@ local function buildContent(target)
     checkBtn:setClickCallback(function() f2tPriceCheckerCheck() end)
 
     local bestBtn = Geyser.Label:new({
-        name = wid(), x = "77%", y = 4, width = "22%", height = H_BAR - 8,
+        name = wid(), x = "77%", y = 4, width = "22%", height = barH - 8, fontSize = labelPt,
     }, bar)
     bestBtn:setStyleSheet(_FIND_BTN_CSS)
     bestBtn:echo("<center>💹 Find Best</center>")
@@ -599,17 +636,18 @@ local function buildContent(target)
 
     -- ── Status strip ──────────────────────────────────────────────────────────
     local status = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = H_STAT,
+        name = wid(), x = 0, y = barH, width = "100%", height = statH, fontSize = f2tTextPt(target, STATUS_PT),
     }, target.content)
     status:setStyleSheet([[
         background-color: rgba(12, 14, 24, 220);
         border: none;
         color: rgba(136, 150, 192, 255);
     ]])
+    status:echo(lastStatus)
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR + H_STAT, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = barH + statH, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -618,7 +656,7 @@ local function buildContent(target)
     ]])
 
     -- ── ScrollBox table ───────────────────────────────────────────────────────
-    local scrollTop = H_BAR + H_STAT + H_COL
+    local scrollTop = barH + statH + colH
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
         x = 0, y = scrollTop,
@@ -635,7 +673,7 @@ local function buildContent(target)
     -- Search console overlays the table area during a best-profit scan.
     local searchConsole = Geyser.MiniConsole:new({
         name = wid(), x = 0, y = scrollTop, width = "100%",
-        height = "100%-" .. scrollTop .. "px", fontSize = 9,
+        height = "100%-" .. scrollTop .. "px", fontSize = Mux.scaledFontSize(target, CONSOLE_PT),
     }, target.content)
     searchConsole:setColor(18, 18, 26)
     searchConsole:hide()
@@ -644,6 +682,7 @@ local function buildContent(target)
     -- leaves an empty scrollbox with no message of its own.
     local noRowsLbl = Geyser.Label:new({
         name = wid(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
+        fontSize = cellPt,
     }, target.content)
     noRowsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     noRowsLbl:echo(emptyStateHtml("No prices yet — pick a commodity and Check."))
@@ -652,7 +691,7 @@ local function buildContent(target)
     local tableId = "price_checker_" .. gid
     local cols    = buildCols()
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
 
     local colHdrs = {}
     local xPct    = 0
@@ -660,7 +699,7 @@ local function buildContent(target)
         local lbl = Geyser.Label:new({
             name  = wid(),
             x = xPct .. "%", y = 0,
-            width = col.scrollbox_pct .. "%", height = "100%",
+            width = col.scrollbox_pct .. "%", height = "100%", fontSize = labelPt,
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -684,6 +723,7 @@ local function buildContent(target)
         searchConsole = searchConsole,
         noRowsLbl     = noRowsLbl,
         dropdown      = nil,
+        barH          = barH,
     }
     instances[gid] = inst
 
@@ -743,6 +783,14 @@ local function buildPriceCheckerDef()
                 f2tTableSetData(inst.tableId, F2T_PRICE_CHECKER.rows)
                 updateEmptyState(inst)
             end
+        end,
+        onTextScale = function(target)
+            local inst = instances[target._gid]
+            local showingSearch = inst and inst.searchConsole and not inst.searchConsole.hidden
+            f2tRebuildForTextScale(target, function()
+                local rebuilt = instances[target._gid]
+                if rebuilt and showingSearch then replaySearch(rebuilt.searchConsole) end
+            end)
         end,
     }
 end

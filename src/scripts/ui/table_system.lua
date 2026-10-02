@@ -3,35 +3,43 @@
 -- Public API:
 --   f2tTableCreate(tableId, columns)
 --   f2tTableDestroy(tableId)
---   f2tTableSetScrollbox(tableId, contentLabel, contentW, rowH, scrollWidget)
+--   f2tTableSetScrollbox(tableId, contentLabel, contentW, rowH, scrollWidget, cellPt)
 --   f2tTableSetColHdrs(tableId, colHdrs)
 --   f2tTableSetData(tableId, data)
 --   f2tTableToggleSort(tableId, colKey)
 --   f2tTableOnResize(tableId, newContentW)
 --   f2tTableUpdateScrollboxHeader(tableId, colHdrs)
+--
+-- Text size comes from each label's fontSize (cells: cellPt; headers: whatever
+-- the caller built them with), not from these stylesheets: Geyser.Label:echo()
+-- wraps every message in an inline font-size that overrides the stylesheet.
 
 local _tables = {}
 
-local _HDR_CSS = string.format([[
+-- A table destroyed and recreated under the same id (content rebuilt at a new
+-- text size) keeps the sort the user picked.
+local _sortMemory = {}
+
+local _HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: %s; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
     QLabel::hover { color: white; }
-]], f2t_ui_pt(10))
-local _HDR_ACTIVE_CSS = string.format([[
+]]
+local _HDR_ACTIVE_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(120,230,120,240);
-        font-size: %s; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
     QLabel::hover { color: rgba(180,255,180,255); }
-]], f2t_ui_pt(10))
+]]
 local _CELL_CSS = [[
     QLabel {
         background-color: transparent; border: none;
@@ -45,6 +53,11 @@ function f2tTableCreate(tableId, columns)
         data    = {},
         sort    = { column = nil, ascending = true },
     }
+    local remembered = _sortMemory[tableId]
+    if remembered then
+        _tables[tableId].sort = { column = remembered.column, ascending = remembered.ascending }
+        return
+    end
     for _, col in ipairs(columns) do
         if col.default_sort then
             _tables[tableId].sort.column    = col.key
@@ -55,16 +68,20 @@ function f2tTableCreate(tableId, columns)
 end
 
 function f2tTableDestroy(tableId)
+    local t = _tables[tableId]
+    if t then _sortMemory[tableId] = t.sort end
     _tables[tableId] = nil
 end
 
-function f2tTableSetScrollbox(tableId, contentLabel, contentW, rowH, scrollWidget)
+-- cellPt: cell label fontSize in points (defaults to f2t_ui_pt(10)'s size).
+function f2tTableSetScrollbox(tableId, contentLabel, contentW, rowH, scrollWidget, cellPt)
     local t = _tables[tableId]
     if not t then return end
     t.scrollbox = {
         contentLabel = contentLabel,
         contentW     = contentW,
         rowH         = rowH,
+        cellPt       = cellPt or 10 * F2T_UI_FONT_SCALE,
         rows         = {},
         colHdrs      = nil,
         scrollWidget = scrollWidget or nil,
@@ -233,7 +250,7 @@ function f2tTableRenderScrollbox(tableId)
             for j in ipairs(t.columns) do
                 local cell = Geyser.Label:new({
                     name = string.format("f2tsb_%s_r%d_c%d", tableId, i, j),
-                    x = x, y = 0, width = colWs[j], height = rowH,
+                    x = x, y = 0, width = colWs[j], height = rowH, fontSize = sb.cellPt,
                 }, rowLbl)
                 cell:setStyleSheet(_CELL_CSS)
                 rowLbl.cells[j] = cell

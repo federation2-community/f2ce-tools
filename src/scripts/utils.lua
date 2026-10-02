@@ -52,6 +52,51 @@ function f2t_ui_px(px) return string.format("%gpx", math.floor(px * F2T_UI_FONT_
 -- ever :echo() to is silently dead code.
 function f2t_ui_fs(pt) return math.max(6, math.floor(pt * F2T_UI_FONT_SCALE + 0.5)) end
 
+-- ── Per-surface text size ─────────────────────────────────────────────────────
+-- Muxlet's Text Size % for a pane or tab (1.0 = 100%). Content that opts in
+-- sizes fonts, and the row/strip heights that hold text, through these.
+
+function f2tTextScale(target)
+    if target and Mux and Mux.textScale then return Mux.textScale(target) end
+    return 1
+end
+
+-- Pixel length (row height, strip height, px font size) at the surface's size.
+function f2tScaled(target, px) return math.floor(px * f2tTextScale(target) + 0.5) end
+
+local function roundPoints(pt) return math.max(5, math.floor(pt * 10 + 0.5) / 10) end
+
+-- Label fontSize in points at the surface's size. f2tUiPt also applies the web
+-- shrink, matching f2t_ui_pt; f2tTextPt doesn't, matching Geyser's 8pt default
+-- and px sizes (px * 0.75) that were never web-scaled.
+function f2tUiPt(target, pt)   return roundPoints(pt * F2T_UI_FONT_SCALE * f2tTextScale(target)) end
+function f2tTextPt(target, pt) return roundPoints(pt * f2tTextScale(target)) end
+
+-- onTextScale handler for content that lays itself out once in apply(): re-applies
+-- it at the new size and carries serialize() state across. afterRebuild(target)
+-- restores what serialize() doesn't keep. Coalesced, so stepping the size several
+-- times rebuilds once.
+local pendingTextScaleRebuilds = {}
+function f2tRebuildForTextScale(target, afterRebuild)
+    if pendingTextScaleRebuilds[target] then return end
+    local contentId = target._activeContent
+    pendingTextScaleRebuilds[target] = true
+    tempTimer(0.15, function()
+        pendingTextScaleRebuilds[target] = nil
+        if not contentId or target._activeContent ~= contentId then return end
+        local def = Mux._content and Mux._content[contentId]
+        if not def then return end
+        local state
+        if def.serialize then
+            local ok, result = pcall(def.serialize, target)
+            if ok and type(result) == "table" then state = result end
+        end
+        Mux._applyContent(target, contentId, true)
+        if state and def.restore then pcall(def.restore, target, state) end
+        if afterRebuild then pcall(afterRebuild, target) end
+    end)
+end
+
 -- ── Debug ─────────────────────────────────────────────────────────────────────
 
 F2T_DEBUG = false

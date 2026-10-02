@@ -28,11 +28,16 @@ local TICK_HDR_H = 16    -- ticker column-header console height (px)
 local TICK_H     = 88    -- ticker console height (px)
 local TICKER_MAX = 30    -- ticker ring-buffer depth
 local BUY_COL_W  = 12    -- visible chars for the ticker's fixed-width buy column
+local VIEW_BTN_W = 56    -- Prices/Futures button width (px)
+local TICK_BTN_W = 22    -- ticker toggle button width (px)
 
-local LAYOUT_TOP  = H_HDR + H_COL
-local TICK_TOTAL  = TICK_HDR_H + TICK_H
+local CELL_PT     = 10    -- price cell font size (pt)
+local LABEL_PT    = 8     -- column header and button font size (pt)
+local TITLE_PT    = 7.5   -- status title font size (pt): 10px
+local TICKER_PT   = 9     -- ticker console font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the cell label's fontSize (f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 local C_W  = "#d8d8d8"
 local C_GR = "#888888"
 local C_G  = "#44cc44"
@@ -43,7 +48,7 @@ local COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -54,7 +59,7 @@ local BTN_CSS = [[
     QLabel{
         background-color:rgba(28,28,32,200); border-style:solid; border-width:1px;
         border-radius:3px; border-color:rgba(100,100,110,180);
-        color:rgba(160,160,170,255); font-size:10px; font-weight:bold;
+        color:rgba(160,160,170,255); font-weight:bold;
     } QLabel::hover{ background-color:rgba(60,60,70,220); color:white; }
 ]]
 
@@ -446,7 +451,7 @@ end
 -- ── Layout / header controls ──────────────────────────────────────────────────
 
 local function scrollHeightFor(inst)
-    local reserved = inst.showTicker and (LAYOUT_TOP + TICK_TOTAL) or LAYOUT_TOP
+    local reserved = inst.showTicker and (inst.layoutTop + inst.tickTotal) or inst.layoutTop
     return "100%-" .. reserved .. "px"
 end
 
@@ -500,7 +505,7 @@ end
 
 -- ── Table stack construction ──────────────────────────────────────────────────
 
-local function buildStack(inst, idPrefix, cols)
+local function buildStack(inst, idPrefix, cols, cellPt)
     local target = inst.target
     local gid    = inst.gid
     local wc     = 0
@@ -510,7 +515,7 @@ local function buildStack(inst, idPrefix, cols)
     end
 
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_HDR, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = inst.hdrH, width = "100%", height = inst.layoutTop - inst.hdrH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -520,7 +525,7 @@ local function buildStack(inst, idPrefix, cols)
 
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
-        x = 0, y = LAYOUT_TOP,
+        x = 0, y = inst.layoutTop,
         width  = "100%",
         height = scrollHeightFor(inst),
     }, target.content)
@@ -533,7 +538,7 @@ local function buildStack(inst, idPrefix, cols)
 
     local tableId = idPrefix .. "_" .. gid
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
 
     local colHdrs = {}
     local xPct    = 0
@@ -542,6 +547,7 @@ local function buildStack(inst, idPrefix, cols)
             name  = wid(),
             x = xPct .. "%", y = 0,
             width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = f2tTextPt(target, LABEL_PT),
         }, colBar)
         lbl:setStyleSheet(COL_HDR_CSS)
         lbl:echo(col.label)
@@ -566,7 +572,7 @@ end
 
 local function setView(inst, view)
     if view == "futures" and not inst.futures then
-        inst.futures = buildStack(inst, "exfut", f2tFuturesMarketCols())
+        inst.futures = buildStack(inst, "exfut", f2tFuturesMarketCols(), f2tFuturesCellPt(inst.target))
     end
     inst.view = view
     showStack(inst.prices,  view == "prices")
@@ -597,12 +603,12 @@ local function refresh(gid)
         if atEx then
             local planet = gmcp.room.info.area or gmcp.room.info.system or "?"
             inst.title:echo(string.format(
-                "<span style='font-size:10px;color:#cccc44;'>%s</span>" ..
-                " <span style='font-size:10px;color:#888888;'>live · %s</span>",
+                "<span style='color:#cccc44;'>%s</span>" ..
+                " <span style='color:#888888;'>live · %s</span>",
                 planet, inst.view))
         else
             inst.title:echo(
-                "<span style='font-size:10px;color:#888888;'>Step into an exchange for live prices.</span>")
+                "<span style='color:#888888;'>Step into an exchange for live prices.</span>")
         end
     end
 
@@ -633,8 +639,16 @@ local function buildContent(target)
         return
     end
 
+    local hdrH     = f2tScaled(target, H_HDR)
+    local tickHdrH = f2tScaled(target, TICK_HDR_H)
+    local tickH    = f2tScaled(target, TICK_H)
+    local viewBtnW = f2tScaled(target, VIEW_BTN_W)
+    local tickBtnW = f2tScaled(target, TICK_BTN_W)
+    local labelPt  = f2tTextPt(target, LABEL_PT)
+    local tickerPt = Mux.scaledFontSize(target, TICKER_PT)
+
     local hdr = Geyser.Label:new({
-        name = gid .. "_exhdr", x = 0, y = 0, width = "100%", height = H_HDR,
+        name = gid .. "_exhdr", x = 0, y = 0, width = "100%", height = hdrH,
     }, target.content)
     hdr:setStyleSheet([[
         background-color: rgba(15, 18, 30, 200);
@@ -643,17 +657,20 @@ local function buildContent(target)
     ]])
 
     local title = Geyser.Label:new({
-        name = gid .. "_extitle", x = 6, y = 0, width = "-92", height = H_HDR,
+        name = gid .. "_extitle", x = 6, y = 0, width = "-" .. (viewBtnW + tickBtnW + 14), height = hdrH,
+        fontSize = f2tTextPt(target, TITLE_PT),
     }, hdr)
     title:setStyleSheet("background: transparent; border: none;")
 
     local viewBtn = Geyser.Label:new({
-        name = gid .. "_exview", x = "-86", y = 2, width = 56, height = H_HDR - 4,
+        name = gid .. "_exview", x = "-" .. (viewBtnW + tickBtnW + 8), y = 2, width = viewBtnW, height = hdrH - 4,
+        fontSize = labelPt,
     }, hdr)
     viewBtn:setStyleSheet(BTN_CSS)
 
     local tickerBtn = Geyser.Label:new({
-        name = gid .. "_extickbtn", x = "-26", y = 2, width = 22, height = H_HDR - 4,
+        name = gid .. "_extickbtn", x = "-" .. (tickBtnW + 4), y = 2, width = tickBtnW, height = hdrH - 4,
+        fontSize = labelPt,
     }, hdr)
     tickerBtn:setStyleSheet(BTN_CSS)
 
@@ -668,24 +685,27 @@ local function buildContent(target)
         autoView   = true,
         showTicker = true,
         tickerIdle = true,
+        hdrH       = hdrH,
+        layoutTop  = hdrH + f2tScaled(target, H_COL),
+        tickTotal  = tickHdrH + tickH,
     }
     instances[gid] = inst
 
-    inst.prices = buildStack(inst, "exprc", priceCols())
+    inst.prices = buildStack(inst, "exprc", priceCols(), f2tUiPt(target, CELL_PT))
 
     inst.tickerHdrMc = Geyser.MiniConsole:new({
         name = gid .. "_extickhdr",
-        x = 0, y = "100%-" .. TICK_TOTAL .. "px",
-        width = "100%", height = TICK_HDR_H,
-        fontSize = 9,
+        x = 0, y = "100%-" .. inst.tickTotal .. "px",
+        width = "100%", height = tickHdrH,
+        fontSize = tickerPt,
     }, target.content)
     inst.tickerHdrMc:setColor(12, 14, 22)
 
     inst.tickerMc = Geyser.MiniConsole:new({
         name = gid .. "_extick",
-        x = 0, y = "100%-" .. TICK_H .. "px",
-        width = "100%", height = TICK_H,
-        fontSize = 9,
+        x = 0, y = "100%-" .. tickH .. "px",
+        width = "100%", height = tickH,
+        fontSize = tickerPt,
     }, target.content)
     inst.tickerMc:setColor(18, 18, 26)
     inst.tickerMc:enableAutoWrap()
@@ -769,6 +789,7 @@ local function buildExchangeDef()
         onReveal = function(target)
             refresh(target._gid)
         end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 

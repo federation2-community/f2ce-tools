@@ -9,14 +9,17 @@
 local H_COL  = 20    -- column header bar height (px)
 local ROW_H  = 20    -- row height (px)
 local SB_W   = 17    -- scrollbar pixel allowance
+local CELL_PT = 11   -- cell font size (pt)
+local HDR_PT  = 8    -- column header font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(11)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the cell label's fontSize (f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -116,8 +119,9 @@ local function buildContent(target)
         return string.format("%s_cmd_%d", gid, wc)
     end
 
+    local colH = f2tScaled(target, H_COL)
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = 0, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -127,9 +131,9 @@ local function buildContent(target)
 
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
-        x = 0, y = H_COL,
+        x = 0, y = colH,
         width  = "100%",
-        height = "100%-" .. H_COL .. "px",
+        height = "100%-" .. colH .. "px",
     }, target.content)
 
     local contentW = math.max(100, target.content:get_width() - SB_W)
@@ -141,7 +145,8 @@ local function buildContent(target)
     local tableId = "commodities_" .. gid
     local cols    = buildCols()
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll,
+        f2tUiPt(target, CELL_PT))
 
     local colHdrs = {}
     local xPct    = 0
@@ -150,6 +155,7 @@ local function buildContent(target)
             name  = wid(),
             x = xPct .. "%", y = 0,
             width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = f2tTextPt(target, HDR_PT),
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -205,6 +211,7 @@ local function buildCommoditiesDef()
         end,
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 

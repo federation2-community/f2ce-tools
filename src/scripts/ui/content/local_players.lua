@@ -8,15 +8,17 @@
 -- floating, this also asks Muxlet to keep the pane height fitted to the row
 -- count live via Mux.requestAutoFit.
 
-local H_HDR = 24   -- header strip height (px)
-local ROW_H = 26   -- player row height (px)
+local H_HDR    = 24   -- header strip height (px)
+local ROW_H    = 26   -- player row height (px)
+local EYE_W    = 20   -- examine button width (px)
+local LABEL_PT = 8    -- font size of every label here (pt)
 
 local RC_DEFAULT = "#c8c8c8"
 
 local NAME_CSS = [[
     QLabel {
         background: transparent; border: none;
-        font-size: 11px; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding-left: 2px;
     }
@@ -29,7 +31,6 @@ local EYE_CSS = [[
         color: rgba(200,210,230,255);
         border: 1px solid rgba(72,85,128,180);
         border-radius: 3px;
-        font-size: 11px;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover { background-color: rgba(42,48,78,230); }
@@ -81,8 +82,13 @@ local function render(target)
     local players = roomPlayers()
     local count   = players and #players or 0
 
+    local hdrH    = f2tScaled(target, H_HDR)
+    local rowH    = f2tScaled(target, ROW_H)
+    local eyeW    = f2tScaled(target, EYE_W)
+    local labelPt = f2tTextPt(target, LABEL_PT)
+
     local header = Geyser.Label:new({
-        name = gid .. "_lphdr", x = 0, y = 0, width = "100%", height = H_HDR,
+        name = gid .. "_lphdr", x = 0, y = 0, width = "100%", height = hdrH, fontSize = labelPt,
     }, target.content)
     header:setStyleSheet([[
         background-color: rgba(15, 18, 30, 200);
@@ -90,17 +96,17 @@ local function render(target)
         border-bottom: 1px solid rgba(70, 75, 110, 150);
     ]])
     header:echo(string.format(
-        "<font color='#8c96c3' size='2'>&nbsp;&nbsp;Local Players (%d)</font>", count))
+        "<font color='#8c96c3'>&nbsp;&nbsp;Local Players (%d)</font>", count))
     headers[gid] = header
 
     if count == 0 then
         local empty = Geyser.Label:new({
-            name = gid .. "_lpempty", x = 0, y = H_HDR, width = "100%", height = ROW_H,
+            name = gid .. "_lpempty", x = 0, y = hdrH, width = "100%", height = rowH, fontSize = labelPt,
         }, target.content)
         empty:setStyleSheet("background: transparent; border: none;")
-        empty:echo("<center><font color='#707070' size='2'>No one else is here.</font></center>")
+        empty:echo("<center><font color='#707070'>No one else is here.</font></center>")
         rows[gid] = { empty }
-        return H_HDR + ROW_H
+        return hdrH + rowH
     end
 
     for i, player in ipairs(players) do
@@ -111,7 +117,7 @@ local function render(target)
 
         local rowBg = Geyser.Label:new({
             name = string.format("%s_lprow_%d", gid, i),
-            x = 0, y = H_HDR + (i - 1) * ROW_H, width = "100%", height = ROW_H,
+            x = 0, y = hdrH + (i - 1) * rowH, width = "100%", height = rowH,
         }, target.content)
         rowBg:setStyleSheet(string.format([[
             background-color: rgba(255,255,255,%s);
@@ -121,7 +127,7 @@ local function render(target)
 
         local nameLbl = Geyser.Label:new({
             name = string.format("%s_lpname_%d", gid, i),
-            x = 6, y = 2, width = "-32", height = ROW_H - 4,
+            x = 6, y = 2, width = "-" .. (eyeW + 12), height = rowH - 4, fontSize = labelPt,
         }, rowBg)
         nameLbl:setStyleSheet(NAME_CSS)
         nameLbl:echo(string.format("<font color='%s'>%s</font>", rc, name))
@@ -132,7 +138,7 @@ local function render(target)
 
         local eyeLbl = Geyser.Label:new({
             name = string.format("%s_lpeye_%d", gid, i),
-            x = "-26", y = 3, width = 20, height = ROW_H - 6,
+            x = "-" .. (eyeW + 6), y = 3, width = eyeW, height = rowH - 6, fontSize = labelPt,
         }, rowBg)
         eyeLbl:setStyleSheet(EYE_CSS)
         eyeLbl:echo("👁")
@@ -142,7 +148,7 @@ local function render(target)
         table.insert(rows[gid], rowBg)
     end
 
-    return H_HDR + count * ROW_H
+    return hdrH + count * rowH
 end
 
 local function refreshAll()
@@ -211,6 +217,11 @@ local function buildLocalPlayersDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) render(target) end,
+        onTextScale = function(target)
+            local height = render(target)
+            if Mux and Mux.requestAutoFit then Mux.requestAutoFit(target, height) end
+            if Mux and Mux.reassertHidden then Mux.reassertHidden(target.content) end
+        end,
     }
 end
 

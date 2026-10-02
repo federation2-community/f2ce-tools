@@ -20,8 +20,25 @@ local ROW_H = 20    -- table row height (px)
 local SB_W  = 17    -- scrollbar pixel allowance
 local H_FIN = 210   -- financials stats block height (px): stats + analysis, sized to fit without scrolling
 local DEPOT_PCT = 26 -- depot console share of the factories panel (%)
+local CELL_PT  = 10  -- cell and empty-state font size (pt)
+local LABEL_PT = 8   -- header, column header and button font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
+
+-- Sizes for one panel. Scalable panels follow the surface's text size; Overview
+-- divides its whole body by percentage to fit without scrolling, so it doesn't.
+local function panelMetrics(target, scalable)
+    local scaleTarget = scalable and target or nil
+    return {
+        scaleTarget = scaleTarget,
+        barH    = f2tScaled(scaleTarget, H_BAR),
+        colH    = f2tScaled(scaleTarget, H_COL),
+        rowH    = f2tScaled(scaleTarget, ROW_H),
+        cellPt  = f2tUiPt(scaleTarget, CELL_PT),
+        labelPt = f2tTextPt(scaleTarget, LABEL_PT),
+    }
+end
 
 -- Shared "nothing here" look for empty tables (no factories, no depots, ...)
 -- so every empty state in this content reads the same way.
@@ -34,7 +51,7 @@ local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -409,7 +426,7 @@ local _HDR_STRIP_CSS = [[
 local _HDR_TITLE_CSS = [[
     background: transparent; border: none;
     color: rgba(140, 150, 195, 255);
-    font-size: 10px; font-family: "Consolas","Monaco",monospace;
+    font-family: "Consolas","Monaco",monospace;
 ]]
 local _ICON_BTN_CSS = [[
     QLabel {
@@ -417,7 +434,6 @@ local _ICON_BTN_CSS = [[
         color: rgba(165, 180, 220, 255);
         border: 1px solid rgba(80, 92, 140, 210);
         border-radius: 4px;
-        font-size: 14px;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover {
@@ -433,20 +449,22 @@ local _ICON_BTN_CSS = [[
 -- NOT a titlebar element — so it always shows regardless of pane chrome.
 -- Returns the bar and the title label (the latter used by Portfolio to show
 -- a live holdings summary).
-local function buildHeaderStrip(target, wid, icon, tooltip, cmdFn, titleText)
+local function buildHeaderStrip(target, wid, metrics, icon, tooltip, cmdFn, titleText)
     local bar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_BAR,
+        name = wid(), x = 0, y = 0, width = "100%", height = metrics.barH,
     }, target.content)
     bar:setStyleSheet(_HDR_STRIP_CSS)
 
+    local btnW = f2tScaled(metrics.scaleTarget, 20)
     local titleLbl = Geyser.Label:new({
-        name = wid(), x = 6, y = 0, width = "-28", height = H_BAR,
+        name = wid(), x = 6, y = 0, width = "-" .. (btnW + 8), height = metrics.barH, fontSize = metrics.labelPt,
     }, bar)
     titleLbl:setStyleSheet(_HDR_TITLE_CSS)
     if titleText then titleLbl:echo(titleText) end
 
     local btn = Geyser.Label:new({
-        name = wid(), x = "-25", y = 2, width = 20, height = H_BAR - 4,
+        name = wid(), x = "-" .. (btnW + 5), y = 2, width = btnW, height = metrics.barH - 4,
+        fontSize = metrics.labelPt,
     }, bar)
     btn:setStyleSheet(_ICON_BTN_CSS)
     btn:echo("<center>" .. icon .. "</center>")
@@ -457,9 +475,9 @@ local function buildHeaderStrip(target, wid, icon, tooltip, cmdFn, titleText)
 end
 
 -- Column bar + scrollbox table below yTop within `parent`.
-local function buildTableArea(parent, wid, tableId, cols, yTop, heightSpec)
+local function buildTableArea(parent, wid, metrics, tableId, cols, yTop, heightSpec)
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = yTop, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = yTop, width = "100%", height = metrics.colH,
     }, parent)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -468,7 +486,7 @@ local function buildTableArea(parent, wid, tableId, cols, yTop, heightSpec)
     ]])
 
     local scroll = Geyser.ScrollBox:new({
-        name = wid(), x = 0, y = yTop + H_COL, width = "100%", height = heightSpec,
+        name = wid(), x = 0, y = yTop + metrics.colH, width = "100%", height = heightSpec,
     }, parent)
 
     local contentW = math.max(100, parent:get_width() - SB_W)
@@ -478,7 +496,7 @@ local function buildTableArea(parent, wid, tableId, cols, yTop, heightSpec)
     contentLabel:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, metrics.rowH, scroll, metrics.cellPt)
 
     local colHdrs = {}
     local xPct    = 0
@@ -486,7 +504,7 @@ local function buildTableArea(parent, wid, tableId, cols, yTop, heightSpec)
         local lbl = Geyser.Label:new({
             name  = wid(),
             x = xPct .. "%", y = 0,
-            width = col.scrollbox_pct .. "%", height = "100%",
+            width = col.scrollbox_pct .. "%", height = "100%", fontSize = metrics.labelPt,
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -520,19 +538,19 @@ local _TILE_CSS = [[
 ]]
 local TILE_GUTTER = 1.5   -- percent gap between tiles, both axes
 
-local function tileHtml(icon, value, valueColor, caption)
+local function tileHtml(icon, value, valueColor, caption, scaleTarget)
     return string.format(
         "<div style='text-align:center;padding-top:5px;'>" ..
-        "<span style='font-size:16px;font-weight:bold;color:%s;'>%s %s</span><br>" ..
-        "<span style='font-size:9px;color:#888899;letter-spacing:1px;'>%s</span></div>",
-        valueColor, icon, value, caption)
+        "<span style='font-size:%dpx;font-weight:bold;color:%s;'>%s %s</span><br>" ..
+        "<span style='font-size:%dpx;color:#888899;letter-spacing:1px;'>%s</span></div>",
+        f2tScaled(scaleTarget, 16), valueColor, icon, value, f2tScaled(scaleTarget, 9), caption)
 end
 
 -- Lays out `items` ({icon,value,color,caption,tooltip,onClick}) as a grid of
 -- tile Labels filling `container`, `cols` wide. Returns the created tiles;
 -- callers own their own widget-list bookkeeping (delete last render's tiles
 -- before calling this again).
-local function buildTileGrid(container, wid, items, cols)
+local function buildTileGrid(container, wid, items, cols, scaleTarget)
     local made = {}
     local n = #items
     if n == 0 then return made end
@@ -550,7 +568,7 @@ local function buildTileGrid(container, wid, items, cols)
             height = (tileH - 2 * TILE_GUTTER) .. "%",
         }, container)
         tile:setStyleSheet(_TILE_CSS)
-        tile:echo(tileHtml(item.icon, item.value, item.color or "#e8e8f0", item.caption))
+        tile:echo(tileHtml(item.icon, item.value, item.color or "#e8e8f0", item.caption, scaleTarget))
         if item.tooltip then tile:setToolTip(item.tooltip) end
         if item.onClick then tile:setClickCallback(item.onClick) end
         made[#made + 1] = tile
@@ -603,7 +621,7 @@ local function actionBtnCss(accent, accentHover)
             border: 1px solid rgba(72,85,128,180);
             border-left: 3px solid %s;
             border-radius: 4px;
-            font-size: 11px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+            font-weight: bold; font-family: "Consolas","Monaco",monospace;
             qproperty-alignment: AlignCenter;
         }
         QLabel::hover {
@@ -628,11 +646,11 @@ local _SECTION_HDR_CSS = [[
     border-bottom: 1px solid rgba(90, 100, 140, 140);
 ]]
 
-local function rowCellHtml(label, value, color)
+local function rowCellHtml(label, value, color, scaleTarget)
     return string.format(
-        "<td style='padding:2px 8px;color:rgba(155,165,200,220);font-size:11px;white-space:nowrap;'>%s</td>" ..
-        "<td style='padding:2px 16px 2px 4px;color:%s;font-size:13px;font-weight:bold;white-space:nowrap;'>%s</td>",
-        label, color or "#e8e8f0", value)
+        "<td style='padding:2px 8px;color:rgba(155,165,200,220);font-size:%dpx;white-space:nowrap;'>%s</td>" ..
+        "<td style='padding:2px 16px 2px 4px;color:%s;font-size:%dpx;font-weight:bold;white-space:nowrap;'>%s</td>",
+        f2tScaled(scaleTarget, 11), label, color or "#e8e8f0", f2tScaled(scaleTarget, 13), value)
 end
 
 -- Builds an optional section header ("icon TITLE" + divider) followed by
@@ -642,13 +660,14 @@ end
 -- (used for the identity block, which reads fine without one).
 local function buildStatSection(inst, container, wid, icon, title, items, perRow)
     perRow = perRow or 2
+    local scaleTarget = inst.metrics.scaleTarget
     local yTop, hAvail = 0, 100
     if title then
         local hdr = Geyser.Label:new({ name = wid(), x = 0, y = 0, width = "100%", height = "22%" }, container)
         hdr:setStyleSheet(_SECTION_HDR_CSS)
         hdr:echo(string.format(
-            "<span style='font-size:11px;font-weight:bold;letter-spacing:1px;color:rgba(150,165,210,235);'>" ..
-            "%s&nbsp;%s</span>", icon, title))
+            "<span style='font-size:%dpx;font-weight:bold;letter-spacing:1px;color:rgba(150,165,210,235);'>" ..
+            "%s&nbsp;%s</span>", f2tScaled(scaleTarget, 11), icon, title))
         inst.widgets[#inst.widgets + 1] = hdr
         yTop, hAvail = 22, 78
     end
@@ -662,7 +681,7 @@ local function buildStatSection(inst, container, wid, icon, title, items, perRow
         for c = 1, perRow do
             local item = items[r * perRow + c]
             cells = cells .. (item
-                and rowCellHtml(item.label, item.value, item.color)
+                and rowCellHtml(item.label, item.value, item.color, scaleTarget)
                 or  "<td width='50%'></td><td></td>")
         end
         local row = Geyser.Label:new({
@@ -865,19 +884,24 @@ local function buildOverview(target)
         return string.format("%s_cov_%d", gid, wc)
     end
 
-    buildHeaderStrip(target, wid, "📋", "Show raw company report (di company / di business)", reportCommand)
+    local metrics = panelMetrics(target, false)
+    buildHeaderStrip(target, wid, metrics, "📋", "Show raw company report (di company / di business)", reportCommand)
 
     local body = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = "100%-" .. H_BAR .. "px",
+        name = wid(), x = 0, y = metrics.barH, width = "100%", height = "100%-" .. metrics.barH .. "px",
     }, target.content)
     body:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
-    local emptyLbl = Geyser.Label:new({ name = wid(), x = 0, y = 0, width = "100%", height = "100%" }, body)
+    local emptyLbl = Geyser.Label:new({
+        name = wid(), x = 0, y = 0, width = "100%", height = "100%", fontSize = metrics.cellPt,
+    }, body)
     emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     emptyLbl:echo(emptyStateHtml("No company data yet."))
     emptyLbl:hide()
 
-    instances[gid] = { kind = "overview", gid = gid, body = body, emptyLbl = emptyLbl, widgets = {}, epoch = 0 }
+    instances[gid] = {
+        kind = "overview", gid = gid, metrics = metrics, body = body, emptyLbl = emptyLbl, widgets = {}, epoch = 0,
+    }
     renderOverview(instances[gid])
 end
 
@@ -1085,17 +1109,19 @@ local function buildFactories(target)
         return string.format("%s_cfa_%d", gid, wc)
     end
 
-    buildHeaderStrip(target, wid, "📋", "Show raw company report (di company / di business)", reportCommand)
+    local metrics = panelMetrics(target, true)
+    buildHeaderStrip(target, wid, metrics, "📋", "Show raw company report (di company / di business)", reportCommand)
 
+    local tableTop = metrics.barH + metrics.colH
     local tableId = "co_factories_" .. gid
-    local area = buildTableArea(target.content, wid, tableId, factoryCols(),
-        H_BAR, (100 - DEPOT_PCT) .. "%-" .. (H_BAR + H_COL) .. "px")
+    local area = buildTableArea(target.content, wid, metrics, tableId, factoryCols(),
+        metrics.barH, (100 - DEPOT_PCT) .. "%-" .. tableTop .. "px")
 
     -- Overlays the table area when there are no factories; f2tTableSetData
     -- leaves an empty scrollbox with no message of its own.
     local noFactoriesLbl = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR + H_COL, width = "100%",
-        height = (100 - DEPOT_PCT) .. "%-" .. (H_BAR + H_COL) .. "px",
+        name = wid(), x = 0, y = tableTop, width = "100%",
+        height = (100 - DEPOT_PCT) .. "%-" .. tableTop .. "px", fontSize = metrics.cellPt,
     }, target.content)
     noFactoriesLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     noFactoriesLbl:echo(emptyStateHtml("No factories."))
@@ -1109,11 +1135,12 @@ local function buildFactories(target)
     }, target.content)
 
     local depotTableId = "co_depots_" .. gid
-    local depotArea = buildTableArea(depotContainer, wid, depotTableId, depotCols(),
-        0, "100%-" .. H_COL .. "px")
+    local depotArea = buildTableArea(depotContainer, wid, metrics, depotTableId, depotCols(),
+        0, "100%-" .. metrics.colH .. "px")
 
     local noDepotsLbl = Geyser.Label:new({
-        name = wid(), x = 0, y = H_COL, width = "100%", height = "100%-" .. H_COL .. "px",
+        name = wid(), x = 0, y = metrics.colH, width = "100%", height = "100%-" .. metrics.colH .. "px",
+        fontSize = metrics.cellPt,
     }, depotContainer)
     noDepotsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     noDepotsLbl:echo(emptyStateHtml("No depots."))
@@ -1321,17 +1348,21 @@ local function buildFinancials(target)
         return string.format("%s_cfi_%d", gid, wc)
     end
 
-    buildHeaderStrip(target, wid, "📊", "View accounts (di accounts)", function() return "di accounts" end)
+    local metrics = panelMetrics(target, true)
+    buildHeaderStrip(target, wid, metrics, "📊", "View accounts (di accounts)", function() return "di accounts" end)
 
-    local statsH = math.floor(H_FIN * 0.76)
-    local btnH   = H_FIN - statsH
+    local finH   = f2tScaled(metrics.scaleTarget, H_FIN)
+    local statsH = math.floor(finH * 0.76)
+    local btnH   = finH - statsH
 
     local statsBox = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = statsH,
+        name = wid(), x = 0, y = metrics.barH, width = "100%", height = statsH,
     }, target.content)
     statsBox:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
-    local emptyLbl = Geyser.Label:new({ name = wid(), x = 0, y = 0, width = "100%", height = "100%" }, statsBox)
+    local emptyLbl = Geyser.Label:new({
+        name = wid(), x = 0, y = 0, width = "100%", height = "100%", fontSize = metrics.cellPt,
+    }, statsBox)
     emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     emptyLbl:echo(emptyStateHtml("No company data yet."))
     emptyLbl:hide()
@@ -1340,7 +1371,7 @@ local function buildFinancials(target)
     -- pull live data themselves), same accent-bar hover style as
     -- hauling_jobs.lua / price_checker.lua's action buttons.
     local btnBox = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR + statsH, width = "100%", height = btnH,
+        name = wid(), x = 0, y = metrics.barH + statsH, width = "100%", height = btnH,
     }, target.content)
     btnBox:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
@@ -1355,6 +1386,7 @@ local function buildFinancials(target)
     for i, b in ipairs(buttons) do
         local btn = Geyser.Label:new({
             name = wid(), x = ((i - 1) * 100 / 3 + 1) .. "%", y = "10%", width = (100 / 3 - 2) .. "%", height = "80%",
+            fontSize = metrics.labelPt,
         }, btnBox)
         btn:setStyleSheet(b.css)
         btn:echo("<center>" .. b.label .. "</center>")
@@ -1363,12 +1395,13 @@ local function buildFinancials(target)
     end
 
     local tableId = "co_shareholders_" .. gid
-    local area = buildTableArea(target.content, wid, tableId, shareholderCols(),
-        H_BAR + H_FIN, "100%-" .. (H_BAR + H_FIN + H_COL) .. "px")
+    local area = buildTableArea(target.content, wid, metrics, tableId, shareholderCols(),
+        metrics.barH + finH, "100%-" .. (metrics.barH + finH + metrics.colH) .. "px")
 
     instances[gid] = {
         kind      = "financials",
         gid       = gid,
+        metrics   = metrics,
         statsBox  = statsBox,
         emptyLbl  = emptyLbl,
         tableId   = tableId,
@@ -1454,7 +1487,7 @@ local function renderPortfolio(inst)
               caption = #rows == 1 and "COMPANY" or "COMPANIES" },
         }
     end
-    local tiles = buildTileGrid(summaryBar, wid, items, 2)
+    local tiles = buildTileGrid(summaryBar, wid, items, 2, inst.metrics.scaleTarget)
     for _, t in ipairs(tiles) do inst.widgets[#inst.widgets + 1] = t end
 
     -- See the matching comment in renderOverview: a live gmcp.char.company
@@ -1493,23 +1526,26 @@ local function buildPortfolio(target)
         return string.format("%s_cpf_%d", gid, wc)
     end
 
-    buildHeaderStrip(target, wid, "📋",
+    local metrics = panelMetrics(target, true)
+    buildHeaderStrip(target, wid, metrics, "📋",
         "Show raw company report (di company / di business)", reportCommand)
 
+    local sumH = f2tScaled(metrics.scaleTarget, H_SUM)
     local summaryBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = H_SUM,
+        name = wid(), x = 0, y = metrics.barH, width = "100%", height = sumH,
     }, target.content)
     summaryBar:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
+    local tableTop = metrics.barH + sumH + metrics.colH
     local tableId = "co_portfolio_" .. gid
-    local area = buildTableArea(target.content, wid, tableId, portfolioCols(),
-        H_BAR + H_SUM, "100%-" .. (H_BAR + H_SUM + H_COL) .. "px")
+    local area = buildTableArea(target.content, wid, metrics, tableId, portfolioCols(),
+        metrics.barH + sumH, "100%-" .. tableTop .. "px")
 
     -- Overlays the table area when there are no holdings (or below Financier
     -- rank); f2tTableSetData leaves an empty scrollbox with no message of its own.
     local emptyLbl = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR + H_SUM + H_COL, width = "100%",
-        height = "100%-" .. (H_BAR + H_SUM + H_COL) .. "px",
+        name = wid(), x = 0, y = tableTop, width = "100%",
+        height = "100%-" .. tableTop .. "px", fontSize = metrics.cellPt,
     }, target.content)
     emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     emptyLbl:hide()
@@ -1517,6 +1553,7 @@ local function buildPortfolio(target)
     instances[gid] = {
         kind        = "portfolio",
         gid         = gid,
+        metrics     = metrics,
         summaryBar  = summaryBar,
         tableId     = tableId,
         area        = area,
@@ -1545,8 +1582,9 @@ local function refreshAll()
     for _, inst in pairs(instances) do pcall(renderInstance, inst) end
 end
 
-local function makeDef(name, description, buildFn)
+local function makeDef(name, description, buildFn, scalable)
     return {
+        onTextScale = scalable and function(target) f2tRebuildForTextScale(target) end or nil,
         name        = name,
         description = description,
         group       = "F2CE Tools",
@@ -1604,15 +1642,15 @@ function f2tRegisterCompany()
     Mux.registerContent("fed2_company_factories", makeDef(
         "Company Factories",
         "Factory table with repair/start-stop/wages/destroy actions, plus depots.",
-        buildFactories))
+        buildFactories, true))
     Mux.registerContent("fed2_company_financials", makeDef(
         "Company Financials",
         "Share stats, dividend/share actions, and the shareholder table.",
-        buildFinancials))
+        buildFinancials, true))
     Mux.registerContent("fed2_company_portfolio", makeDef(
         "Company Portfolio",
         "Your shareholdings in other companies (Financier rank and above).",
-        buildPortfolio))
+        buildPortfolio, true))
     if f2t_debug_log then
         f2t_debug_log("[company] registered fed2_company_overview/_factories/_financials/_portfolio")
     end

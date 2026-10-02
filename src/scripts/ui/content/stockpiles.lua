@@ -9,8 +9,11 @@ local H_BAR  = 26
 local H_COL  = 20
 local ROW_H  = 20
 local SB_W   = 17
+local CELL_PT  = 10   -- cell, status and empty-state font size (pt)
+local LABEL_PT = 8    -- column header, button and menu font size (pt)
 
-local CELL_FONT = "font-size:" .. f2t_ui_pt(10) .. ";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 local _HDR_BAR_CSS = [[
     background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2a2a3a, stop:0.4 #1e1e2a, stop:1 #16161e);
@@ -22,7 +25,7 @@ local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -37,7 +40,7 @@ local function buttonCss(accent, accentHover)
             border: 1px solid rgba(72,85,128,180);
             border-left: 3px solid %s;
             border-radius: 4px;
-            font-size: 10px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+            font-weight: bold; font-family: "Consolas","Monaco",monospace;
             qproperty-alignment: AlignCenter;
         }
         QLabel::hover {
@@ -57,7 +60,7 @@ local _MENU_ITEM_CSS = [[
     QLabel {
         background-color: rgba(24,26,38,220);
         border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        font-family: "Consolas","Monaco",monospace;
         padding: 0 6px;
     }
     QLabel::hover { background-color: rgba(48,56,88,230); color: white; }
@@ -174,11 +177,12 @@ local function togglePreviewMenu(inst, target)
         items[#items + 1] = { label = planet, planet = planet }
     end
 
-    local rowH, menuW = 22, 160
+    local rowH, menuW = f2tScaled(target, 22), f2tScaled(target, 160)
+    local labelPt = f2tTextPt(target, LABEL_PT)
     inst.menuGen = inst.menuGen + 1
     local menu = Geyser.Container:new({
         name = string.format("%s_spm_%d", target._gid, inst.menuGen),
-        x = 6, y = H_BAR, width = menuW, height = #items * rowH,
+        x = 6, y = inst.barH, width = menuW, height = #items * rowH,
     }, target.content)
     local background = Geyser.Label:new({
         name = string.format("%s_spmbg_%d", target._gid, inst.menuGen),
@@ -192,7 +196,7 @@ local function togglePreviewMenu(inst, target)
     for i, item in ipairs(items) do
         local label = Geyser.Label:new({
             name = string.format("%s_spmi_%d_%d", target._gid, inst.menuGen, i),
-            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH,
+            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH, fontSize = labelPt,
         }, menu)
         label:setStyleSheet(_MENU_ITEM_CSS)
         label:echo(item.label)
@@ -274,28 +278,45 @@ local function buildContent(target)
         return string.format("%s_sp_%d", gid, widgetCount)
     end
 
-    local bar = Geyser.Label:new({ name = widgetName(), x = 0, y = 0, width = "100%", height = H_BAR },
+    local barH    = f2tScaled(target, H_BAR)
+    local cellPt  = f2tUiPt(target, CELL_PT)
+    local labelPt = f2tTextPt(target, LABEL_PT)
+
+    local bar = Geyser.Label:new({ name = widgetName(), x = 0, y = 0, width = "100%", height = barH },
         target.content)
     bar:setStyleSheet(_HDR_BAR_CSS)
 
-    local previewBtn = Geyser.Label:new({ name = widgetName(), x = 6, y = 4, width = 80, height = H_BAR - 8 }, bar)
+    -- Buttons left to right, then the status readout in the remaining width.
+    local buttonX = 6
+    local function headerButton(width)
+        local scaledWidth = f2tScaled(target, width)
+        local button = Geyser.Label:new({
+            name = widgetName(), x = buttonX, y = 4, width = scaledWidth, height = barH - 8, fontSize = labelPt,
+        }, bar)
+        buttonX = buttonX + scaledWidth + 6
+        return button
+    end
+
+    local previewBtn = headerButton(80)
     previewBtn:setStyleSheet(_BTN_PREVIEW_CSS)
     previewBtn:echo("<center>Preview ▾</center>")
     previewBtn:setToolTip("Read an exchange and plan its changes")
 
-    local applyBtn = Geyser.Label:new({ name = widgetName(), x = 92, y = 4, width = 64, height = H_BAR - 8 }, bar)
+    local applyBtn = headerButton(64)
     applyBtn:setToolTip("Send the planned changes, one confirmed command at a time")
 
-    local autoBtn = Geyser.Label:new({ name = widgetName(), x = 162, y = 4, width = 72, height = H_BAR - 8 }, bar)
+    local autoBtn = headerButton(72)
     autoBtn:setStyleSheet(_BTN_AUTO_CSS)
     autoBtn:setToolTip("Preview and apply every target planet on a timer (this session only)")
 
     local statusLbl = Geyser.Label:new({
-        name = widgetName(), x = 242, y = 0, width = "100%-248px", height = "100%",
+        name = widgetName(), x = buttonX + 2, y = 0, width = "100%-" .. (buttonX + 8) .. "px", height = "100%",
+        fontSize = cellPt,
     }, bar)
     statusLbl:setStyleSheet("background-color: transparent; border: none;")
 
-    local colBar = Geyser.Label:new({ name = widgetName(), x = 0, y = H_BAR, width = "100%", height = H_COL },
+    local colH = f2tScaled(target, H_COL)
+    local colBar = Geyser.Label:new({ name = widgetName(), x = 0, y = barH, width = "100%", height = colH },
         target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -303,7 +324,7 @@ local function buildContent(target)
         border-bottom: 1px solid rgba(60, 65, 100, 180);
     ]])
 
-    local scrollTop = H_BAR + H_COL
+    local scrollTop = barH + colH
     local scroll = Geyser.ScrollBox:new({
         name = widgetName(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
     }, target.content)
@@ -314,6 +335,7 @@ local function buildContent(target)
 
     local emptyLbl = Geyser.Label:new({
         name = widgetName(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
+        fontSize = cellPt,
     }, target.content)
     emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;"
         .. " qproperty-alignment: 'AlignLeft|AlignTop'; qproperty-wordWrap: true;")
@@ -321,11 +343,12 @@ local function buildContent(target)
     local tableId = "stockpiles_" .. gid
     local cols = buildCols()
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
     local colHdrs, xPct = {}, 0
     for _, col in ipairs(cols) do
         local label = Geyser.Label:new({
             name = widgetName(), x = xPct .. "%", y = 0, width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = labelPt,
         }, colBar)
         label:setStyleSheet(_COL_HDR_CSS)
         label:echo(col.label)
@@ -342,7 +365,7 @@ local function buildContent(target)
     f2tTableSetColHdrs(tableId, colHdrs)
 
     instances[gid] = {
-        tableId = tableId, statusLbl = statusLbl, applyBtn = applyBtn, autoBtn = autoBtn,
+        tableId = tableId, statusLbl = statusLbl, applyBtn = applyBtn, autoBtn = autoBtn, barH = barH,
         contentLabel = contentLabel, contentW = contentW, emptyLbl = emptyLbl, menu = nil, menuGen = 0,
     }
 
@@ -390,6 +413,7 @@ local function buildStockpilesDef()
         serialize = function(_target) return {} end,
         restore   = function(_target, _data) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 

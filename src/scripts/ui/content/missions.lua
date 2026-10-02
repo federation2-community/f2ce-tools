@@ -7,14 +7,18 @@
 local H_COL = 20   -- column header bar height (px)
 local ROW_H = 22   -- row height (px)
 local SB_W  = 17   -- scrollbar pixel allowance
+local CELL_PT  = 10   -- cell and detail body font size (pt)
+local TITLE_PT = 12   -- detail title font size (pt)
+local LABEL_PT = 8    -- column header and button font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -28,7 +32,7 @@ local _BTN_ACCEPT_CSS = [[
         border: 1px solid rgba(72,85,128,180);
         border-left: 3px solid #3ecf5e;
         border-radius: 4px;
-        font-size: 10px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+        font-weight: bold; font-family: "Consolas","Monaco",monospace;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover { background-color: rgba(38,44,66,235); border-left: 3px solid #5ce87c; color: white; }
@@ -40,7 +44,7 @@ local _BTN_BACK_CSS = [[
         color: rgba(210,220,240,255);
         border: 1px solid rgba(72,85,128,180);
         border-radius: 4px;
-        font-size: 11px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+        font-weight: bold; font-family: "Consolas","Monaco",monospace;
         qproperty-alignment: AlignCenter;
     }
     QLabel::hover { background-color: rgba(38,44,66,235); color: white; }
@@ -103,11 +107,11 @@ end
 
 -- ── Inline detail panel ────────────────────────────────────────────────────
 
-local function detailHtml(m)
+local function detailHtml(m, titlePt)
     local p = {}
     p[#p + 1] = string.format(
-        "<div style='%scolor:#e6d28c;font-size:12pt;font-weight:bold;padding:4px 6px;'>#%s  %s</div>",
-        CELL_FONT, tostring(m.id), m.name or "")
+        "<div style='%scolor:#e6d28c;font-size:%gpt;font-weight:bold;padding:4px 6px;'>#%s  %s</div>",
+        CELL_FONT, titlePt, tostring(m.id), m.name or "")
     if m.desc and m.desc ~= "" then
         p[#p + 1] = string.format("<div style='%scolor:#c8c8c8;padding:2px 6px;'>%s</div>", CELL_FONT, m.desc)
     end
@@ -155,28 +159,35 @@ local function showDetail(gid, id)
     inst.detailId = id
 
     if not inst.detail then
+        local target  = inst.target
+        local btnH    = f2tScaled(target, 22)
+        local backW   = f2tScaled(target, 70)
+        local acceptW = f2tScaled(target, 80)
+        local labelPt = f2tTextPt(target, LABEL_PT)
         local box = Geyser.Container:new({
             name = gid .. "_mdetail", x = 0, y = 0, width = "100%", height = "100%",
         }, inst.content)
 
         local back = Geyser.Label:new({
-            name = gid .. "_mback", x = 6, y = 6, width = 70, height = 22,
+            name = gid .. "_mback", x = 6, y = 6, width = backW, height = btnH, fontSize = labelPt,
         }, box)
         back:setStyleSheet(_BTN_BACK_CSS)
         back:echo("<center>&lsaquo; Back</center>")
         back:setClickCallback(function() hideDetail(instances[gid]) end)
 
         local accept = Geyser.Label:new({
-            name = gid .. "_maccept", x = 84, y = 6, width = 80, height = 22,
+            name = gid .. "_maccept", x = backW + 14, y = 6, width = acceptW, height = btnH, fontSize = labelPt,
         }, box)
         accept:setStyleSheet(_BTN_ACCEPT_CSS)
         accept:echo("<center>Accept</center>")
 
+        local scrollTop = btnH + 12
         local scroll = Geyser.ScrollBox:new({
-            name = gid .. "_mdscroll", x = 0, y = 34, width = "100%", height = "100%-34px",
+            name = gid .. "_mdscroll", x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
         }, box)
         local body = Geyser.Label:new({
             name = gid .. "_mdbody", x = 0, y = 0, width = "100%-" .. SB_W .. "px", height = 1200,
+            fontSize = f2tUiPt(target, CELL_PT),
         }, scroll)
         -- AlignTop: without it the QLabel vertically-centers its HTML inside the
         -- tall (scrollable) body, forcing the reader to scroll down to find the
@@ -188,7 +199,7 @@ local function showDetail(gid, id)
         inst.detail = { box = box, accept = accept, body = body }
     end
 
-    inst.detail.body:echo(detailHtml(m))
+    inst.detail.body:echo(detailHtml(m, f2tTextPt(inst.target, TITLE_PT)))
     if m.status == "available" then
         inst.detail.accept:show()
         inst.detail.accept:setClickCallback(function() send("choose " .. id, false) end)
@@ -328,8 +339,11 @@ local function buildContent(target)
         name = wid(), x = 0, y = 0, width = "100%", height = "100%",
     }, target.content)
 
+    local colH   = f2tScaled(target, H_COL)
+    local cellPt = f2tUiPt(target, CELL_PT)
+
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = 0, width = "100%", height = colH,
     }, listBox)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -338,7 +352,7 @@ local function buildContent(target)
     ]])
 
     local scroll = Geyser.ScrollBox:new({
-        name = wid(), x = 0, y = H_COL, width = "100%", height = "100%-" .. H_COL .. "px",
+        name = wid(), x = 0, y = colH, width = "100%", height = "100%-" .. colH .. "px",
     }, listBox)
 
     local contentW = math.max(100, target.content:get_width() - SB_W)
@@ -348,7 +362,7 @@ local function buildContent(target)
     contentLabel:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
 
     local emptyLbl = Geyser.Label:new({
-        name = wid(), x = 0, y = H_COL, width = "100%", height = "100%-" .. H_COL .. "px",
+        name = wid(), x = 0, y = colH, width = "100%", height = "100%-" .. colH .. "px", fontSize = cellPt,
     }, listBox)
     emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     emptyLbl:echo(emptyStateHtml("No missions yet — check back after you rank up, or type 'display missions'."))
@@ -357,13 +371,14 @@ local function buildContent(target)
     local tableId = "missions_" .. gid
     local cols    = buildCols(gid)
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
 
     local colHdrs = {}
     local xPct    = 0
     for _, col in ipairs(cols) do
         local lbl = Geyser.Label:new({
             name = wid(), x = xPct .. "%", y = 0, width = col.scrollbox_pct .. "%", height = "100%",
+            fontSize = f2tTextPt(target, LABEL_PT),
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -378,6 +393,7 @@ local function buildContent(target)
     f2tTableSetColHdrs(tableId, colHdrs)
 
     instances[gid] = {
+        target       = target,
         content      = target.content,
         listBox      = listBox,
         tableId      = tableId,
@@ -420,6 +436,13 @@ local function buildMissionsDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
+        onTextScale = function(target)
+            local inst = instances[target._gid]
+            local detailId = inst and inst.detailId
+            f2tRebuildForTextScale(target, function()
+                if detailId then showDetail(target._gid, detailId) end
+            end)
+        end,
     }
 end
 

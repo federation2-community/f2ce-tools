@@ -14,8 +14,11 @@ local H_CUR  = 22    -- active-job strip height (px), only shown while a job is 
 local H_COL  = 20    -- column header bar height (px)
 local ROW_H  = 20    -- row height (px)
 local SB_W   = 17    -- scrollbar pixel allowance
+local CELL_PT  = 10  -- cell, status and active-job font size (pt)
+local LABEL_PT = 8   -- column header, button and menu font size (pt)
 
-local CELL_FONT = "font-size:"..f2t_ui_pt(10)..";font-family:Consolas,Monaco,monospace;"
+-- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
+local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
 -- Without a QToolTip rule, a widget's own dark background bleeds into its
 -- native tooltip box (unreadable black-on-black) instead of Qt/OS defaults.
@@ -39,7 +42,7 @@ local _COL_HDR_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         color: rgba(160,160,185,220);
-        font-size: 10pt; font-weight: bold;
+        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding: 0 4px;
     }
@@ -56,7 +59,7 @@ local function actionBtnCss(accent, accentHover)
             border: 1px solid rgba(72,85,128,180);
             border-left: 3px solid %s;
             border-radius: 4px;
-            font-size: 10px; font-weight: bold; font-family: "Consolas","Monaco",monospace;
+            font-weight: bold; font-family: "Consolas","Monaco",monospace;
             qproperty-alignment: AlignCenter;
         }
         QLabel::hover {
@@ -78,7 +81,7 @@ local _HAUL_MENU_ITEM_CSS = [[
     QLabel {
         background-color: rgba(24,26,38,220);
         border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-size: 10px; font-family: "Consolas","Monaco",monospace;
+        font-family: "Consolas","Monaco",monospace;
         padding: 0 6px;
     }
     QLabel::hover {
@@ -259,15 +262,15 @@ local function toggleHaulMenu(inst, target)
     if not snap then return end
 
     local items = haulMenuItems(snap)
-    local rowH  = 22
-    local menuW = 150
+    local rowH  = f2tScaled(target, 22)
+    local menuW = f2tScaled(target, 150)
 
     inst.haulMenuGen = (inst.haulMenuGen or 0) + 1
     local gen = inst.haulMenuGen
 
     local menu = Geyser.Container:new({
         name = string.format("%s_hjhm_%d", target._gid, gen),
-        x = inst.haulBtnX or 0, y = H_BAR, width = menuW, height = #items * rowH,
+        x = inst.haulBtnX or 0, y = inst.barH, width = menuW, height = #items * rowH,
     }, target.content)
 
     local bg = Geyser.Label:new({
@@ -283,7 +286,7 @@ local function toggleHaulMenu(inst, target)
     for i, item in ipairs(items) do
         local lbl = Geyser.Label:new({
             name = string.format("%s_hjhmi_%d_%d", target._gid, gen, i),
-            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH,
+            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH, fontSize = f2tTextPt(target, LABEL_PT),
         }, menu)
         lbl:setStyleSheet(_HAUL_MENU_ITEM_CSS)
         lbl:echo(item.label)
@@ -309,7 +312,8 @@ local function showHoverTip(inst, target, x, text)
         inst.hoverTipGen = (inst.hoverTipGen or 0) + 1
         inst.hoverTip = Geyser.Label:new({
             name = string.format("%s_hjhtip_%d", target._gid, inst.hoverTipGen),
-            x = x, y = H_BAR, width = 260, height = 20,
+            x = x, y = inst.barH, width = f2tScaled(target, 260), height = f2tScaled(target, 20),
+            fontSize = f2tUiPt(target, CELL_PT),
         }, target.content)
         inst.hoverTip:setStyleSheet(string.format([[
             background-color: rgba(29, 32, 48, 250);
@@ -567,8 +571,8 @@ local function renderCurrentJobBar(inst)
     local status = currentJob.collected and "in transit" or "awaiting pickup"
     c.pay:echo(string.format(
         "<span style='%scolor:#e0b84d;font-weight:bold;'>%dig</span>" ..
-        "<span style='%scolor:#888888;font-size:8px;'>&nbsp;(%s)</span>",
-        CELL_FONT, currentJob.basePay, CELL_FONT, status))
+        "<span style='%scolor:#888888;font-size:%dpx;'>&nbsp;(%s)</span>",
+        CELL_FONT, currentJob.basePay, CELL_FONT, inst.statusPx, status))
 end
 
 -- Repositions the column header/scrollbox below the active-job strip,
@@ -584,13 +588,13 @@ local function layoutInstance(gid)
         inst.currentJobBar:hide()
     end
     renderCurrentJobBar(inst)
-    local curH = currentJob and H_CUR or 0
+    local curH = currentJob and inst.curH or 0
     inst.currentJobBar:resize(nil, curH)
 
-    local colY = H_BAR + curH
+    local colY = inst.barH + curH
     inst.colBar:move(nil, colY)
 
-    local scrollTop = colY + H_COL
+    local scrollTop = colY + inst.colH
     inst.scroll:move(nil, scrollTop)
     inst.scroll:resize(nil, "100%-" .. scrollTop .. "px")
     inst.noJobsLbl:move(nil, scrollTop)
@@ -696,9 +700,14 @@ local function buildContent(target)
         return string.format("%s_hj_%d", gid, wc)
     end
 
+    local barH    = f2tScaled(target, H_BAR)
+    local colH    = f2tScaled(target, H_COL)
+    local cellPt  = f2tUiPt(target, CELL_PT)
+    local labelPt = f2tTextPt(target, LABEL_PT)
+
     -- ── Button strip ──────────────────────────────────────────────────────────
     local bar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = H_BAR,
+        name = wid(), x = 0, y = 0, width = "100%", height = barH,
     }, target.content)
     bar:setStyleSheet(_HDR_BAR_CSS)
 
@@ -706,10 +715,10 @@ local function buildContent(target)
         { label = "📦 Collect", cmd = "collect", tip = "Collect cargo for the accepted job", css = _BTN_COLLECT_CSS },
         { label = "✅ Deliver", cmd = "deliver", tip = "Deliver cargo at the destination",   css = _BTN_DELIVER_CSS },
     }
-    local btnW = 76
+    local btnW = f2tScaled(target, 76)
     for i, b in ipairs(buttons) do
         local btn = Geyser.Label:new({
-            name = wid(), x = 6 + (i - 1) * (btnW + 8), y = 4, width = btnW, height = H_BAR - 8,
+            name = wid(), x = 6 + (i - 1) * (btnW + 8), y = 4, width = btnW, height = barH - 8, fontSize = labelPt,
         }, bar)
         btn:setStyleSheet(b.css)
         btn:echo("<center>" .. b.label .. "</center>")
@@ -720,8 +729,9 @@ local function buildContent(target)
 
     -- ── Haul automation control ──────────────────────────────────────────────
     local haulBtnX = 6 + 2 * (btnW + 8)
+    local haulBtnW = f2tScaled(target, 70)
     local haulBtn = Geyser.Label:new({
-        name = wid(), x = haulBtnX, y = 4, width = 70, height = H_BAR - 8,
+        name = wid(), x = haulBtnX, y = 4, width = haulBtnW, height = barH - 8, fontSize = labelPt,
     }, bar)
     haulBtn:setStyleSheet(_BTN_HAUL_CSS)
     haulBtn:echo("<center>Haul ▾</center>")
@@ -730,20 +740,22 @@ local function buildContent(target)
     end)
     haulBtn:setOnLeave(function() hideHoverTip(instances[gid]) end)
 
+    local statusX = haulBtnX + haulBtnW + 8
     local haulStatusLbl = Geyser.Label:new({
-        name = wid(), x = haulBtnX + 78, y = 0, width = "100%-" .. (haulBtnX + 84) .. "px", height = "100%",
+        name = wid(), x = statusX, y = 0, width = "100%-" .. (statusX + 6) .. "px", height = "100%",
+        fontSize = cellPt,
     }, bar)
     haulStatusLbl:setStyleSheet("background-color: transparent; border: none;")
     haulStatusLbl:setOnEnter(function()
         local inst = instances[gid]
-        if inst then showHoverTip(inst, target, haulBtnX + 78, inst.haulTooltipText) end
+        if inst then showHoverTip(inst, target, statusX, inst.haulTooltipText) end
     end)
     haulStatusLbl:setOnLeave(function() hideHoverTip(instances[gid]) end)
 
     -- ── Active-job strip ──────────────────────────────────────────────────────
     -- Hidden/zero-height until gmcp.char.job has a job; layoutInstance() sizes it.
     local currentJobBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = 0,
+        name = wid(), x = 0, y = barH, width = "100%", height = 0,
     }, target.content)
     currentJobBar:setStyleSheet(_CUR_BAR_CSS)
     currentJobBar:hide()
@@ -754,7 +766,7 @@ local function buildContent(target)
         local lbl = Geyser.Label:new({
             name  = wid(),
             x = curXPct .. "%", y = 0,
-            width = spec.pct .. "%", height = "100%",
+            width = spec.pct .. "%", height = "100%", fontSize = cellPt,
         }, currentJobBar)
         lbl:setStyleSheet("background-color: transparent; border: none;")
         curCells[spec.key] = lbl
@@ -763,7 +775,7 @@ local function buildContent(target)
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = H_BAR, width = "100%", height = H_COL,
+        name = wid(), x = 0, y = barH, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -772,7 +784,7 @@ local function buildContent(target)
     ]])
 
     -- ── ScrollBox ─────────────────────────────────────────────────────────────
-    local scrollTop = H_BAR + H_COL
+    local scrollTop = barH + colH
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
         x = 0, y = scrollTop,
@@ -790,6 +802,7 @@ local function buildContent(target)
     -- an empty scrollbox with no message of its own.
     local noJobsLbl = Geyser.Label:new({
         name = wid(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
+        fontSize = cellPt,
     }, target.content)
     noJobsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
     noJobsLbl:echo(emptyStateHtml("No AC jobs currently listed."))
@@ -799,7 +812,7 @@ local function buildContent(target)
     local tableId = "hauling_jobs_" .. gid
     local cols    = buildCols()
     f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, ROW_H, scroll)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
 
     local colHdrs = {}
     local xPct    = 0
@@ -807,7 +820,7 @@ local function buildContent(target)
         local lbl = Geyser.Label:new({
             name  = wid(),
             x = xPct .. "%", y = 0,
-            width = col.scrollbox_pct .. "%", height = "100%",
+            width = col.scrollbox_pct .. "%", height = "100%", fontSize = labelPt,
         }, colBar)
         lbl:setStyleSheet(_COL_HDR_CSS)
         lbl:echo(col.label)
@@ -836,6 +849,10 @@ local function buildContent(target)
         haulBtnX      = haulBtnX,
         haulMenu      = nil,
         haulMenuGen   = 0,
+        barH          = barH,
+        curH          = f2tScaled(target, H_CUR),
+        colH          = colH,
+        statusPx      = f2tScaled(target, 8),
     }
 
     haulBtn:setClickCallback(function() toggleHaulMenu(instances[gid], target) end)
@@ -879,6 +896,7 @@ local function buildHaulingJobsDef()
         serialize = function(_t) return {} end,
         restore   = function(_t, _d) end,
         onReveal  = function(target) refreshInstance(target._gid) end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 
