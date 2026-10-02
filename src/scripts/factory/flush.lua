@@ -3,7 +3,24 @@
 -- Sends "flush factory N" for N = 1..max_factories.  Success and empty-slot
 -- responses are handled by the flush triggers, which call back into
 -- f2t_factory_flush_next() to advance.  Completion reports how many slots were
--- actually cleared.
+-- actually cleared.  A watchdog aborts the sequence if a step gets no
+-- recognised response, so a missed line can't leave the flush stuck.
+
+local FLUSH_STEP_TIMEOUT = 10
+
+local function killFlushWatchdog()
+    if f2t_factory.flush_watchdog_id then
+        killTimer(f2t_factory.flush_watchdog_id)
+        f2t_factory.flush_watchdog_id = nil
+    end
+end
+
+function f2t_factory_flush_stop()
+    killFlushWatchdog()
+    f2t_factory.flushing       = false
+    f2t_factory.current_number = 0
+    f2t_factory.flush_count    = 0
+end
 
 function f2t_factory_start_flush()
     if f2t_factory.flushing then
@@ -39,6 +56,7 @@ function f2t_factory_flush_next()
         return
     end
 
+    killFlushWatchdog()
     f2t_factory.current_number = f2t_factory.current_number + 1
 
     if f2t_factory.current_number > f2t_factory.max_factories then
@@ -47,18 +65,29 @@ function f2t_factory_flush_next()
         return
     end
 
-    f2t_debug_log("[factory] Flushing factory %d", f2t_factory.current_number)
+    local number = f2t_factory.current_number
+    f2t_debug_log("[factory] Flushing factory %d", number)
 
-    send(string.format("flush factory %d", f2t_factory.current_number), false)
+    send(string.format("flush factory %d", number), false)
     deleteLine()
+
+    f2t_factory.flush_watchdog_id = tempTimer(FLUSH_STEP_TIMEOUT, function()
+        f2t_factory.flush_watchdog_id = nil
+        if not f2t_factory.flushing or f2t_factory.current_number ~= number then return end
+
+        local count = f2t_factory.flush_count
+        f2t_debug_log("[factory] No response flushing factory %d, aborting", number)
+        f2t_factory_flush_stop()
+        cecho(string.format(
+            "\n<red>[factory]<reset> No response flushing factory %d; flush stopped after %d cleared\n",
+            number, count))
+    end)
 end
 
 function f2t_factory_flush_complete()
     local count = f2t_factory.flush_count
 
-    f2t_factory.flushing       = false
-    f2t_factory.current_number = 0
-    f2t_factory.flush_count    = 0
+    f2t_factory_flush_stop()
 
     f2t_debug_log("[factory] Completed flushing %d factories", count)
 

@@ -43,6 +43,7 @@ f2t_factory = f2t_factory or {
     flushing          = false,
     flush_count       = 0,
     shutdown_timer_id = nil,
+    flush_watchdog_id = nil,
 }
 
 f2t_debug_log("[factory] Initialized (enabled=%s, auto_flush=%s)",
@@ -64,8 +65,7 @@ function f2t_factory_reset()
     f2t_factory.current_data   = {}
     f2t_factory.factories      = {}
     f2t_factory.capture_buffer = {}
-    f2t_factory.flushing       = false
-    f2t_factory.flush_count    = 0
+    f2t_factory_flush_stop()
     f2t_debug_log("[factory] Reset factory data")
 end
 
