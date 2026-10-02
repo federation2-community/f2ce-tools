@@ -181,7 +181,9 @@ local function showDetail(gid, id)
         -- AlignTop: without it the QLabel vertically-centers its HTML inside the
         -- tall (scrollable) body, forcing the reader to scroll down to find the
         -- content. Top-align so the detail starts at the top of the panel.
-        body:setStyleSheet("background-color: rgba(18,18,26,255); border: none; qproperty-alignment: AlignTop;")
+        -- wordWrap: QLabel clips long lines instead of wrapping them by default.
+        body:setStyleSheet("background-color: rgba(18,18,26,255); border: none;"
+            .. " qproperty-alignment: 'AlignLeft|AlignTop'; qproperty-wordWrap: true;")
 
         inst.detail = { box = box, accept = accept, body = body }
     end
