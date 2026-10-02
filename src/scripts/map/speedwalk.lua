@@ -328,6 +328,29 @@ function f2t_map_speedwalk_on_room_change()
                 end
                 movement_success = true
                 repointed = true
+            elseif from_room and current_room ~= from_room and roomExists(from_room) then
+                -- Same first-hand evidence for "board" and ordinary exits: a
+                -- stale import can point "board" at a placeholder landing, and
+                -- an in/out can cross into another area entirely.
+                local command = F2T_SPEEDWALK_LAST_COMMAND
+                local direction_num = f2t_map_direction_to_number(command)
+                if command == "board" then
+                    removeSpecialExit(from_room, command)
+                    addSpecialExit(from_room, current_room, command)
+                    repointed = true
+                elseif direction_num then
+                    setExit(from_room, current_room, direction_num)
+                    setExitStub(from_room, direction_num, false)
+                    repointed = true
+                end
+                if repointed then
+                    cecho(string.format(
+                        "\n<yellow>[map]<reset> '%s' actually arrives at room %d - map corrected\n",
+                        command, current_room))
+                    f2t_debug_log("[map] Repointed '%s' from room %s: %s -> %d",
+                        command, tostring(from_room), tostring(expected_room), current_room)
+                    movement_success = true
+                end
             end
         end
 

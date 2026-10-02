@@ -13,14 +13,13 @@ function f2t_map_explore_has_unlocked_stubs(area_id)
     return false
 end
 
--- Reachability-checked, not a raw flag scan: a stale duplicate room left
--- over from a system rebuild carries its flag just as readily as a live,
--- reachable one, and a scan that didn't tell them apart is what let a
--- "fully explored" verdict stand for a planet whose exchange nothing could
--- actually walk to (see f2t_map_find_room_with_flag).
-function f2t_map_explore_planet_has_flags(area_id, required_flags)
+-- Every required flag must sit on a room the planet's orbit can actually walk
+-- to: a stale import can leave the flagged rooms in a surface component that
+-- "board" never lands in, and a presence-only check calls that planet done.
+function f2t_map_explore_planet_has_reachable_flags(area_id, required_flags, orbit_room)
+    if not area_id or not orbit_room or not roomExists(orbit_room) then return false end
     for _, flag in ipairs(required_flags) do
-        if not f2t_map_find_room_with_flag(area_id, flag) then return false end
+        if not f2t_map_find_reachable_room_with_flag(area_id, flag, orbit_room) then return false end
     end
     return true
 end
@@ -78,7 +77,10 @@ function f2t_map_explore_is_system_fully_mapped(system_name)
             -- traffic) far more than their planets get deliberately landed
             -- on, so they hit this exact gap more than ordinary members do.
             if not planet_area_id then return false end
-            table.insert(orbit_rooms, {name = planet, area_id = planet_area_id})
+            table.insert(orbit_rooms, {
+                area_id = planet_area_id,
+                orbit_room = f2t_map_find_orbit_room(space_area_name, planet),
+            })
         end
     end
     if #orbit_rooms == 0 then return false end
@@ -87,7 +89,10 @@ function f2t_map_explore_is_system_fully_mapped(system_name)
         f2t_map_explore_default_required_flags(), system_name)
 
     for _, planet in ipairs(orbit_rooms) do
-        if not f2t_map_explore_planet_has_flags(planet.area_id, required_flags) then return false end
+        if not f2t_map_explore_planet_has_reachable_flags(planet.area_id, required_flags,
+                planet.orbit_room) then
+            return false
+        end
     end
     return true
 end

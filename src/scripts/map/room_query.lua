@@ -29,6 +29,19 @@ function f2t_map_find_room_with_flag(area_id, flag)
     return preferReachable(candidates)
 end
 
+-- Unlike f2t_map_find_room_with_flag, never falls back to an unreachable room.
+function f2t_map_find_reachable_room_with_flag(area_id, flag, from_room)
+    if not area_id or not from_room or not roomExists(from_room) then return nil end
+    local flag_key = string.format("fed2_flag_%s", flag)
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        if getRoomUserData(room_id, flag_key) == "true"
+           and (room_id == from_room or getPath(from_room, room_id)) then
+            return room_id
+        end
+    end
+    return nil
+end
+
 -- The interstellar link room of an area. A system has exactly one server-side
 -- (Galaxy::FindLink resolves a single link per star), but a map can hold more
 -- than one room flagged "link" for it - a stale duplicate from an earlier

@@ -274,7 +274,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         local brief_flags_found = {}
         local flags_already_found = 0
         for _, flag in ipairs(brief_flags) do
-            local existing_room = f2t_map_find_room_with_flag(current_area, flag)
+            local existing_room = f2t_map_find_reachable_room_with_flag(current_area, flag, current_room)
             if existing_room then
                 brief_flags_found[flag] = existing_room
                 flags_already_found = flags_already_found + 1

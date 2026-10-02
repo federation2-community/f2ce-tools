@@ -124,8 +124,10 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
                 local fully_explored = true
                 for planet_name in pairs(expected_planets_found_set) do
                     local planet_area_id = f2t_map_get_area_id(planet_name)
+                    local orbit_room = f2t_map_find_orbit_room(space_area_check, planet_name)
                     if not planet_area_id
-                       or not f2t_map_explore_planet_has_flags(planet_area_id, required_flags) then
+                       or not f2t_map_explore_planet_has_reachable_flags(planet_area_id, required_flags,
+                           orbit_room) then
                         fully_explored = false
                         break
                     end
@@ -411,19 +413,16 @@ function f2t_map_explore_system_space_complete()
         local already_explored = 0
         for _, planet in ipairs(planets) do
             local planet_area_id = f2t_map_get_area_id(planet.name)
-            local all_flags_found = false
-            if planet_area_id then
-                all_flags_found = true
-                for _, flag in ipairs(required_flags) do
-                    local skip_flag = flag == "exchange" and
-                        F2T_MAP_EXPLORE_STATE.planets_without_exchange and
-                        F2T_MAP_EXPLORE_STATE.planets_without_exchange[planet.name]
-                    if not skip_flag and not f2t_map_find_room_with_flag(planet_area_id, flag) then
-                        all_flags_found = false
-                        break
-                    end
-                end
+            local planet_flags = {}
+            for _, flag in ipairs(required_flags) do
+                local skip_flag = flag == "exchange" and
+                    F2T_MAP_EXPLORE_STATE.planets_without_exchange and
+                    F2T_MAP_EXPLORE_STATE.planets_without_exchange[planet.name]
+                if not skip_flag then table.insert(planet_flags, flag) end
             end
+            local all_flags_found = planet_area_id ~= nil
+                and f2t_map_explore_planet_has_reachable_flags(planet_area_id, planet_flags,
+                    planet.orbit_room_id)
             if all_flags_found then
                 already_explored = already_explored + 1
             else
