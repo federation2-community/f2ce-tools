@@ -850,10 +850,10 @@ f2t_settings_register("exchange", "show_icons", {
     default     = true,
 })
 
--- Re-render live when the icon setting flips.  Hooked once Mux is up; the
--- f2t settings layer has no onChange passthrough.
+-- Re-render live when the icon setting flips.  Re-hooked on every muxletReady
+-- because a Muxlet reload clears its onChange listeners.
 local function hookIconSetting()
-    if not (Mux and Mux.settings and Mux.settings.onChange) then return false end
+    if not (Mux and Mux.settings and Mux.settings.onChange) then return end
     Mux.settings.onChange("exchange", "show_icons", function()
         for _, inst in pairs(instances) do
             pcall(renderTickerHeader, inst)
@@ -861,11 +861,9 @@ local function hookIconSetting()
         end
         refreshAll()
     end)
-    return true
 end
 
-if not hookIconSetting() then
-    registerAnonymousEventHandler("muxletReady", hookIconSetting)
-end
+hookIconSetting()
+registerAnonymousEventHandler("muxletReady", hookIconSetting)
 
 if f2t_debug_log then f2t_debug_log("[exchange] content module loaded") end

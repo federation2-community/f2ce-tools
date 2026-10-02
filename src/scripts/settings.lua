@@ -4,9 +4,12 @@
 -- Calls are queued when Mux is not yet available and flushed by init.lua's
 -- muxletReady handler once Mux is ready.
 
-local _registry  = {}   -- {component → {key → config}}  (always maintained)
-local _localData = {}   -- fallback store when Mux unavailable
-local _pending   = {}   -- registrations queued before Mux loaded
+local _registry      = {}   -- {component → {key → config}}  (always maintained)
+local _localData     = {}   -- fallback store when Mux unavailable
+-- Every registration in call order. A Muxlet reload wipes its own registry, so
+-- the whole list is replayed on each muxletReady; order matters because a
+-- namespace's tab path comes from its first registration.
+local _registrations = {}
 
 -- ── f2t_settings proxy ───────────────────────────────────────────────────────
 -- Scripts that access f2t_settings.map.destinations directly (destinations.lua)
@@ -39,42 +42,38 @@ end
 
 -- ── Registration ─────────────────────────────────────────────────────────────
 
+local function registerWithMux(component, key, config)
+    Mux.settings.register(component, key, {
+        tab         = config.tab,
+        order       = config.order,
+        label       = config.label,
+        description = config.description,
+        default     = config.default,
+        choices     = config.choices,
+        min         = config.min,
+        max         = config.max,
+    })
+end
+
 function f2t_settings_register(component, key, config)
+    if not (_registry[component] and _registry[component][key]) then
+        table.insert(_registrations, {component = component, key = key})
+    end
     _registry[component] = _registry[component] or {}
     _registry[component][key] = config
 
     if Mux and Mux.settings and Mux.settings.register then
-        Mux.settings.register(component, key, {
-            tab         = config.tab,
-            order       = config.order,
-            label       = config.label,
-            description = config.description,
-            default     = config.default,
-            choices     = config.choices,
-            min         = config.min,
-            max         = config.max,
-        })
-    else
-        table.insert(_pending, {component = component, key = key, config = config})
+        registerWithMux(component, key, config)
     end
 end
 
--- Flush queued registrations — called from init.lua's muxletReady handler.
+-- Replay every registration into Mux.settings, called from f2tInit on each
+-- muxletReady. Mux.settings.register is idempotent per key.
 function f2t_settings_flush_registrations()
     if not (Mux and Mux.settings and Mux.settings.register) then return end
-    for _, reg in ipairs(_pending) do
-        Mux.settings.register(reg.component, reg.key, {
-            tab         = reg.config.tab,
-            order       = reg.config.order,
-            label       = reg.config.label,
-            description = reg.config.description,
-            default     = reg.config.default,
-            choices     = reg.config.choices,
-            min         = reg.config.min,
-            max         = reg.config.max,
-        })
+    for _, reg in ipairs(_registrations) do
+        registerWithMux(reg.component, reg.key, _registry[reg.component][reg.key])
     end
-    _pending = {}
 end
 
 -- ── Access ────────────────────────────────────────────────────────────────────
