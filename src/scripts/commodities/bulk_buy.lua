@@ -167,11 +167,12 @@ function f2t_bulk_buy_error(reason)
         cecho(string.format("\n<red>[bulk-buy]<reset> %s\n", reason))
     end
 
-    f2t_bulk_buy_finish()
+    f2t_bulk_buy_finish(reason)
 end
 
 -- Finish the bulk buy operation
-function f2t_bulk_buy_finish()
+-- @param error_msg: Optional failure reason passed through to the callback
+function f2t_bulk_buy_finish(error_msg)
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" then
         return
     end
@@ -199,6 +200,6 @@ function f2t_bulk_buy_finish()
     -- Programmatic mode: call callback with data
     else
         local status = bought > 0 and "success" or "failed"
-        callback(commodity, bought, status, nil)
+        callback(commodity, bought, status, error_msg)
     end
 end

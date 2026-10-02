@@ -78,30 +78,128 @@ end
 -- Source/Destination Resolution
 -- ========================================
 
---- Check if an owned planet can be a source for a deficit job
---- Looks for the commodity on owned planets where stock > 0
---- @param commodity string Commodity name
---- @param target_planet string Planet with the deficit (skip this one)
---- @param planet_exchange_data table Exchange data for all owned planets
---- @return string|nil Planet name that has stock, or nil
---- @return string|nil System name
-local function find_owned_source(commodity, target_planet, planet_exchange_data)
-    local commodity_lower = string.lower(commodity)
+local LOT_TONS = 75
 
-    for planet, exchange_data in pairs(planet_exchange_data) do
-        if planet ~= target_planet then
-            for _, item in ipairs(exchange_data) do
-                if string.lower(item.name) == commodity_lower and
-                   item.stock_current and item.stock_current > 0 then
-                    f2t_debug_log("[hauling/po-queue] Found owned source for %s: %s (stock: %d)",
-                        commodity, planet, item.stock_current)
-                    return planet, F2T_HAULING_STATE.po_current_system
+--- Per-ton price an exchange charges a buyer (fed2 CommodityExchItem::FinalPrice, SELL side)
+local function ownedOfferPrice(item)
+    return math.floor(item.value * (100 + math.floor(item.spread / 2)) / 100)
+end
+
+local function sourceKey(planet, commodity)
+    return planet .. "|" .. string.lower(commodity)
+end
+
+--- Collect candidate sources for a deficit job
+--- An exchange only sells while stock >= min + 75, and offers (stock - min) tons.
+--- @param job table Deficit job (commodity, sell_planet)
+--- @param planetExchangeData table Exchange data for owned planets
+--- @param cartelData table|nil Parsed price check ({sell=..., buy=...}); fresher than owned data where listed
+--- @param excluded table|nil Set of planet names to skip
+--- @return table Array of {planet, system, price, available, owned}
+local function collectDeficitSources(job, planetExchangeData, cartelData, excluded)
+    local candidates = {}
+    local byPlanet = {}
+
+    local function add(planet, system, price, available, owned)
+        if planet == job.sell_planet or (excluded and excluded[planet]) or byPlanet[planet] then
+            return
+        end
+        local candidate = {planet = planet, system = system, price = price, available = available, owned = owned}
+        byPlanet[planet] = candidate
+        table.insert(candidates, candidate)
+    end
+
+    local listed = {}
+    if cartelData then
+        for _, seller in ipairs(cartelData.sell or {}) do
+            listed[seller.planet] = true
+            add(seller.planet, seller.system, seller.price, seller.quantity,
+                planetExchangeData[seller.planet] ~= nil)
+        end
+        for _, buyer in ipairs(cartelData.buy or {}) do
+            listed[buyer.planet] = true
+        end
+    end
+
+    local commodityLower = string.lower(job.commodity)
+    for planet, exchangeData in pairs(planetExchangeData) do
+        if not listed[planet] then
+            for _, item in ipairs(exchangeData) do
+                if string.lower(item.name) == commodityLower and item.stock_current and item.stock_min
+                   and item.value and item.spread then
+                    add(planet, F2T_HAULING_STATE.po_current_system, ownedOfferPrice(item),
+                        item.stock_current - item.stock_min, true)
                 end
             end
         end
     end
 
-    return nil, nil
+    return candidates
+end
+
+--- Pick the best source for a deficit job, preferring one that covers the whole job
+--- @param candidates table From collectDeficitSources
+--- @param job table Deficit job
+--- @param reserved table {[sourceKey] = tons} already promised to earlier jobs
+--- @return table|nil Chosen candidate
+--- @return number Tons to reserve against it
+local function pickDeficitSource(candidates, job, reserved)
+    local minSourceStock = tonumber(f2t_settings_get("hauling", "po_min_source_stock")) or 0
+    local preferOwned = f2t_settings_get("hauling", "po_prefer_owned_sources") and true or false
+    local tonsNeeded = job.lots * LOT_TONS
+
+    table.sort(candidates, function(a, b)
+        if preferOwned and a.owned ~= b.owned then
+            return a.owned
+        end
+        if a.price ~= b.price then
+            return a.price < b.price
+        end
+        return a.available > b.available
+    end)
+
+    -- Pass 1 needs the whole job; pass 2 settles for a partial load
+    for _, required in ipairs({tonsNeeded, LOT_TONS}) do
+        for _, candidate in ipairs(candidates) do
+            local free = candidate.available - (reserved[sourceKey(candidate.planet, job.commodity)] or 0)
+            if candidate.available >= minSourceStock and free >= required then
+                return candidate, math.min(free, tonsNeeded)
+            end
+        end
+    end
+
+    return nil, 0
+end
+
+local function assignDeficitSource(job, candidate, tons, reserved)
+    job.buy_planet = candidate.planet
+    job.buy_system = candidate.system
+    job.resolved = true
+    local key = sourceKey(candidate.planet, job.commodity)
+    reserved[key] = (reserved[key] or 0) + tons
+    f2t_debug_log("[hauling/po-queue] Deficit %s sourced from %s%s at %d ig/ton (%d tons for sale, reserving %d)",
+        job.commodity, candidate.planet, candidate.owned and " (owned)" or "", candidate.price,
+        candidate.available, tons)
+end
+
+--- Find a fresh source for a deficit job whose buy failed, skipping sources already tried
+--- @param job table Deficit job; job.failedSources is a set of planet names
+--- @param callback function Called with true when the job was re-sourced, false otherwise
+function f2t_po_hauling_resource_job(job, callback)
+    f2t_price_check_commodity(job.commodity, function(_commodityName, parsedData, _analysis)
+        if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+            return
+        end
+        local candidates = collectDeficitSources(job, F2T_HAULING_STATE.po_planet_exchange_data or {},
+            parsedData, job.failedSources)
+        local candidate, tons = pickDeficitSource(candidates, job, {})
+        if candidate then
+            assignDeficitSource(job, candidate, tons, {})
+            callback(true)
+        else
+            callback(false)
+        end
+    end)
 end
 
 --- Check if an owned planet can be a destination for an excess job
@@ -144,6 +242,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
 
     local resolved_jobs = {}
     local resolve_index = 0
+    local reserved = {}
 
     local function resolve_next()
         resolve_index = resolve_index + 1
@@ -163,56 +262,41 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
             resolve_index, #jobs, job.type, job.commodity, job.target_planet)
 
         if job.type == "deficit" then
-            -- Deficit: need a source (where to buy)
-            local source_planet, source_system = find_owned_source(
-                job.commodity, job.target_planet, planet_exchange_data)
-
-            if source_planet then
-                job.buy_planet = source_planet
-                job.buy_system = source_system
-                job.resolved = true
-                table.insert(resolved_jobs, job)
-                f2t_debug_log("[hauling/po-queue] Deficit resolved from owned planet: %s", source_planet)
-                resolve_next()
-            else
-                -- Fall back to cartel price check
-                f2t_debug_log("[hauling/po-queue] No owned source for %s, checking cartel", job.commodity)
-                f2t_price_check_commodity(job.commodity, function(_commodity_name, _parsed_data, analysis)
-                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                        return
-                    end
-
-                    -- top_sell = exchanges selling (where we buy), skip same planet as sell destination
-                    local found = false
-                    if analysis and analysis.top_sell then
-                        for _, candidate in ipairs(analysis.top_sell) do
-                            if candidate.planet ~= job.sell_planet then
-                                job.buy_planet = candidate.planet
-                                job.buy_system = candidate.system
-                                job.resolved = true
-                                table.insert(resolved_jobs, job)
-                                f2t_debug_log("[hauling/po-queue] Deficit resolved from cartel: %s:%s",
-                                    candidate.system, candidate.planet)
-                                found = true
-                                break
-                            else
-                                f2t_debug_log("[hauling/po-queue] Skipping %s (same as sell planet)", candidate.planet)
-                            end
-                        end
-                    end
-                    if not found then
-                        f2t_debug_log("[hauling/po-queue] No source found for %s, skipping",
-                            job.commodity)
-                        cecho(string.format(
-                            "\n<yellow>[hauling]<reset> No source found for %s deficit on %s, skipping\n",
-                            job.commodity, job.target_planet))
-                    end
-
-                    tempTimer(0.3, function()
-                        resolve_next()
-                    end)
-                end)
+            -- Deficit: need a source (where to buy). Owned-first mode skips the
+            -- price check when an owned planet can cover the job.
+            if f2t_settings_get("hauling", "po_prefer_owned_sources") then
+                local ownedCandidates = collectDeficitSources(job, planet_exchange_data, nil, nil)
+                local candidate, tons = pickDeficitSource(ownedCandidates, job, reserved)
+                if candidate and tons >= job.lots * LOT_TONS then
+                    assignDeficitSource(job, candidate, tons, reserved)
+                    table.insert(resolved_jobs, job)
+                    resolve_next()
+                    return
+                end
             end
+
+            f2t_debug_log("[hauling/po-queue] Checking cartel sources for %s", job.commodity)
+            f2t_price_check_commodity(job.commodity, function(_commodityName, parsedData, _analysis)
+                if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
+                    return
+                end
+
+                local candidates = collectDeficitSources(job, planet_exchange_data, parsedData, nil)
+                local candidate, tons = pickDeficitSource(candidates, job, reserved)
+                if candidate then
+                    assignDeficitSource(job, candidate, tons, reserved)
+                    table.insert(resolved_jobs, job)
+                else
+                    f2t_debug_log("[hauling/po-queue] No source found for %s, skipping", job.commodity)
+                    cecho(string.format(
+                        "\n<yellow>[hauling]<reset> No source found for %s deficit on %s, skipping\n",
+                        job.commodity, job.target_planet))
+                end
+
+                tempTimer(0.3, function()
+                    resolve_next()
+                end)
+            end)
 
         elseif job.type == "excess" then
             -- Excess: need a destination (where to sell)

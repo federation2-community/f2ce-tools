@@ -169,6 +169,26 @@ f2t_settings_register("hauling", "po_excess_threshold", {
     min = 750, max = 20000,
 })
 
+f2t_settings_register("hauling", "po_prefer_owned_sources", {
+    label       = "Prefer owned sources",
+    description = "Source deficits from your own planets first; off = buy wherever is cheapest in the cartel",
+    default     = true,
+})
+
+f2t_settings_register("hauling", "po_min_source_stock", {
+    label       = "Min source stock (tons)",
+    description = "Skip deficit sources with fewer tons for sale than this (0 = any that can fill a lot)",
+    default     = 0,
+    min = 0, max = 20000,
+})
+
+f2t_settings_register("hauling", "po_max_resource_attempts", {
+    label       = "Max re-source attempts",
+    description = "Alternative sources to try when a deficit buy gets nothing before skipping the job",
+    default     = 2,
+    min = 0, max = 10,
+})
+
 f2t_settings_register("hauling", "po_max_sell_attempts", {
     label       = "Max sell attempts",
     description = "Maximum sell locations to try before jettisoning cargo",

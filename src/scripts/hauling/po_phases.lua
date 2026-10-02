@@ -334,7 +334,27 @@ function f2t_hauling_phase_po_buy()
         if status == "error" or lots_bought == 0 then
             cecho(string.format("\n<red>[hauling]<reset> Buy failed for %s: %s\n",
                 commodity, error_msg or "unknown error"))
-            -- Skip this job, move to next
+
+            local maxResourceAttempts = tonumber(f2t_settings_get("hauling", "po_max_resource_attempts")) or 2
+            if job.type == "deficit" and (job.resourceAttempts or 0) < maxResourceAttempts then
+                job.resourceAttempts = (job.resourceAttempts or 0) + 1
+                job.failedSources = job.failedSources or {}
+                job.failedSources[job.buy_planet] = true
+                f2t_po_hauling_resource_job(job, function(found)
+                    if found then
+                        cecho(string.format("\n<green>[hauling]<reset> Re-sourcing %s from <cyan>%s exchange<reset>\n",
+                            commodity, job.buy_planet))
+                        f2t_hauling_transition("po_navigating_to_buy")
+                    else
+                        cecho(string.format("\n<yellow>[hauling]<reset> No other source for %s, skipping job\n",
+                            commodity))
+                        F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
+                        f2t_hauling_phase_po_next_job()
+                    end
+                end)
+                return
+            end
+
             F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
             f2t_hauling_phase_po_next_job()
             return
