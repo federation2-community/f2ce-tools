@@ -15,6 +15,7 @@ if f2t_handle_help("haul", args) then return end
 local subcommand = string.lower(args):match("^(%S+)")
 
 if subcommand == "start" then
+    if f2tControlBlocks("Hauling") then return end
     local rest = args:match("^%S+%s+(%S+)")
     f2t_hauling_start(rest)
 

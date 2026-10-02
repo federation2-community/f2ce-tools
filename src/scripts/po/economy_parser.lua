@@ -1,9 +1,14 @@
 -- Parser for exchange and production game output
--- Exchange output wraps each commodity across two lines:
+-- Exchange output is one line per commodity, which the server wraps after
+-- "Efficiency:" at narrow terminal widths:
 --   Line 1: "  Alloys: value 137ig/ton  Spread: 20%   Stock: current 800/min 100/max 800  Efficiency:"
 --   Line 2: "105%  Net: 44"
 -- Production output is one line per commodity:
 --   "  Alloys: production 45, consumption 1 (44), efficiency 105%"
+
+local EXCHANGE_LINE = "^%s+(.-):%s+value%s+(%d+)ig/ton%s+Spread:%s+(%d+)%%%s+Stock:%s+current%s+"
+    .. "(%-?%d+)/min%s+(%-?%d+)/max%s+(%-?%d+)%s+Efficiency:%s*(.*)$"
+local EFFICIENCY_NET = "^(%d+)%%%s+Net:%s+(%-?%d+)"
 
 --- Parse exchange buffer into structured data
 --- @param buffer table Array of captured lines
@@ -13,42 +18,32 @@ function f2t_po_parse_exchange_buffer(buffer)
     local i = 1
 
     while i <= #buffer do
-        local line1 = buffer[i]
-
-        -- Match line 1: commodity data ending with "Efficiency:"
-        local name, value, spread, stock_cur, stock_min, stock_max =
-            line1:match(
-                "^%s+(.-):%s+value%s+(%d+)ig/ton%s+Spread:%s+(%d+)%%%s+Stock:%s+current%s+" ..
-                "(%-?%d+)/min%s+(%-?%d+)/max%s+(%-?%d+)%s+Efficiency:")
-
-        if name and i + 1 <= #buffer then
-            -- Match line 2: efficiency and net
-            local line2 = buffer[i + 1]
-            local efficiency, net = line2:match("^(%d+)%%%s+Net:%s+(%-?%d+)")
-
-            if efficiency then
-                table.insert(results, {
-                    name = name,
-                    value = tonumber(value),
-                    spread = tonumber(spread),
-                    stock_current = tonumber(stock_cur),
-                    stock_min = tonumber(stock_min),
-                    stock_max = tonumber(stock_max),
-                    efficiency = tonumber(efficiency),
-                    net = tonumber(net)
-                })
-                i = i + 2
-            else
-                f2t_debug_log("[po] Failed to parse exchange line 2: %s", line2)
-                i = i + 1
+        local name, value, spread, stockCurrent, stockMin, stockMax, rest = buffer[i]:match(EXCHANGE_LINE)
+        local consumed = 1
+        local efficiency, net
+        if name then
+            efficiency, net = rest:match(EFFICIENCY_NET)
+            if not efficiency and buffer[i + 1] then
+                efficiency, net = buffer[i + 1]:match(EFFICIENCY_NET)
+                if efficiency then consumed = 2 end
             end
-        else
-            -- Unmatched line, skip
-            if name then
-                f2t_debug_log("[po] Exchange line 1 matched but no line 2 available")
-            end
-            i = i + 1
         end
+
+        if efficiency then
+            table.insert(results, {
+                name = name,
+                value = tonumber(value),
+                spread = tonumber(spread),
+                stock_current = tonumber(stockCurrent),
+                stock_min = tonumber(stockMin),
+                stock_max = tonumber(stockMax),
+                efficiency = tonumber(efficiency),
+                net = tonumber(net)
+            })
+        elseif name then
+            f2t_debug_log("[po] Exchange line for %s has no efficiency/net", name)
+        end
+        i = i + consumed
     end
 
     f2t_debug_log("[po] Parsed %d commodities from exchange data", #results)

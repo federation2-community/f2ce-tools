@@ -86,6 +86,7 @@ f2t_register_help("f2t", {
         {cmd = "f2t mode", desc = "Re-pick a startup mode (Full/BYOW/Minimal)"},
         {cmd = "f2t settings", desc = "Manage system settings"},
         {cmd = "f2t chat wipe", desc = "Wipe chat history and re-fetch comhistory"},
+        {cmd = "f2t control [release]", desc = "Show or take back control from a scripting package"},
         {cmd = "", desc = ""},
         {cmd = "Components:", desc = ""},
         {cmd = "map help", desc = "Auto-mapping, navigation, destinations"},
@@ -134,6 +135,20 @@ f2t_register_help("f2t settings", {
         "",
         "factory settings                        # Factory component settings",
         "price settings set results_count 10     # Commodities component settings"
+    }
+})
+
+f2t_register_help("f2t control", {
+    description = "See or take back control from another package (bot) driving f2ce-tools",
+    usage = {
+        {cmd = "f2t control", desc = "Show which package holds control, if any"},
+        {cmd = "f2t control release", desc = "Take control back and stop any walk in progress"},
+        {cmd = "", desc = ""},
+        {cmd = "While a package holds control,", desc = "haul start, map explore and nav are refused"}
+    },
+    examples = {
+        "f2t control           # Who is driving?",
+        "f2t control release   # Stop the bot and take over"
     }
 })
 

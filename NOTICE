@@ -1,0 +1,53 @@
+f2ce-tools
+Copyright (C) 2025-2026 tmtocloud and the f2ce-tools contributors
+
+f2ce-tools is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 2 only, as published by
+the Free Software Foundation. See LICENSE for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for details.
+
+-------------------------------------------------------------------------------
+Licensing history
+-------------------------------------------------------------------------------
+
+Versions up to and including 3.3.1 were released under the MIT License.
+Starting with 3.4.0 the project is licensed under GPL-2.0-only so that it can
+include code derived from Exchange Walker Live (see below). Code released
+under the MIT License before 3.4.0 remains available under those terms; the
+original notice is reproduced here as that license requires:
+
+    MIT License
+
+    Copyright (c) 2025 ping65510
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+-------------------------------------------------------------------------------
+Third-party code
+-------------------------------------------------------------------------------
+
+Exchange Walker Live
+  https://github.com/ralphcma/fed2-exchange-walker-live
+  Copyright (C) 2026 Exchange Walker Live contributors (Ersella / ralphcma)
+  License: GPL-2.0-only
+  Used in: src/scripts/po/stockpile.lua (stockpile planning policy and the
+  order in which min/max changes are sent)

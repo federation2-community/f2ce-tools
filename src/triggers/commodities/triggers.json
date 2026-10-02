@@ -112,10 +112,28 @@
     ]
   },
   {
+    "name": "sell_error_restricted",
+    "patterns": [
+      {
+        "pattern": "^This exchange is currently restricted from non-deficit commodity sales",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "sell_customs",
+    "patterns": [
+      {
+        "pattern": "^The .+ cartel deducts ([\\d,]+)ig customs from the [\\d,]+ig sale proceeds",
+        "type": "regex"
+      }
+    ]
+  },
+  {
     "name": "sell_success",
     "patterns": [
       {
-        "pattern": "^75 tons of (.+) sold to the exchange for ([\\d,]+)ig",
+        "pattern": "^75 tons of (.+) sold (?:to the exchange )?for ([\\d,]+)ig",
         "type": "regex"
       }
     ]

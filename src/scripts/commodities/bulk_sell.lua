@@ -290,18 +290,27 @@ function f2t_bulk_sell_next()
     end
     F2T_BULK_STATE.batchPending = count
     F2T_BULK_STATE.batchId = (F2T_BULK_STATE.batchId or 0) + 1
+    F2T_BULK_STATE.pendingCustoms = 0
 
     f2t_debug_log("[bulk-sell] Sending '%s' (%d remaining)", command, F2T_BULK_STATE.remaining)
     send(command, false)
     f2t_bulk_watchdog_start()
 end
 
--- Count one confirmed sale; called synchronously from the trigger so an error line
+-- Hold a cartel customs deduction for the sale line that follows it
+function f2t_bulk_sell_customs(duty)
+    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
+        return
+    end
+    F2T_BULK_STATE.pendingCustoms = duty
+end
+
+-- Count one confirmed sale (revenue net of any customs); called synchronously from the trigger so an error line
 -- later in the same packet sees the confirmed total
 -- @param commodity: Commodity name from trigger
--- @param revenue_per_ton: Revenue per ton from trigger
--- @param revenue_total: Total revenue for this lot from trigger
-function f2t_bulk_sell_success(_commodity, revenue_per_ton, revenue_total)
+-- @param _revenuePerTonGross: Gross revenue per ton from trigger (recomputed net)
+-- @param revenue_total: Gross revenue for this lot from trigger
+function f2t_bulk_sell_success(_commodity, _revenuePerTonGross, revenue_total)
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" or F2T_BULK_STATE.batchPending <= 0 then
         return
     end
@@ -313,6 +322,9 @@ function f2t_bulk_sell_success(_commodity, revenue_per_ton, revenue_total)
     end
 
     if revenue_total then
+        revenue_total = revenue_total - (F2T_BULK_STATE.pendingCustoms or 0)
+        local revenue_per_ton = math.floor(revenue_total / 75)
+        F2T_BULK_STATE.pendingCustoms = 0
         F2T_BULK_STATE.total_revenue = F2T_BULK_STATE.total_revenue + revenue_total
         F2T_BULK_STATE.lots_sold = F2T_BULK_STATE.lots_sold + 1
         f2t_debug_log("[bulk-sell] Sale confirmed: %d ig/ton, %d ig total (%d left in batch, %d remaining)",

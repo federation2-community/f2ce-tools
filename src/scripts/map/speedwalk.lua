@@ -200,6 +200,15 @@ local function resetSpeedwalkState(result, abandonCircuit)
     F2T_SPEEDWALK_REFUSALS             = 0
     F2T_SPEEDWALK_NAV_REQUEST          = nil
     f2t_map_clear_nav_owner()
+
+    -- Deferred so a recovery leg started by this teardown is already running;
+    -- settled is false when navigation is still working toward the destination.
+    local finishedRoom = F2T_MAP_CURRENT_ROOM_ID
+    tempTimer(0, function()
+        local settled = not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING
+            and not (F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active)
+        raiseEvent("f2tSpeedwalkFinished", result, finishedRoom, settled)
+    end)
 end
 
 function f2t_map_speedwalk_complete()

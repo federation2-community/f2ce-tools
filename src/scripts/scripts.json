@@ -9,6 +9,7 @@
   {"name": "char"},
   {"name": "player_db"},
   {"name": "rank"},
+  {"name": "control"},
   {"name": "status"},
   {"name": "mudlet_env"},
   {"name": "init"}

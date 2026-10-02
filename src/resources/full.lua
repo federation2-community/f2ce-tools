@@ -41,6 +41,15 @@ Mux.createDeclarativeCondition({
 })
 Mux.createDeclarativeCondition({
     cond = {
+        path = "gmcp.char.vitals.rank",
+        type = "gmcp_contains",
+        values = "Founder,Engineer,Mogul,Technocrat,Gengineer,Magnate,Plutocrat,Syndicrat"
+    },
+    id = "PlanetOwnerRanks",
+    label = "PlanetOwnerRanks"
+})
+Mux.createDeclarativeCondition({
+    cond = {
         path = "gmcp.char.vitals.tools.remote-access-cert",
         type = "gmcp_exists"
     },
@@ -803,6 +812,47 @@ Mux.registerWorkspace("f2ce-tools", {
                                 }
                             },
                             tabsLocked = true
+                        },
+                        {
+                            _activeContent = "fed2_stockpiles",
+                            closeable = false,
+                            contentState = {},
+                            contentable = false,
+                            movable = true,
+                            name = "Stockpiles",
+                            nameAlign = "center",
+                            propertiesButton = false,
+                            renamable = false,
+                            rules = {
+                                {
+                                    act = "mux.showSelf",
+                                    actElse = "mux.hideSelf",
+                                    cond = {
+                                        ref = "PlanetOwnerRanks"
+                                    },
+                                    enabled = true,
+                                    id = "r32"
+                                },
+                                {
+                                    act = "mux.overlay.disconnected.show",
+                                    actElse = "mux.overlay.disconnected.hide",
+                                    cond = {
+                                        ref = "disconnected"
+                                    },
+                                    enabled = true,
+                                    id = "r33"
+                                },
+                                {
+                                    act = "mux.overlay.connecting.show",
+                                    actElse = "mux.overlay.connecting.hide",
+                                    cond = {
+                                        ref = "connecting"
+                                    },
+                                    enabled = true,
+                                    id = "r34"
+                                }
+                            },
+                            visible = false
                         },
                         {
                             _activeContent = "fed2_price_checker",

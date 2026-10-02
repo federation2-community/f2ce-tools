@@ -82,6 +82,24 @@ elseif subcommand == "mode" then
         cecho("\n<red>[f2t]<reset> Mode selection isn't available right now.\n")
     end
 
+elseif subcommand == "control" then
+    local controlArgs = string.lower(args:match("^control%s*(.*)") or "")
+    if f2t_handle_help("f2t control", controlArgs) then return end
+
+    if controlArgs == "" or controlArgs == "status" then
+        f2tControlShowStatus()
+    elseif controlArgs == "release" then
+        local owner = f2tControlOwner()
+        if f2tControlRevoke("player") then
+            cecho(string.format("\n<green>[f2t]<reset> Took control back from <cyan>%s<reset>\n", owner))
+        else
+            cecho("\n<yellow>[f2t]<reset> No package holds control\n")
+        end
+    else
+        cecho(string.format("\n<red>[f2t]<reset> Unknown control option: %s\n", controlArgs))
+        f2t_show_help_hint("f2t control")
+    end
+
 elseif subcommand == "version" then
     local info = getPackageInfo("f2ce-tools")
     cecho(string.format(
@@ -94,6 +112,8 @@ elseif subcommand == "credits" then
     cecho("  <cyan>Swift (Ohmi02/Fed2)<reset> — original idea for the multi-window UI layout, later merged in\n")
     cecho("  <cyan>tmtocloud (jackrungh)<reset> — took over maintenance, merged in the UI layout,\n")
     cecho("    and rewrote most of the codebase\n")
+    cecho("  <cyan>Ersella (ralphcma)<reset> — Exchange Walker, the planner behind Stockpiles,\n")
+    cecho("    plus sale-receipt and mapper fixes\n")
 
 else
     cecho(string.format("\n<red>[f2t]<reset> Unknown command: %s\n", subcommand))

@@ -14,5 +14,6 @@
   {"name": "price_checker"},
   {"name": "company"},
   {"name": "futures"},
-  {"name": "exchange"}
+  {"name": "exchange"},
+  {"name": "stockpiles"}
 ]

@@ -21,7 +21,7 @@ F2CE-Tools installs [Muxlet](https://github.com/tmtocloud/Muxlet) automatically 
 
 On first load F2CE-Tools asks how you'd like Muxlet to start. Pick whichever fits how you play — you're not locked in, and every command/alias works the same regardless of mode:
 
-- **Full (recommended)** — loads the ready-made f2ce-tools workspace (output pane and map side by side, plus the panels below) automatically every session. Some panels appear only when they're relevant to you: the Company tab only shows at Industrialist rank and above, its Investment sub-tab only at Financier, and the Exchange pane swaps itself to Futures Market depending on your rank and room — all driven by Muxlet's condition/rule engine, no manual toggling needed.
+- **Full (recommended)** — loads the ready-made f2ce-tools workspace (output pane and map side by side, plus the panels below) automatically every session. Some panels appear only when they're relevant to you: the Company tab only shows at Industrialist rank and above, its Investment sub-tab only at Financier, the Stockpiles tab only at Founder and above, and the Exchange pane swaps itself to Futures Market depending on your rank and room — all driven by Muxlet's condition/rule engine, no manual toggling needed.
 - **Build Your Own Workspace (BYOW)** — Muxlet starts on a blank canvas with every F2CE-Tools panel registered and ready to drop into any pane or tab from its **Content Library**. Same building blocks as Full, but you lay them out yourself — and if you want the same rank- or room-based show/hide behavior Full gets for free, you can wire it up with your own Muxlet condition rules.
 - **Minimal** — no changes to your Mudlet layout at all. Run `mux start` any time later (then `mux workspace load f2ce-tools` for the full layout) if you change your mind.
 
@@ -45,7 +45,7 @@ Rank-aware automated commodity trading: analyzes exchange prices, buys low, sell
 Status table for all your factories, one-command flush-to-market, and settings for automatic pre-reset flushing.
 
 **Planet Owner Tools** (`po`)
-Exchange economy breakdowns for your planets, filterable by commodity group.
+Exchange economy breakdowns for your planets, filterable by commodity group, and a stockpile manager (`po stockpile`) that plans each commodity's min/max stock and spread from its net production, shows the changes for review, and applies them one confirmed command at a time, on demand or on a timer across a list of your planets.
 
 **Commodities** (`bb`, `bs`, `price`)
 Bulk buy/sell at the exchange and cross-cartel price analysis to find the best deals.
@@ -72,12 +72,22 @@ With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 - **Commodities** — reference table of names, codes, and base prices
 - **Cargo** — live ship manifest
 - **Hauling Jobs** — Armstrong Cuthbert job board with route distance and effective pay
+- **Stockpiles** — preview and apply planned stock levels and spreads for your planets' exchanges (Founder+)
 - **Player Info** — rank, fuel, stamina, groats, slithies, and hold at a glance
 - **Chat** — com/say/tell history with filters and timestamps
 - **Who** / **Local Players** — online and in-room player lists
+
+## Scripting F2CE-Tools from another package
+
+Another Mudlet package can drive F2CE-Tools by calling its functions directly and claiming control so the player's own commands don't start a competing automation underneath it. See [docs/SCRIPTING.md](docs/SCRIPTING.md).
 
 ## Acknowledgments
 
 - **Colborn (ping65510)** — original creator of F2CE-Tools.
 - **Swift ([Ohmi02/Fed2](https://github.com/Ohmi02/Fed2/))** — original idea for the multi-window UI layout (exchange/stats/mapper/chat split panes), later merged into F2CE-Tools.
 - **tmtocloud (jackrungh)** — took over maintenance from Colborn, merged in Swift's UI layout, and has since rewritten most of the codebase.
+- **Ersella ([ralphcma](https://github.com/ralphcma))** — [Exchange Walker](https://github.com/ralphcma/fed2-exchange-walker-live), whose planning policy the stockpile manager is built on, plus sale-receipt and mapper fixes.
+
+## License
+
+F2CE-Tools is licensed under the [GNU General Public License v2.0 only](LICENSE) from version 3.4.0. Earlier releases were MIT-licensed; see [NOTICE](NOTICE) for the licensing history and third-party attributions.

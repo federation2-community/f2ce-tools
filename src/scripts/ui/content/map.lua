@@ -54,6 +54,9 @@ local function mapperAcquire(slotContent)
         x      = "0%", y = "0%",
         width  = "100%", height = "100%",
     }, slotContent)
+    -- Deleting the slot recursively deletes its children, which would reach
+    -- closeMapWidget() through this wrapper; releaseLive() handles hiding.
+    liveMapper.type_delete = function() end
     f2t_debug_log("[map content] mapperAcquire #%d: Geyser.Mapper:new (createMapper) took %.0fms",
         mapperSeq, (os.clock() - tCreateStart) * 1000)
 

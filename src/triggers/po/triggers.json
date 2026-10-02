@@ -64,5 +64,52 @@
         "type": "substring"
       }
     ]
+  },
+  {
+    "name": "stockpile_ack",
+    "patterns": [
+      {
+        "pattern": "^(Max|Min) stock level for (\\S+) on .+ set to ([\\d,]+) tons\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "spread_ack",
+    "patterns": [
+      {
+        "pattern": "^Price spread for (\\S+) on .+ set to (\\d+)%\\.$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "stockpile_error",
+    "patterns": [
+      {
+        "pattern": "^You don't own the exchange on this planet!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^.+ exchange doesn't sell .+!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^That doesn't seem to (?:be )?either a commodity(?: group)?, or the name of a planet!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need somewhere with an exchange to set the",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need to specify a commodity",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You haven't given me enough information to make changes to the stockpiles\\.$",
+        "type": "regex"
+      }
+    ]
   }
 ]

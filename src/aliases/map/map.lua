@@ -167,6 +167,9 @@ handlers["explore"] = function()
 
     if f2t_handle_help("map explore", rest) then return end
 
+    local controlFree = { stop = true, pause = true, resume = true, status = true, suspected = true, reset = true }
+    if not controlFree[string.lower(rest:match("^(%S*)"))] and f2tControlBlocks("Exploration") then return end
+
     if rest == "" then
         f2t_map_explore_start("brief")
         return

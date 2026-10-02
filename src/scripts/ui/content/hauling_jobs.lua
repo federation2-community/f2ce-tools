@@ -178,7 +178,9 @@ end
 local function haulMenuItems(snap)
     if not snap.active then
         return {
-            { label = "▶ Start", action = function() f2t_hauling_start() end },
+            { label = "▶ Start", action = function()
+                if not f2tControlBlocks("Hauling") then f2t_hauling_start() end
+            end },
         }
     end
 
