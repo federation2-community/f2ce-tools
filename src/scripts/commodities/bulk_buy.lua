@@ -91,6 +91,7 @@ function f2t_bulk_buy_start(commodity, requested_lots, callback)
     F2T_BULK_STATE.commodity = commodity
     F2T_BULK_STATE.remaining = lots_to_buy
     F2T_BULK_STATE.total = lots_to_buy
+    F2T_BULK_STATE.batchPending = 0
     F2T_BULK_STATE.callback = callback
 
     -- Only show user feedback in user mode
@@ -99,12 +100,12 @@ function f2t_bulk_buy_start(commodity, requested_lots, callback)
             lots_to_buy, commodity, lots_to_buy * 75))
     end
 
-    -- Send first buy command
     f2t_bulk_buy_next()
     return true
 end
 
--- Send the next buy command
+-- Send the next counted buy command, never for more bays than the hold was confirmed to have free:
+-- the server keeps charging for every bay in a counted buy even once the hold is full
 function f2t_bulk_buy_next()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" then
         return
@@ -115,40 +116,59 @@ function f2t_bulk_buy_next()
         return
     end
 
-    f2t_debug_log("[bulk-buy] Sending buy command (%d remaining)", F2T_BULK_STATE.remaining)
-    send(string.format("buy %s", string.lower(F2T_BULK_STATE.commodity)), false)
+    local count = math.min(F2T_BULK_STATE.remaining, F2T_BULK_MAX_BATCH)
+    F2T_BULK_STATE.batchPending = count
+    F2T_BULK_STATE.batchId = (F2T_BULK_STATE.batchId or 0) + 1
+
+    f2t_debug_log("[bulk-buy] Sending buy %s %d (%d remaining)",
+        F2T_BULK_STATE.commodity, count, F2T_BULK_STATE.remaining)
+    send(string.format("buy %s %d", string.lower(F2T_BULK_STATE.commodity), count), false)
     f2t_bulk_watchdog_start()
 end
 
--- Handle successful buy
+-- Count one confirmed purchase; called synchronously from the trigger so an error line
+-- later in the same packet sees the confirmed total
 function f2t_bulk_buy_success()
-    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" then
+    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" or F2T_BULK_STATE.batchPending <= 0 then
+        return
+    end
+
+    F2T_BULK_STATE.remaining = F2T_BULK_STATE.remaining - 1
+    F2T_BULK_STATE.batchPending = F2T_BULK_STATE.batchPending - 1
+    f2t_debug_log("[bulk-buy] Buy confirmed (%d left in batch, %d remaining)",
+        F2T_BULK_STATE.batchPending, F2T_BULK_STATE.remaining)
+
+    if F2T_BULK_STATE.batchPending > 0 then
+        f2t_bulk_watchdog_start()
         return
     end
 
     f2t_bulk_watchdog_stop()
+    -- Deferred: Mudlet wraps the long success line only after triggers finish, so output
+    -- echoed or sent from inside the trigger would land between its wrapped halves
+    local batchId = F2T_BULK_STATE.batchId
+    tempTimer(0, function() f2t_bulk_buy_batch_complete(batchId) end)
+end
 
-    F2T_BULK_STATE.remaining = F2T_BULK_STATE.remaining - 1
-    f2t_debug_log("[bulk-buy] Buy successful (%d remaining)", F2T_BULK_STATE.remaining)
+-- Every bay of the current batch is confirmed: send the next batch or finish
+function f2t_bulk_buy_batch_complete(batchId)
+    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "buy" or F2T_BULK_STATE.batchId ~= batchId then
+        return
+    end
 
-    -- Check if we still have room and should continue
-    -- Note: gmcp.char.ship.hold.cur = available space (not used space)
+    -- gmcp.char.ship.hold.cur = available space; a stale value can only overstate it, so
+    -- this can stop a batch early but never send one into a full hold
     local hold = gmcp.char and gmcp.char.ship and gmcp.char.ship.hold
     local available_space = hold and hold.cur or 0
 
-    if available_space < 75 then
-        -- Hold is full
+    if F2T_BULK_STATE.remaining > 0 and available_space < 75 then
         f2t_debug_log("[bulk-buy] Hold is full (%d tons available), stopping", available_space)
         if not F2T_BULK_STATE.callback then
             cecho("\n<yellow>[bulk-buy]<reset> Hold is full\n")
         end
         f2t_bulk_buy_finish()
-    elseif F2T_BULK_STATE.remaining > 0 then
-        -- Continue buying
-        f2t_bulk_buy_next()
     else
-        -- Done with requested amount
-        f2t_bulk_buy_finish()
+        f2t_bulk_buy_next()
     end
 end
 
@@ -191,6 +211,7 @@ function f2t_bulk_buy_finish(error_msg)
     F2T_BULK_STATE.active = false
     F2T_BULK_STATE.command = nil
     F2T_BULK_STATE.callback = nil
+    F2T_BULK_STATE.batchPending = 0
 
     -- User mode: show formatted output
     if not callback then

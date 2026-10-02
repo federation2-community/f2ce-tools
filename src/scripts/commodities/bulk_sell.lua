@@ -55,6 +55,31 @@ local function get_all_commodities()
     return commodities
 end
 
+-- Whether every lot in the hold is this commodity, so "sell cargo" sells exactly it
+local function hold_is_only(commodity)
+    local cargo = gmcp.char.ship.cargo or {}
+    local commodity_lower = string.lower(commodity)
+
+    for _, item in ipairs(cargo) do
+        if string.lower(item.commodity) ~= commodity_lower then
+            return false
+        end
+    end
+    return #cargo > 0
+end
+
+-- Fold the current commodity's sold lots into the queue-mode aggregates, costing only the lots sold
+local function accumulate_commodity_stats()
+    local lots_sold = F2T_BULK_STATE.lots_sold or 0
+    local total = F2T_BULK_STATE.total or 0
+    if lots_sold > 0 and total > 0 then
+        F2T_BULK_STATE.aggregate_cost = F2T_BULK_STATE.aggregate_cost
+            + (F2T_BULK_STATE.total_cost or 0) / total * lots_sold
+        F2T_BULK_STATE.aggregate_revenue = F2T_BULK_STATE.aggregate_revenue + (F2T_BULK_STATE.total_revenue or 0)
+        F2T_BULK_STATE.aggregate_lots_sold = F2T_BULK_STATE.aggregate_lots_sold + lots_sold
+    end
+end
+
 -- Start a bulk sell operation
 -- @param commodity: The commodity to sell (nil = sell all cargo, supports short names like "petros")
 -- @param requested_lots: Number of lots to sell (nil = sell all of commodity)
@@ -101,6 +126,16 @@ function f2t_bulk_sell_start(commodity, requested_lots, callback)
             cecho("\n<red>[bulk-sell]<reset> You must be in a commodity exchange to trade commodities!\n")
         else
             callback(commodity, 0, "error", "Not at exchange")
+        end
+        return false
+    end
+
+    if not (gmcp.char and gmcp.char.ship) then
+        f2t_debug_log("[bulk-sell] ERROR: Ship cargo data not available")
+        if not callback then
+            cecho("\n<red>[bulk-sell]<reset> Ship cargo data not available\n")
+        else
+            callback(commodity, 0, "error", "Ship cargo data not available")
         end
         return false
     end
@@ -173,6 +208,8 @@ function f2t_bulk_sell_start(commodity, requested_lots, callback)
     F2T_BULK_STATE.remaining = lots_to_sell
     F2T_BULK_STATE.total = lots_to_sell
     F2T_BULK_STATE.commodity_queue = nil
+    F2T_BULK_STATE.sellAllCargo = lots_to_sell == available_lots and hold_is_only(commodity)
+    F2T_BULK_STATE.batchPending = 0
     F2T_BULK_STATE.callback = callback
     F2T_BULK_STATE.total_cost = total_cost
     F2T_BULK_STATE.total_revenue = 0
@@ -218,6 +255,8 @@ function f2t_bulk_sell_next_commodity()
     F2T_BULK_STATE.commodity = commodity
     F2T_BULK_STATE.remaining = available_lots
     F2T_BULK_STATE.total = available_lots
+    F2T_BULK_STATE.sellAllCargo = hold_is_only(commodity)
+    F2T_BULK_STATE.batchPending = 0
     F2T_BULK_STATE.total_cost = total_cost
     F2T_BULK_STATE.total_revenue = 0
     F2T_BULK_STATE.lots_sold = 0
@@ -229,7 +268,8 @@ function f2t_bulk_sell_next_commodity()
     f2t_bulk_sell_next()
 end
 
--- Send the next sell command
+-- Send the next counted sell command: "sell cargo" when it sells exactly what is wanted,
+-- otherwise "sell <commodity> <n>" bounded by the server's per-command cap
 function f2t_bulk_sell_next()
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
@@ -240,54 +280,74 @@ function f2t_bulk_sell_next()
         return
     end
 
-    f2t_debug_log("[bulk-sell] Sending sell command (%d remaining)", F2T_BULK_STATE.remaining)
-    send(string.format("sell %s", string.lower(F2T_BULK_STATE.commodity)), false)
+    local command, count
+    if F2T_BULK_STATE.sellAllCargo then
+        count = F2T_BULK_STATE.remaining
+        command = "sell cargo"
+    else
+        count = math.min(F2T_BULK_STATE.remaining, F2T_BULK_MAX_BATCH)
+        command = string.format("sell %s %d", string.lower(F2T_BULK_STATE.commodity), count)
+    end
+    F2T_BULK_STATE.batchPending = count
+    F2T_BULK_STATE.batchId = (F2T_BULK_STATE.batchId or 0) + 1
+
+    f2t_debug_log("[bulk-sell] Sending '%s' (%d remaining)", command, F2T_BULK_STATE.remaining)
+    send(command, false)
     f2t_bulk_watchdog_start()
 end
 
--- Handle successful sell
+-- Count one confirmed sale; called synchronously from the trigger so an error line
+-- later in the same packet sees the confirmed total
 -- @param commodity: Commodity name from trigger
 -- @param revenue_per_ton: Revenue per ton from trigger
 -- @param revenue_total: Total revenue for this lot from trigger
 function f2t_bulk_sell_success(_commodity, revenue_per_ton, revenue_total)
-    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
+    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" or F2T_BULK_STATE.batchPending <= 0 then
         return
     end
 
-    f2t_bulk_watchdog_stop()
-
     F2T_BULK_STATE.remaining = F2T_BULK_STATE.remaining - 1
+    F2T_BULK_STATE.batchPending = F2T_BULK_STATE.batchPending - 1
     if F2T_BULK_STATE.commodity_queue then
         F2T_BULK_STATE.total_sold = F2T_BULK_STATE.total_sold + 1
     end
 
-    -- Track revenue
     if revenue_total then
         F2T_BULK_STATE.total_revenue = F2T_BULK_STATE.total_revenue + revenue_total
         F2T_BULK_STATE.lots_sold = F2T_BULK_STATE.lots_sold + 1
-        f2t_debug_log("[bulk-sell] Sell successful: %d ig/ton, %d ig total (%d remaining)",
-            revenue_per_ton, revenue_total, F2T_BULK_STATE.remaining)
+        f2t_debug_log("[bulk-sell] Sale confirmed: %d ig/ton, %d ig total (%d left in batch, %d remaining)",
+            revenue_per_ton, revenue_total, F2T_BULK_STATE.batchPending, F2T_BULK_STATE.remaining)
     else
-        f2t_debug_log("[bulk-sell] Sell successful (%d remaining)", F2T_BULK_STATE.remaining)
+        f2t_debug_log("[bulk-sell] Sale confirmed (%d left in batch, %d remaining)",
+            F2T_BULK_STATE.batchPending, F2T_BULK_STATE.remaining)
+    end
+
+    if F2T_BULK_STATE.batchPending > 0 then
+        f2t_bulk_watchdog_start()
+        return
+    end
+
+    f2t_bulk_watchdog_stop()
+    -- Deferred: Mudlet wraps the long success line only after triggers finish, so output
+    -- echoed or sent from inside the trigger would land between its wrapped halves
+    local batchId = F2T_BULK_STATE.batchId
+    tempTimer(0, function() f2t_bulk_sell_batch_complete(batchId) end)
+end
+
+-- Every lot of the current batch is confirmed: send the next batch or move on
+function f2t_bulk_sell_batch_complete(batchId)
+    if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" or F2T_BULK_STATE.batchId ~= batchId then
+        return
     end
 
     if F2T_BULK_STATE.remaining > 0 then
-        -- Continue selling current commodity
         f2t_bulk_sell_next()
+    elseif F2T_BULK_STATE.commodity_queue then
+        accumulate_commodity_stats()
+        F2T_BULK_STATE.queue_index = F2T_BULK_STATE.queue_index + 1
+        f2t_bulk_sell_next_commodity()
     else
-        -- Done with current commodity
-        if F2T_BULK_STATE.commodity_queue then
-            -- Accumulate stats before moving to next commodity
-            F2T_BULK_STATE.aggregate_cost = F2T_BULK_STATE.aggregate_cost + (F2T_BULK_STATE.total_cost or 0)
-            F2T_BULK_STATE.aggregate_revenue = F2T_BULK_STATE.aggregate_revenue + (F2T_BULK_STATE.total_revenue or 0)
-            F2T_BULK_STATE.aggregate_lots_sold = F2T_BULK_STATE.aggregate_lots_sold + (F2T_BULK_STATE.lots_sold or 0)
-            -- Move to next commodity in queue
-            F2T_BULK_STATE.queue_index = F2T_BULK_STATE.queue_index + 1
-            f2t_bulk_sell_next_commodity()
-        else
-            -- Single commodity mode, we're done
-            f2t_bulk_sell_finish()
-        end
+        f2t_bulk_sell_finish()
     end
 end
 
@@ -298,6 +358,7 @@ function f2t_bulk_sell_error(reason)
     end
 
     f2t_bulk_watchdog_stop()
+    F2T_BULK_STATE.batchPending = 0
 
     f2t_debug_log("[bulk-sell] ERROR: %s", reason)
 
@@ -307,19 +368,18 @@ function f2t_bulk_sell_error(reason)
     end
 
     if F2T_BULK_STATE.commodity_queue then
-        -- In queue mode, move to next commodity
         f2t_debug_log("[bulk-sell] Queue mode: moving to next commodity")
+        accumulate_commodity_stats()
         F2T_BULK_STATE.queue_index = F2T_BULK_STATE.queue_index + 1
         f2t_bulk_sell_next_commodity()
     else
-        -- Single commodity mode, finish
         f2t_debug_log("[bulk-sell] Single mode: finishing")
-        f2t_bulk_sell_finish()
+        f2t_bulk_sell_finish(reason)
     end
 end
 
 -- Finish selling single commodity
-function f2t_bulk_sell_finish()
+function f2t_bulk_sell_finish(error_msg)
     if not F2T_BULK_STATE.active or F2T_BULK_STATE.command ~= "sell" then
         return
     end
@@ -347,6 +407,8 @@ function f2t_bulk_sell_finish()
     F2T_BULK_STATE.total_cost = 0
     F2T_BULK_STATE.total_revenue = 0
     F2T_BULK_STATE.lots_sold = 0
+    F2T_BULK_STATE.batchPending = 0
+    F2T_BULK_STATE.sellAllCargo = false
 
     -- User mode: show formatted output with margin info
     if not callback then
@@ -392,7 +454,7 @@ function f2t_bulk_sell_finish()
     -- Programmatic mode: call callback with data
     else
         local status = sold > 0 and "success" or "failed"
-        callback(commodity, sold, status, nil)
+        callback(commodity, sold, status, error_msg)
     end
 end
 
@@ -425,6 +487,8 @@ function f2t_bulk_sell_finish_all()
     F2T_BULK_STATE.active = false
     F2T_BULK_STATE.command = nil
     F2T_BULK_STATE.commodity_queue = nil
+    F2T_BULK_STATE.batchPending = 0
+    F2T_BULK_STATE.sellAllCargo = false
     F2T_BULK_STATE.callback = nil
     F2T_BULK_STATE.aggregate_cost = 0
     F2T_BULK_STATE.aggregate_revenue = 0

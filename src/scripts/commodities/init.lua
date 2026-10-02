@@ -35,6 +35,10 @@ F2T_BULK_STATE = {
     total     = 0,       -- Total operations requested
     callback  = nil,     -- Callback function for programmatic mode
 
+    batchPending = 0,    -- Success lines still expected for the counted command in flight
+    batchId      = 0,    -- Identifies the in-flight batch so a stale deferred completion is ignored
+    sellAllCargo = false, -- Sell via "sell cargo": the hold is entirely this commodity and all of it goes
+
     -- Sell tracking (for margin calculation)
     total_cost    = 0,   -- Total cost of cargo being sold
     total_revenue = 0,   -- Total revenue from sales
@@ -48,6 +52,9 @@ F2T_BULK_STATE = {
 -- triggers do not recognise would otherwise stall the caller (and any hauling
 -- state machine driving it) forever. Fail the operation instead.
 F2T_BULK_WATCHDOG_SECONDS = 15
+
+-- The server silently clamps a counted "buy/sell <commodity> <n>" to this many bays
+F2T_BULK_MAX_BATCH = 15
 
 function f2t_bulk_watchdog_stop()
     if F2T_BULK_STATE.watchdogTimerId then

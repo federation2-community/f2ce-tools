@@ -95,6 +95,10 @@
       {
         "pattern": "^You don't have any imported .+ to sell\\.$",
         "type": "regex"
+      },
+      {
+        "pattern": "^You don't have any cargo to sell\\.$",
+        "type": "regex"
       }
     ]
   },
