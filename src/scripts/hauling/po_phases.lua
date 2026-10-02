@@ -727,6 +727,8 @@ function f2t_hauling_check_po_nav_complete()
             elseif phase == "po_navigating_to_sell" then
                 f2t_hauling_transition("po_selling")
             elseif phase == "po_navigating_to_bundled_buy" then
+                -- Leave the navigating phase so a later room.info can't start a second overlapping buy
+                F2T_HAULING_STATE.current_phase = "po_buying"
                 f2t_hauling_phase_po_bundled_buy()
             end
 
@@ -748,6 +750,7 @@ function f2t_hauling_check_po_nav_complete()
             elseif phase == "po_navigating_to_sell" then
                 f2t_hauling_transition("po_selling")
             elseif phase == "po_navigating_to_bundled_buy" then
+                F2T_HAULING_STATE.current_phase = "po_buying"
                 f2t_hauling_phase_po_bundled_buy()
             end
         end

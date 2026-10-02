@@ -18,6 +18,15 @@
     ]
   },
   {
+    "name": "buy_error_no_space",
+    "patterns": [
+      {
+        "pattern": "^You arrange to have the goods transferred to your ship\\.",
+        "type": "regex"
+      }
+    ]
+  },
+  {
     "name": "buy_error_not_selling",
     "patterns": [
       {

@@ -15,6 +15,17 @@ function f2t_bulk_buy_start(commodity, requested_lots, callback)
     f2t_debug_log("[bulk-buy] Starting bulk buy: commodity=%s, requested=%s, mode=%s",
         commodity, tostring(requested_lots), callback and "programmatic" or "user")
 
+    -- A second chain would share F2T_BULK_STATE and keep buys in flight past a full hold,
+    -- which the game charges for and discards. The callback is dropped: the in-flight
+    -- operation's own callback continues the caller's flow.
+    if F2T_BULK_STATE.active then
+        f2t_debug_log("[bulk-buy] Ignoring start: bulk %s already in progress", F2T_BULK_STATE.command or "?")
+        if not callback then
+            cecho("\n<red>[bulk-buy]<reset> A bulk buy/sell is already in progress\n")
+        end
+        return false
+    end
+
     -- Check if we're in an exchange
     local room_info = gmcp.room and gmcp.room.info
     if not room_info or not room_info.flags then
