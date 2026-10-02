@@ -44,6 +44,12 @@ F2T_SPEEDWALK_CUSTOMS_PENDING      = false
 -- opposed to a manual f2t_map_speedwalk_pause(). Distinguishes "resume when
 -- the connection comes back" from "wait for the user to resume".
 F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
+-- os.time() before which an arrival can't be pinned on the last command sent.
+-- A move timeout under lag gets the move resent while the original may still
+-- land, so the next arrivals can belong to an earlier command, even one from
+-- a walk that has since been stopped. Not reset with the walk for that reason.
+F2T_SPEEDWALK_UNSURE_UNTIL          = 0
+local UNSURE_SECONDS_AFTER_TIMEOUT  = 30
 
 function f2t_map_set_nav_owner(owner, on_interrupt)
     F2T_SPEEDWALK_OWNER        = owner
@@ -311,7 +317,11 @@ function f2t_map_speedwalk_on_room_change()
         -- lands here again, and loops - and because the detour step itself
         -- succeeds each lap, the retry budget never depletes.
         local repointed = false
-        if not movement_success and F2T_SPEEDWALK_LAST_COMMAND and current_room then
+        local attributable = os.time() >= F2T_SPEEDWALK_UNSURE_UNTIL
+        if not movement_success and not attributable then
+            f2t_debug_log("[map/walk]   a recent move timed out, not correcting the map from this arrival")
+        end
+        if not movement_success and attributable and F2T_SPEEDWALK_LAST_COMMAND and current_room then
             local jumped_to = string.match(F2T_SPEEDWALK_LAST_COMMAND, "^jump%s+(.+)$")
             local from_room = F2T_SPEEDWALK_ROOM_BEFORE_MOVE
             local arrived_system = getRoomUserData(current_room, "fed2_system")
@@ -591,6 +601,7 @@ function f2t_map_speedwalk_on_move_timeout()
     if not F2T_SPEEDWALK_ACTIVE or not F2T_SPEEDWALK_WAITING_FOR_MOVE then return end
     F2T_SPEEDWALK_WAITING_FOR_MOVE = false
     F2T_SPEEDWALK_MOVE_TIMEOUT_ID  = nil
+    F2T_SPEEDWALK_UNSURE_UNTIL     = os.time() + UNSURE_SECONDS_AFTER_TIMEOUT
     local from_room = F2T_SPEEDWALK_ROOM_BEFORE_MOVE
     F2T_SPEEDWALK_EXPECTED_ROOM_ID = nil
     F2T_SPEEDWALK_ROOM_BEFORE_MOVE = nil
