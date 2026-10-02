@@ -423,6 +423,14 @@ function f2t_hauling_phase_dump_cargo()
         return
     end
 
+    -- Both the arrival timer and the room.info handler can land here; leaving the
+    -- dumping_cargo phase keeps later room.info events from starting another dump.
+    if F2T_HAULING_STATE.current_phase ~= "dumping_cargo" then
+        f2t_debug_log("[hauling] Ignoring dump start in phase: %s", tostring(F2T_HAULING_STATE.current_phase))
+        return
+    end
+    F2T_HAULING_STATE.current_phase = "dump_selling"
+
     cecho(string.format("\n<yellow>[hauling]<reset> Dumping all <cyan>%s<reset> cargo at any price...\n", commodity))
     f2t_debug_log("[hauling] Dumping commodity: %s", commodity)
 
