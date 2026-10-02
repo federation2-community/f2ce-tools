@@ -2,18 +2,12 @@
 -- exchange/console_spam setting is off.  The Exchange content still gets the
 -- data via gmcp.exchange.commodity.
 
--- "+++ The display shows the prices for" only answers the player's own remote
--- price check (c price <commodity> <planet>); always keep it and the up to 3
--- +++ lines of that result that follow it.
-if line:match("^%+%+%+ The display shows the prices for ") then
-    F2T_EXCHANGE_REQUESTED_LINES_LEFT = 3
-    tempLineTrigger(1, 3, function()
-        if not line:match("^%+%+%+ ") then F2T_EXCHANGE_REQUESTED_LINES_LEFT = nil end
+-- The reply to the player's own price check uses the same +++ lines; keep
+-- them, and end the request window at the first line after the block.
+if f2tExchangePriceRequestActive and f2tExchangePriceRequestActive() then
+    tempLineTrigger(1, 1, function()
+        if not line:match("^%+%+%+ ") then f2tExchangePriceRequestEnd() end
     end)
-    return
-end
-if (F2T_EXCHANGE_REQUESTED_LINES_LEFT or 0) > 0 then
-    F2T_EXCHANGE_REQUESTED_LINES_LEFT = F2T_EXCHANGE_REQUESTED_LINES_LEFT - 1
     return
 end
 

@@ -127,6 +127,36 @@ function f2tExchangeSpotCheckActive()
     return F2T_EXCHANGE_SPOT_CHECK_UNTIL ~= nil and os.time() < F2T_EXCHANGE_SPOT_CHECK_UNTIL
 end
 
+-- A typed or clicked "check price <commodity> [exchange]" answers with +++
+-- lines identical to the ambient ticker, so the exchange_spam gag asks this
+-- whether the +++ block now arriving was requested. The window opens when the
+-- command is sent and closes at the first non-+++ line after the block.
+local PRICE_REQUEST_WINDOW = 3   -- seconds to wait for the reply's first +++ line
+
+-- Cartel checks are excluded: their reply has no +++ lines, and automated
+-- cartel loops would otherwise hold the window open.
+local function isPriceCheckCommand(command)
+    local lowered = command:lower()
+    local verb, noun, arg = lowered:match("^%s*(%a+)%s+(%a+)%s+(%S)")
+    if not arg or lowered:match("%scartel%s*$") then return false end
+    return (verb == "c" or verb == "check")
+        and (noun == "price" or noun == "pri" or noun == "prices")
+end
+
+registerAnonymousEventHandler("sysDataSendRequest", function(_, command)
+    if type(command) == "string" and isPriceCheckCommand(command) then
+        F2T_EXCHANGE_PRICE_REQUEST_UNTIL = getEpoch() + PRICE_REQUEST_WINDOW
+    end
+end)
+
+function f2tExchangePriceRequestActive()
+    return F2T_EXCHANGE_PRICE_REQUEST_UNTIL ~= nil and getEpoch() < F2T_EXCHANGE_PRICE_REQUEST_UNTIL
+end
+
+function f2tExchangePriceRequestEnd()
+    F2T_EXCHANGE_PRICE_REQUEST_UNTIL = nil
+end
+
 local function iconsEnabled()
     return f2t_settings_get("exchange", "show_icons") ~= false
 end
