@@ -104,23 +104,6 @@ local function versionSatisfied()
     return Mux._versionSatisfied(F2T_REQUIRED_MUXLET, true)
 end
 
--- Recover if Muxlet ever disappears mid-session for any reason other than our
--- own devmode wipe-reload flow (muddlet --wipe, injected into the build by
--- muddlet itself — see the muddlet repo's devmode.lua) — that flow reinstalls
--- f2ce-tools itself and lets THIS package's own top-level bootstrap below
--- notice Muxlet is absent and reinstall it, so it sets
--- MUDDLET_DEP_UNINSTALL_PENDING first to keep this generic watchdog from also
--- firing and racing it. A handler Muxlet registers on itself can't reliably
--- outlive its own uninstall, so this has to live here, not in Muxlet.
-registerAnonymousEventHandler("sysUninstallPackage", function(_, name)
-    if name ~= MUXLET_PKG then return end
-    if MUDDLET_DEP_UNINSTALL_PENDING then return end
-    f2t_debug_log("Muxlet uninstalled unexpectedly; queuing reinstall")
-    if MUXLET_URL then
-        afterLogin(function() installPackage(MUXLET_URL) end)
-    end
-end)
-
 -- ── Initialization ────────────────────────────────────────────────────────────
 --
 -- Content is registered every session regardless of mode so it is available
@@ -311,30 +294,88 @@ end
 
 registerAnonymousEventHandler("muxletReady", onMuxletReady)
 
--- Mudlet's installPackage(url) can print "installed successfully" while a
--- concurrent profile save (e.g. f2ce-tools' own just-finished install) is
--- still silently deferring the real install, so on a brand-new profile it
--- can never land. Verify it actually shows up in getPackages() and retry
--- if not, rather than trusting the printed success or muxletReady alone.
+-- Downloads to our own file and installs from disk instead of using
+-- installPackage(url). An install that arrives during a profile save is
+-- deferred until the save finishes, but Mudlet's url wrapper deletes the
+-- download as soon as the call returns, so the deferred install finds no file.
+-- Keeping the file until Muxlet shows up in getPackages() lets a deferred
+-- install complete; the retry covers anything else that keeps it from landing.
 local MUXLET_INSTALL_RETRY_LIMIT = 5
+local MUXLET_INSTALL_VERIFY_SECONDS = 5
 local muxletInstallAttempts = 0
+local muxletDownloadHandler, muxletDownloadErrorHandler
 
 local function installMuxlet()
     muxletInstallAttempts = muxletInstallAttempts + 1
-    installPackage(MUXLET_URL)
-    tempTimer(5, function()
-        if table.contains(getPackages(), MUXLET_PKG) then return end
-        if muxletInstallAttempts >= MUXLET_INSTALL_RETRY_LIMIT then
-            cecho(string.format(
-                "\n<red>[f2ce-tools]<reset> Muxlet install did not complete after %d attempts. "
-                .. "Try <cyan>lua installPackage(\"%s\")<reset> manually, or install Muxlet.mpackage from disk.\n",
-                muxletInstallAttempts, MUXLET_URL))
-            return
+    local packagePath = getMudletHomeDir() .. "/f2t_muxlet_install.mpackage"
+
+    local function clearDownloadHandlers()
+        if muxletDownloadHandler then killAnonymousEventHandler(muxletDownloadHandler); muxletDownloadHandler = nil end
+        if muxletDownloadErrorHandler then
+            killAnonymousEventHandler(muxletDownloadErrorHandler); muxletDownloadErrorHandler = nil
         end
-        f2t_debug_log("Muxlet install did not land (attempt %d); retrying", muxletInstallAttempts)
-        installMuxlet()
+    end
+
+    local function verifyOrRetry()
+        tempTimer(MUXLET_INSTALL_VERIFY_SECONDS, function()
+            if table.contains(getPackages(), MUXLET_PKG) then
+                os.remove(packagePath)
+                return
+            end
+            if muxletInstallAttempts >= MUXLET_INSTALL_RETRY_LIMIT then
+                os.remove(packagePath)
+                cecho(string.format(
+                    "\n<red>[f2ce-tools]<reset> Muxlet install did not complete after %d attempts. "
+                    .. "Try <cyan>lua installPackage(\"%s\")<reset> manually, or install Muxlet.mpackage from disk.\n",
+                    muxletInstallAttempts, MUXLET_URL))
+                return
+            end
+            f2t_debug_log("Muxlet install did not land (attempt %d); retrying", muxletInstallAttempts)
+            installMuxlet()
+        end)
+    end
+
+    clearDownloadHandlers()
+    muxletDownloadHandler = registerAnonymousEventHandler("sysDownloadDone", function(_, filename)
+        if filename ~= packagePath then return end
+        clearDownloadHandlers()
+        local ok, err = installPackage(packagePath)
+        if not ok then f2t_debug_log("Muxlet install attempt %d failed: %s", muxletInstallAttempts, tostring(err)) end
+        verifyOrRetry()
     end)
+    muxletDownloadErrorHandler = registerAnonymousEventHandler("sysDownloadError", function(_, err, filename)
+        if filename ~= packagePath then return end
+        clearDownloadHandlers()
+        f2t_debug_log("Muxlet download attempt %d failed: %s", muxletInstallAttempts, tostring(err))
+        verifyOrRetry()
+    end)
+    downloadFile(packagePath, MUXLET_URL)
 end
+
+-- Recover if Muxlet is uninstalled and not put back. That includes Muxlet's own
+-- Mux.ensureVersion upgrade (uninstall, then installPackage(url)), which loses
+-- the race above whenever the download beats the save its uninstall queued, so
+-- this is what completes a pinned-version bump after an f2ce-tools update. The
+-- delay lets an in-flight reinstall land first instead of racing it with a
+-- second download. MUDDLET_DEP_UNINSTALL_PENDING is set by the devmode
+-- wipe-reload flow (muddlet repo's devmode.lua), whose own bootstrap below
+-- reinstalls Muxlet. A handler Muxlet registers on itself can't reliably outlive
+-- its own uninstall, so this has to live here, not in Muxlet.
+local MUXLET_REINSTALL_GRACE_SECONDS = 10
+
+registerAnonymousEventHandler("sysUninstallPackage", function(_, name)
+    if name ~= MUXLET_PKG then return end
+    if MUDDLET_DEP_UNINSTALL_PENDING then return end
+    if not MUXLET_URL then return end
+    tempTimer(MUXLET_REINSTALL_GRACE_SECONDS, function()
+        if table.contains(getPackages(), MUXLET_PKG) then return end
+        f2t_debug_log("Muxlet uninstalled and not reinstalled; reinstalling")
+        afterLogin(function()
+            muxletInstallAttempts = 0
+            installMuxlet()
+        end)
+    end)
+end)
 
 if Mux and Mux._ready then
     -- Deferred by a tick, never called straight through. Mudlet runs each script
