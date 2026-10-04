@@ -350,7 +350,7 @@ end
 -- galaxy (thousands of planets) rather than per-system would multiply into a
 -- real cost on a hot path: populate() reruns on every room move.
 local function buildCoverageCtx()
-    local ctx = { areas = getAreaTable() or {}, lowerAreas = {}, spaceAreaBySystem = {} }
+    local ctx = { areas = getAreaTable() or {}, lowerAreas = {}, spaceAreaBySystem = {}, scanned = {} }
     for nm in pairs(ctx.areas) do
         ctx.lowerAreas[nm:lower()] = true
         local sys = f2t_map_get_system_from_space_area(nm)
@@ -364,18 +364,57 @@ local function areaKnown(ctx, name)
     return ctx.lowerAreas[name:lower()] ~= nil
 end
 
+local function areaIdFor(ctx, name)
+    local id = ctx.areas[name]
+    if id then return id end
+    local lower = name:lower()
+    if not ctx.lowerAreas[lower] then return nil end
+    for nm, areaId in pairs(ctx.areas) do
+        if nm:lower() == lower then return areaId end
+    end
+    return nil
+end
+
+-- Per-area digest of what coverage needs: lowercased fed2_planet names (for
+-- orbit rooms in a space area) and the first room holding each flag. Rescanned
+-- only when the area's room count changes, and at most once per populate pass.
+local areaDigests = {}
+
+local function areaDigest(ctx, areaId)
+    if ctx.scanned[areaId] then return areaDigests[areaId] end
+    ctx.scanned[areaId] = true
+    local rooms = getAreaRooms(areaId) or {}
+    local count = #rooms + (rooms[0] and 1 or 0)
+    local digest = areaDigests[areaId]
+    if digest and digest.count == count then return digest end
+
+    digest = { count = count, planets = {}, flagRoom = {} }
+    for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
+        local data = getAllRoomUserData(roomId) or {}
+        if data.fed2_planet and data.fed2_planet ~= "" then
+            digest.planets[data.fed2_planet:lower()] = true
+        end
+        for key, value in pairs(data) do
+            local flag = value == "true" and key:match("^fed2_flag_(.+)$")
+            if flag and not digest.flagRoom[flag] then digest.flagRoom[flag] = roomId end
+        end
+    end
+    areaDigests[areaId] = digest
+    return digest
+end
+
 -- A planet only counts as mapped when its orbit room actually exists inside
 -- its own system's live space area - not merely when some area happens to
 -- share its name. Plain name existence (the old check) let an unrelated or
 -- stale area answer for a planet that was never actually reached, which is
 -- how the navigator showed a planet "explored" that a speedwalk then refused
--- as unmapped. This still can't tell a live orbit room apart from a stranded
--- duplicate within the *same* area (that needs real path reachability, which
--- is too costly to run for every planet in the galaxy on every room move) -
--- see f2t_map_find_orbit_room's own preferReachable fallback.
+-- as unmapped. It can't tell a live orbit room from a stranded duplicate in
+-- the same area; that needs path reachability, too costly per planet here.
 local function planetMapped(ctx, system_name, planet_name)
     local space_area_name = ctx.spaceAreaBySystem[system_name:lower()]
-    return space_area_name ~= nil and f2t_map_find_orbit_room(space_area_name, planet_name) ~= nil
+    local space_area_id = space_area_name and ctx.areas[space_area_name]
+    if not space_area_id then return false end
+    return areaDigest(ctx, space_area_id).planets[planet_name:lower()] == true
 end
 
 local function systemCoverage(ctx, sd)
@@ -462,14 +501,11 @@ end
 -- player planets cram every service into the shuttlepad's own room, so a
 -- flag whose room matches the shuttlepad's is folded away rather than
 -- stacking a redundant chip next to it.
-local function planetFlags(name)
-    local area_id = f2t_map_get_area_id(name)
+local function planetFlags(ctx, name)
+    local area_id = areaIdFor(ctx, name)
     if not area_id then return {} end
 
-    local room_of = {}
-    for _, flag in ipairs(PLANET_POI_FLAGS) do
-        room_of[flag] = f2t_map_find_room_with_flag(area_id, flag)
-    end
+    local room_of = areaDigest(ctx, area_id).flagRoom
     local shuttlepad_room = room_of.shuttlepad
 
     local present = {}
@@ -837,6 +873,7 @@ end
 local function populate(gid)
     local inst = instances[gid]
     if not inst or not inst.scroll then return end
+    inst.stale = false
     inst.epoch = (inst.epoch or 0) + 1
 
     -- Track the live viewport so content fills the full width (no white strip
@@ -956,7 +993,7 @@ local function populate(gid)
                                                         local pcur = (pd.name == cur_planet) and (sn == cur_system)
                                                         local p_mapped = planetMapped(ctx, sn, pd.name)
                                                         local p_cov = { state = p_mapped and "mapped" or "unmapped",
-                                                            flags = p_mapped and planetFlags(pd.name) or {} }
+                                                            flags = p_mapped and planetFlags(ctx, pd.name) or {} }
                                                         createRow(inst, inst.content, pd.name, "planet", 3, y, pd,
                                                             pcur, p_cov)
                                                         y = y + ROW_H
@@ -1008,13 +1045,16 @@ local function populate(gid)
     if Mux and Mux.reassertHidden then Mux.reassertHidden(inst.content) end
 end
 
--- True while the hosting pane/tab (or its owning pane) is condition-hidden;
--- the search poll idles then instead of reading the command line.
+-- True while the hosting pane/tab (or its owning pane) is condition-hidden or
+-- the tab isn't the active one; the search poll idles then, and room moves
+-- only mark the panel stale.
 local function targetHidden(target)
     local t = target
     while t do
         if t._conditionHidden then return true end
-        t = t.pane
+        local host = t.pane
+        if host and host._activeTabId and t.id and host._activeTabId ~= t.id then return true end
+        t = host
     end
     return false
 end
@@ -1222,6 +1262,7 @@ local function buildPanel(target)
             tempTimer(0.5, poll)
             return
         end
+        if i.stale then populate(gid) end
         local q = (i.searchCmd and i.searchCmd:getText() or ""):match("^%s*(.-)%s*$")
         if q ~= i.lastSearch then
             i.lastSearch = q
@@ -1249,7 +1290,13 @@ local function teardownPanel(gid)
 end
 
 function f2t_galaxy_refresh_open()
-    for gid in pairs(instances) do pcall(populate, gid) end
+    for gid, inst in pairs(instances) do
+        if inst.target and targetHidden(inst.target) then
+            inst.stale = true
+        else
+            pcall(populate, gid)
+        end
+    end
 end
 
 -- Content type definition
