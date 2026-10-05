@@ -16,6 +16,8 @@
 
 local _tables = {}
 
+local _SCROLLBAR_W = 17   -- vertical scrollbar width (px)
+
 -- A table destroyed and recreated under the same id (content rebuilt at a new
 -- text size) keeps the sort the user picked.
 local _sortMemory = {}
@@ -181,6 +183,41 @@ local function _colWidths(t)
     return colWs
 end
 
+local function _layoutRows(t, contentW)
+    t.scrollbox.contentW = contentW
+    local colWs = _colWidths(t)
+    for _, rowLbl in ipairs(t.scrollbox.rows) do
+        rowLbl:resize(contentW, t.scrollbox.rowH)
+        local x = 0
+        for j = 1, #t.columns do
+            local cell = rowLbl.cells and rowLbl.cells[j]
+            if cell then
+                cell:move(x, 0)
+                cell:resize(colWs[j], t.scrollbox.rowH)
+                x = x + colWs[j]
+            end
+        end
+    end
+end
+
+-- Fits the content label to the scroll viewport as it is now: at least the
+-- viewport's height, and its full width unless rows overflow and a vertical
+-- scrollbar takes its slice. Returns the content height to use.
+local function _fitToViewport(t, contentH)
+    local sb = t.scrollbox
+    if sb.scrollWidget then
+        local viewH = sb.scrollWidget:get_height()
+        if viewH > 30 then sb.minHeight = viewH end
+        local viewW = sb.scrollWidget:get_width()
+        if viewW > 30 and sb.minHeight then
+            local overflows = contentH > sb.minHeight
+            local w = math.max(100, overflows and (viewW - _SCROLLBAR_W) or viewW)
+            if w ~= sb.contentW then _layoutRows(t, w) end
+        end
+    end
+    return math.max(contentH, sb.minHeight or 1000)
+end
+
 -- Call when the pane is resized so row/cell Labels track the new width.
 function f2tTableOnResize(tableId, newContentW)
     local t = _tables[tableId]
@@ -193,20 +230,7 @@ function f2tTableOnResize(tableId, newContentW)
             tostring(t.scrollbox.scrollWidget and t.scrollbox.scrollWidget:get_height()))
     end
     local _t0 = f2t_debug_log and os.clock() or nil
-    t.scrollbox.contentW = newContentW
-    local colWs = _colWidths(t)
-    for _, rowLbl in ipairs(t.scrollbox.rows) do
-        rowLbl:resize(newContentW, t.scrollbox.rowH)
-        local x = 0
-        for j = 1, #t.columns do
-            local cell = rowLbl.cells and rowLbl.cells[j]
-            if cell then
-                cell:move(x, 0)
-                cell:resize(colWs[j], t.scrollbox.rowH)
-                x = x + colWs[j]
-            end
-        end
-    end
+    _layoutRows(t, newContentW)
     f2tTableRenderScrollbox(tableId)
     if _t0 then
         f2t_debug_log("[table_system] onResize %s took %.1fms for %d rows",
@@ -220,26 +244,22 @@ function f2tTableRenderScrollbox(tableId)
     local sb = t.scrollbox
     if not sb.contentLabel then return end
 
-    local cw   = sb.contentW
     local rowH = sb.rowH
-
-    if not sb.minHeight and sb.scrollWidget then
-        local sh = sb.scrollWidget:get_height()
-        if sh > 30 then sb.minHeight = sh end
-    end
-    local minH = sb.minHeight or 1000
 
     if not t.data or #t.data == 0 then
         for i = 1, #sb.rows do sb.rows[i]:hide() end
-        sb.contentLabel:resize(cw, math.max(minH, 4))
+        local contentH = _fitToViewport(t, 4)
+        sb.contentLabel:resize(sb.contentW, contentH)
         if sb.colHdrs then f2tTableUpdateScrollboxHeader(tableId, sb.colHdrs) end
         return
     end
 
     _sort(tableId)
-    local colWs = _colWidths(t)
+    local dataLen  = #t.data
+    local contentH = _fitToViewport(t, dataLen * rowH + 4)
+    local cw       = sb.contentW
+    local colWs    = _colWidths(t)
 
-    local dataLen = #t.data
     for i, row in ipairs(t.data) do
         local y = (i - 1) * rowH
         local rowLbl = sb.rows[i]
@@ -277,7 +297,7 @@ function f2tTableRenderScrollbox(tableId)
     end
 
     for i = dataLen + 1, #sb.rows do sb.rows[i]:hide() end
-    sb.contentLabel:resize(cw, math.max(dataLen * rowH + 4, minH))
+    sb.contentLabel:resize(cw, contentH)
     if sb.colHdrs then f2tTableUpdateScrollboxHeader(tableId, sb.colHdrs) end
 
     -- A growing row count creates brand-new row/cell Labels above (the `if not

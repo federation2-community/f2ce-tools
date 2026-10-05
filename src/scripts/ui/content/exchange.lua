@@ -589,8 +589,10 @@ end
 
 local function applyLayout(inst)
     local h = scrollHeightFor(inst)
-    if inst.prices  then inst.prices.scroll:resize("100%", h) end
-    if inst.futures then inst.futures.scroll:resize("100%", h) end
+    for _, stack in pairs({ inst.prices, inst.futures }) do
+        stack.scroll:resize("100%", h)
+        f2tTableRenderScrollbox(stack.tableId)
+    end
     if inst.showTicker then
         inst.tickerHdrMc:show()
         inst.tickerMc:show()
