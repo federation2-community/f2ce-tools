@@ -151,7 +151,7 @@ function f2tFullStart()
     -- Read before Mux.fullStart(), which sets Mux._running = true itself on
     -- a fresh start -- checking after the call would always read true.
     local wasRunning = Mux._running
-    Mux.fullStart()
+    if not wasRunning then Mux.fullStart() end
 
     f2t_debug_log("[workspace] f2tFullStart: hash=%s hadCurrent=%s reset_workspace=%s seen=%s",
         tostring(F2T_LAYOUT_HASH), tostring(hadCurrent),
