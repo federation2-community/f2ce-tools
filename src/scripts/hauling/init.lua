@@ -5,11 +5,11 @@
 -- No "enabled" toggle: inert until `haul start`, resets on `haul stop` /
 -- `haul terminate`.
 --
--- Mode by rank (see mode_detection.lua):
---   Commander/Captain        -> Armstrong Cuthbert jobs (standalone)
---   Adventurer/Adventuress   -> Akaturi contracts (standalone)
---   Merchant...Financier     -> Exchange trading (needs commodities module)
---   Founder+                 -> Planet Owner trading (needs commodities module)
+-- Strategy by rank (see mode_detection.lua; hauling/mode picks among them):
+--   Commander/Captain        -> ac: Armstrong Cuthbert jobs (standalone)
+--   Adventurer/Adventuress   -> akaturi: Akaturi contracts (standalone)
+--   Merchant...Financier     -> exchange: Exchange trading (needs commodities module)
+--   Founder+                 -> planet / deficit: Planet Owner trading, or exchange
 
 F2T_HAULING_STATE = {
     active = false,
@@ -18,6 +18,8 @@ F2T_HAULING_STATE = {
     paused_room_id = nil, -- Room ID where hauling was paused (for location validation on resume)
     stopping = false,     -- Graceful stop requested (finish current cycle)
     mode = nil,           -- Current hauling mode: "ac", "akaturi", "exchange", "po"
+    strategy = nil,       -- Strategy of the current or last session (see F2T_HAUL_STRATEGIES); kept after stop
+    po_deficit_only = false, -- PO mode skips excess selling (the "deficit" strategy)
     current_phase = nil,  -- Current phase in the state machine
     handler_id = nil,     -- GMCP event handler ID for current mode
 
@@ -101,6 +103,8 @@ F2T_HAULING_STATE = {
     po_scan_planets = {},            -- Planets to scan during exchange scan
     po_deficit_cycles = 0,           -- Total deficit cycles completed this session
     po_excess_cycles = 0,            -- Total excess cycles completed this session
+    po_last_queue = {},              -- Job queue of the last PO session, kept after stop for display
+    po_last_planets = {},            -- Owned planets of the last PO session, kept after stop for display
 
     -- Cycle pause tracking
     cycle_pause_timer_id = nil,      -- Timer ID for cycle pause (so we can kill it on stop)
@@ -112,8 +116,16 @@ F2T_HAULING_STATE = {
 -- constrains values through the widget (min/max/choices) and ignores validator,
 -- so they are dropped here.
 
-f2t_settings_register("hauling", "margin_threshold", {
+f2t_settings_register("hauling", "mode", {
     tab         = "F2CE-Tools/Hauling",
+    label       = "Mode",
+    description = "What 'haul start' runs: auto (rank default), ac, akaturi, exchange, " ..
+        "planet (Founder+: deficits and excesses) or deficit (Founder+: deficits only)",
+    default     = "auto",
+    choices     = {"auto", "ac", "akaturi", "exchange", "planet", "deficit"},
+})
+
+f2t_settings_register("hauling", "margin_threshold", {
     label       = "Margin threshold (%)",
     description = "Minimum profit margin % to continue trading a commodity",
     default     = 40,
@@ -146,13 +158,6 @@ f2t_settings_register("hauling", "excluded_commodities", {
     label       = "Excluded commodities",
     description = "Comma-separated list of commodities to exclude from trading",
     default     = "",
-})
-
-f2t_settings_register("hauling", "po_mode", {
-    label       = "PO mode",
-    description = "PO hauling mode: 'both' (deficit + excess) or 'deficit' (deficit only)",
-    default     = "both",
-    choices     = {"both", "deficit"},
 })
 
 f2t_settings_register("hauling", "po_deficit_threshold", {
@@ -195,5 +200,36 @@ f2t_settings_register("hauling", "po_max_sell_attempts", {
     default     = 3,
     min = 1, max = 10,
 })
+
+-- The retired po_mode setting ("both"/"deficit") becomes hauling/mode, then is
+-- dropped so it cannot shadow a later mode change.
+local function migratePoMode()
+    local stored = Mux and Mux.settings and Mux.settings._data and Mux.settings._data.hauling
+    if not (stored and stored.po_mode ~= nil) then return end
+    if stored.po_mode == "deficit" and stored.mode == nil
+        and not Mux.settings.set("hauling", "mode", "deficit") then
+        return
+    end
+    stored.po_mode = nil
+    Mux.settings.save()
+end
+
+-- Strip and status displays follow a mode change made from any surface.
+-- Re-hooked on every muxletReady because a Muxlet reload clears its listeners.
+local function hookModeSetting()
+    if not (Mux and Mux.settings and Mux.settings.onChange) then return end
+    Mux.settings.onChange("hauling", "mode", function()
+        raiseEvent("f2tHaulingStatusChanged")
+    end)
+end
+
+registerAnonymousEventHandler("muxletReady", function()
+    migratePoMode()
+    hookModeSetting()
+end)
+if Mux and Mux._ready then
+    migratePoMode()
+    hookModeSetting()
+end
 
 f2t_debug_log("[hauling] Component initialized")

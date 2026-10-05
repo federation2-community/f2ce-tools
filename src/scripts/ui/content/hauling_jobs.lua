@@ -1,7 +1,11 @@
--- Sortable table of AC courier jobs, with computed route distance and
--- effective pay (20% bonus when the route beats the allowed GTU, 50%
--- penalty when it exceeds it). Job numbers accept the job; origin and
--- destination navigate. A button strip triggers collect/deliver.
+-- Commerce > Jobs: the cartel's Armstrong Cuthbert workboard as a sortable
+-- table, with computed route distance and effective pay (20% bonus when the
+-- route beats the allowed GTU, 50% penalty when it exceeds it). Origin and
+-- destination navigate. Every rank with a ship sees the board; what it can
+-- do with it depends on rank:
+--   Commander, Captain        job numbers accept; Collect/Deliver buttons
+--   Industrialist, Manufacturer  Post Job (to a depot on this planet)
+--   Founder+                  Post Job (from this planet), Offer Job
 --
 -- Data flow: fully live via GMCP, no trigger scraping. gmcp.jobs.board is
 -- the job listing, gmcp.char.job is the player's current contract (absent
@@ -9,28 +13,21 @@
 -- travels). Both feed this module directly through anonymous event
 -- handlers registered once at load time.
 
-local H_BAR  = 26    -- button strip height (px)
+local H_ACT  = 26    -- rank action row height (px)
 local H_CUR  = 22    -- active-job strip height (px), only shown while a job is accepted
 local H_COL  = 20    -- column header bar height (px)
 local ROW_H  = 20    -- row height (px)
 local SB_W   = 17    -- scrollbar pixel allowance
 local CELL_PT  = 10  -- cell, status and active-job font size (pt)
-local LABEL_PT = 8   -- column header, button and menu font size (pt)
+local LABEL_PT = 8   -- column header and button font size (pt)
 
 -- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
 local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
--- Without a QToolTip rule, a widget's own dark background bleeds into its
--- native tooltip box (unreadable black-on-black) instead of Qt/OS defaults.
-local _TOOLTIP_CSS = "QToolTip{background-color:#1d2030;color:#e8ebf5;" ..
-    "border:1px solid rgba(255,255,255,0.18);padding:3px;}"
-
--- Same vertical gradient as Galaxy Navigator's header strip, for a
--- consistent header look across content types.
-local _HDR_BAR_CSS = [[
-    background-color: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #2a2a3a, stop:0.4 #1e1e2a, stop:1 #16161e);
+local _ACT_BAR_CSS = [[
+    background-color: rgba(16, 18, 28, 230);
     border: none;
-    border-bottom: 1px solid rgba(70, 75, 110, 150);
+    border-bottom: 1px solid rgba(60, 65, 100, 150);
 ]]
 
 local function emptyStateHtml(text)
@@ -49,8 +46,13 @@ local _COL_HDR_CSS = [[
     QLabel::hover { color: white; }
 ]]
 
+-- Without a QToolTip rule, a widget's own dark background bleeds into its
+-- native tooltip box (unreadable black-on-black) instead of Qt/OS defaults.
+local _TOOLTIP_CSS = "QToolTip{background-color:#1d2030;color:#e8ebf5;" ..
+    "border:1px solid rgba(255,255,255,0.18);padding:3px;}"
+
 -- Accent-colored action buttons: a left accent bar plus a tinted hover state,
--- distinct per action so Collect/Deliver read apart at a glance.
+-- distinct per action so they read apart at a glance.
 local function actionBtnCss(accent, accentHover)
     return string.format([[
         QLabel {
@@ -72,23 +74,8 @@ end
 
 local _BTN_COLLECT_CSS = actionBtnCss("#3ecf5e", "#5ce87c")
 local _BTN_DELIVER_CSS = actionBtnCss("#e0b84d", "#f0cc66")
-local _BTN_HAUL_CSS    = actionBtnCss("#7aa2ff", "#9cb8ff")
-
--- Haul menu: a small dropdown of action items (Start/Pause/Resume/Stop/
--- Terminate), same overlay pattern as the commodity dropdown in
--- price_checker.lua -- Geyser has no native menu widget.
-local _HAUL_MENU_ITEM_CSS = [[
-    QLabel {
-        background-color: rgba(24,26,38,220);
-        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-family: "Consolas","Monaco",monospace;
-        padding: 0 6px;
-    }
-    QLabel::hover {
-        background-color: rgba(48,56,88,230);
-        color: white;
-    }
-]]
+local _BTN_POST_CSS    = actionBtnCss("#3aa0ff", "#5cb8ff")
+local _BTN_OFFER_CSS   = actionBtnCss("#e07a4d", "#f09a66")
 
 -- Strip showing the job currently under contract, pinned above the list.
 local _CUR_BAR_CSS = [[
@@ -140,237 +127,283 @@ local function acceptJob(jobNumber)
     send("ac " .. jobNumber, false)
 end
 
--- ── Hauling automation control ───────────────────────────────────────────────
--- Thin integration with the hauling automation (state_machine.lua): a single
--- "Haul" button whose dropdown offers only the actions valid for the current
--- state, plus a status readout. The automation runs standalone via `haul`
--- regardless of whether this pane is even open -- this is a read/control
--- surface, not a dependency in either direction.
+-- ── Rank capabilities ────────────────────────────────────────────────────────
 
--- Friendly labels for AC phases -- this tab is AC-only, so the mode itself
--- ("Armstrong Cuthbert Jobs") is redundant to display; only the phase is
--- useful, and only if it reads as plain English rather than an internal
--- phase constant like "ac_navigating_to_source".
-local _AC_PHASE_LABELS = {
-    ac_fetching_jobs        = "selecting job",
-    ac_selecting_job        = "selecting job",
-    ac_navigating_to_source = "heading to pickup",
-    ac_accepting_job        = "accepting job",
-    ac_collecting           = "collecting cargo",
-    ac_navigating_to_dest   = "heading to dropoff",
-    ac_delivering           = "delivering cargo",
-}
-
---- Snapshot of automation state, or nil if the hauling component isn't installed
-local function haulSnapshot()
-    if not F2T_HAULING_STATE then return nil end
-    return {
-        active          = F2T_HAULING_STATE.active,
-        paused          = F2T_HAULING_STATE.paused,
-        pauseRequested  = F2T_HAULING_STATE.pause_requested,
-        stopping        = F2T_HAULING_STATE.stopping,
-        phaseLabel      = _AC_PHASE_LABELS[F2T_HAULING_STATE.current_phase],
-        totalCycles     = F2T_HAULING_STATE.total_cycles or 0,
-        sessionProfit   = F2T_HAULING_STATE.session_profit or 0,
-    }
+local function rankLevel()
+    return f2t_get_rank_level(f2t_get_rank()) or 0
 end
 
---- Menu items valid for the current automation state
---- @param snap table Snapshot from haulSnapshot()
---- @return table Array of {label, action}
-local function haulMenuItems(snap)
-    if not snap.active then
-        return {
-            { label = "▶ Start", action = function()
-                if not f2tControlBlocks("Hauling") then f2t_hauling_start() end
-            end },
-        }
-    end
-
-    if snap.paused then
-        return {
-            { label = "▶ Resume", action = f2t_hauling_resume },
-            { label = "■ Stop",   action = f2t_hauling_stop },
-        }
-    end
-
-    return {
-        { label = snap.pauseRequested and "✕ Cancel Pause" or "⏸ Pause",
-          action = snap.pauseRequested and f2t_hauling_resume or function() f2t_hauling_pause() end },
-        { label = "■ Stop",      action = f2t_hauling_stop },
-        { label = "⏹ Terminate", action = f2t_hauling_terminate },
-    }
+-- Only Commanders and Captains take jobs off the board.
+local function canTakeJobs()
+    local level = rankLevel()
+    return level >= 2 and level <= 3
 end
 
---- Status text/color for the current automation state
---- @param snap table Snapshot from haulSnapshot()
---- @return string html, string tooltip
-local function haulStatusHtml(snap)
-    if not snap then
-        return string.format("<span style='%scolor:#666666;'>Hauling automation not installed</span>", CELL_FONT),
-            "Install the hauling component to enable start/stop automation"
-    end
-
-    local label, color
-    if not snap.active then
-        label, color = "STOPPED", "#888888"
-    elseif snap.stopping then
-        label, color = "STOPPING…", "#ff5555"
-    elseif snap.paused then
-        label, color = "PAUSED", "#e0b84d"
-    elseif snap.pauseRequested then
-        label, color = "PAUSING…", "#e0b84d"
-    else
-        label, color = "RUNNING", "#3ecf5e"
-    end
-
-    local detail = ""
-    if snap.active and snap.phaseLabel then
-        detail = string.format(" <span style='%scolor:#888888;'>%s</span>", CELL_FONT, snap.phaseLabel)
-    end
-
-    local html = string.format("<span style='%scolor:%s;font-weight:bold;'>&#9679; %s</span>%s",
-        CELL_FONT, color, label, detail)
-
-    local tooltip
-    if snap.active then
-        tooltip = string.format("Cycles: %d  |  Session profit: %d ig", snap.totalCycles, snap.sessionProfit)
-    elseif snap.totalCycles > 0 then
-        tooltip = string.format("Last session -- Cycles: %d  |  Profit: %d ig", snap.totalCycles, snap.sessionProfit)
-    else
-        tooltip = "Not running"
-    end
-
-    return html, tooltip
+-- "depot": POST JOB <commodity> <origin>, delivered to the company depot here.
+-- "planet": POST JOB <commodity> <destination>, shipped from this owned planet.
+local function postKind()
+    local level = rankLevel()
+    if level == 7 or level == 8 then return "depot" end
+    if level >= 10 then return "planet" end
+    return nil
 end
 
---- Close an instance's open haul dropdown, if any
-local function closeHaulMenu(inst)
-    if inst.haulMenu then
-        inst.haulMenu:hide()
-        inst.haulMenu = nil
-    end
-end
+-- ── Post / Offer Job dialog ──────────────────────────────────────────────────
 
-local function toggleHaulMenu(inst, target)
-    if inst.haulMenu then
-        closeHaulMenu(inst)
-        return
-    end
-
-    local snap = haulSnapshot()
-    if not snap then return end
-
-    local items = haulMenuItems(snap)
-    local rowH  = f2tScaled(target, 22)
-    local menuW = f2tScaled(target, 150)
-
-    inst.haulMenuGen = (inst.haulMenuGen or 0) + 1
-    local gen = inst.haulMenuGen
-
-    local menu = Geyser.Container:new({
-        name = string.format("%s_hjhm_%d", target._gid, gen),
-        x = inst.haulBtnX or 0, y = inst.barH, width = menuW, height = #items * rowH,
-    }, target.content)
-
-    local bg = Geyser.Label:new({
-        name = string.format("%s_hjhmbg_%d", target._gid, gen),
-        x = 0, y = 0, width = "100%", height = "100%",
-    }, menu)
-    bg:setStyleSheet([[
-        background-color: rgba(20, 22, 32, 250);
-        border: 1px solid rgba(100, 100, 110, 200);
-        border-radius: 4px;
-    ]])
-
-    for i, item in ipairs(items) do
-        local lbl = Geyser.Label:new({
-            name = string.format("%s_hjhmi_%d_%d", target._gid, gen, i),
-            x = 1, y = (i - 1) * rowH, width = "100%-2px", height = rowH, fontSize = f2tTextPt(target, LABEL_PT),
-        }, menu)
-        lbl:setStyleSheet(_HAUL_MENU_ITEM_CSS)
-        lbl:echo(item.label)
-        local action = item.action
-        lbl:setClickCallback(function()
-            closeHaulMenu(inst)
-            if action then action() end
-        end)
-    end
-
-    menu:show()
-    menu:raise()
-    inst.haulMenu = menu
-end
-
---- Custom hover popup for the haul controls. Native QToolTip styling proved
---- unreliable here (per-widget QToolTip{} stylesheet rules didn't consistently
---- take effect), so hover text is drawn with an ordinary Geyser label instead
---- of setToolTip(), same overlay approach as the dropdown menu above.
-local function showHoverTip(inst, target, x, text)
-    if not inst or not text or text == "" then return end
-    if not inst.hoverTip then
-        inst.hoverTipGen = (inst.hoverTipGen or 0) + 1
-        inst.hoverTip = Geyser.Label:new({
-            name = string.format("%s_hjhtip_%d", target._gid, inst.hoverTipGen),
-            x = x, y = inst.barH, width = f2tScaled(target, 260), height = f2tScaled(target, 20),
-            fontSize = f2tUiPt(target, CELL_PT),
-        }, target.content)
-        inst.hoverTip:setStyleSheet(string.format([[
-            background-color: rgba(29, 32, 48, 250);
-            border: 1px solid rgba(255,255,255,0.18);
-            border-radius: 3px;
-            color: #e8ebf5;
-            padding: 0 6px;
-            %s
-        ]], CELL_FONT))
-    end
-    inst.hoverTip:move(x, nil)
-    inst.hoverTip:echo(text)
-    inst.hoverTip:show()
-    inst.hoverTip:raise()
-end
-
-local function hideHoverTip(inst)
-    if inst and inst.hoverTip then
-        inst.hoverTip:hide()
-    end
-end
-
---- Refresh one instance's status readout (does not touch the open menu, if any)
-local function renderHaulStatus(inst)
-    if not inst or not inst.haulStatusLbl then return end
-    local html, tooltip = haulStatusHtml(haulSnapshot())
-    inst.haulStatusLbl:echo(html)
-    inst.haulTooltipText = tooltip
-end
-
-local function renderHaulStatusAll()
-    for _, inst in pairs(instances) do
-        pcall(renderHaulStatus, inst)
-    end
-end
-
--- Coarse fallback poll: catches in-flight phase text changes (e.g. moving
--- from "ac_selecting_job" to "ac_collecting") that don't go through
--- f2t_hauling_start/pause/resume/stop and so don't raise f2tHaulingStatusChanged.
--- Self-terminates once no instances remain; restarted by ensureHaulPoll().
-local _haulPollTimer = nil
-local function ensureHaulPoll()
-    if _haulPollTimer then return end
-    local function tick()
-        renderHaulStatusAll()
-        if next(instances) then
-            _haulPollTimer = tempTimer(2, tick)
-        else
-            _haulPollTimer = nil
+-- Mapped planets in the current cartel, other than the one the player is on.
+local function cartelPlanets()
+    local cartel = f2t_map_get_current_cartel and f2t_map_get_current_cartel()
+    if not cartel then return {} end
+    local here = f2t_get_current_planet and f2t_get_current_planet()
+    local list = {}
+    for name, areaId in pairs(getAreaTable()) do
+        if name ~= here and getAreaUserData(areaId, "fed2_cartel") == cartel
+            and not f2t_map_get_system_from_space_area(name) then
+            list[#list + 1] = name
         end
     end
-    _haulPollTimer = tempTimer(2, tick)
+    table.sort(list)
+    return list
 end
 
--- Instant feedback for user-initiated state changes (start/pause/resume/stop),
--- fired by state_machine.lua. Registered once, same as the GMCP handlers below.
-registerAnonymousEventHandler("f2tHaulingStatusChanged", renderHaulStatusAll)
+local _LIST_ITEM_CSS = [[
+    QLabel {
+        background-color: rgba(24,26,38,220);
+        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 6px;
+    }
+    QLabel::hover { background-color: rgba(48,56,88,230); color: white; }
+]]
+
+local _LIST_ITEM_SEL_CSS = [[
+    QLabel {
+        background-color: rgba(40,70,120,240);
+        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-family: "Consolas","Monaco",monospace;
+        color: white;
+        padding: 0 6px;
+    }
+]]
+
+-- A scrollable single-select list of names; onPick(name) fires on click.
+local function buildPickList(prefix, parent, geom, names, onPick, decorate)
+    local frame = Geyser.Label:new({
+        name = prefix .. "_frame", x = geom.x, y = geom.y, width = geom.width, height = geom.height,
+    }, parent)
+    frame:setStyleSheet("background-color: rgba(18,18,26,255); border: 1px solid rgba(72,85,128,180);")
+
+    local scroll = Geyser.ScrollBox:new({
+        name = prefix .. "_scroll", x = geom.x + 1, y = geom.y + 1,
+        width = geom.width - 2, height = geom.height - 2,
+    }, parent)
+
+    local rowH = 22
+    local labels = {}
+    for i, name in ipairs(names) do
+        local lbl = Geyser.Label:new({
+            name = prefix .. "_i" .. i, x = 0, y = (i - 1) * rowH, width = geom.width - 2 - SB_W, height = rowH,
+        }, scroll)
+        lbl:setStyleSheet(_LIST_ITEM_CSS)
+        lbl:echo(string.format("<span style='%scolor:#e6d28c;'>%s%s</span>",
+            CELL_FONT, decorate and decorate(name) or "", name))
+        labels[name] = lbl
+        lbl:setClickCallback(function()
+            for other, otherLbl in pairs(labels) do
+                otherLbl:setStyleSheet(other == name and _LIST_ITEM_SEL_CSS or _LIST_ITEM_CSS)
+            end
+            onPick(name)
+        end)
+    end
+end
+
+local _pendingPostDialog = nil
+
+local function postDialogBuild(target)
+    local pending = _pendingPostDialog
+    _pendingPostDialog = nil
+    if not pending then return end
+
+    local c, gid = target.content, target._gid
+    local dlgW, dlgH = pending.width, pending.height
+    local w = dlgW - 4
+    local offer = pending.kind == "offer"
+
+    local intro = Geyser.Label:new({
+        name = gid .. "_pj_intro", x = 0, y = 6, width = "100%", height = 34,
+    }, c)
+    intro:setStyleSheet(Mux.dialogCss.subtext .. "qproperty-wordWrap: true;")
+    intro:echo(pending.intro)
+
+    local choice = { commodity = nil, planet = nil }
+    local listTop = 64
+    local listH   = dlgH - 26 - listTop - (offer and 108 or 74)
+    local colW    = math.floor((w - 42) / 2)
+
+    local function heading(id, x, text)
+        local lbl = Geyser.Label:new({ name = gid .. id, x = x, y = 44, width = colW, height = 18 }, c)
+        lbl:setStyleSheet(Mux.dialogCss.subtext .. "padding:0;")
+        lbl:echo(text)
+    end
+    heading("_pj_hc", 14, "Commodity")
+    heading("_pj_hp", 28 + colW, pending.planetHeading)
+
+    local preview = Geyser.Label:new({
+        name = gid .. "_pj_preview", x = 14, y = listTop + listH + 6, width = w - 28, height = 22,
+    }, c)
+    preview:setStyleSheet("background: transparent; color: #8896c0; " .. CELL_FONT)
+
+    local nameInput
+    local function commandText()
+        local commodity = choice.commodity and choice.commodity:lower() or "<commodity>"
+        local planet    = choice.planet or "<planet>"
+        if offer then
+            local who = nameInput and nameInput:getText() or ""
+            if who == "" then who = "<player>" end
+            return string.format("offer %s job %s %s", who, commodity, planet)
+        end
+        return string.format("post job %s %s", commodity, planet)
+    end
+    local function refreshPreview()
+        preview:echo("Sends: <span style='color:#e8ebf5;'>" .. commandText() .. "</span>")
+    end
+
+    buildPickList(gid .. "_pjc", c, { x = 14, y = listTop, width = colW, height = listH },
+        pending.commodities, function(name) choice.commodity = name; refreshPreview() end,
+        f2tCommodityIconPrefix)
+
+    if #pending.planets > 0 then
+        buildPickList(gid .. "_pjp", c, { x = 28 + colW, y = listTop, width = colW, height = listH },
+            pending.planets, function(name) choice.planet = name; refreshPreview() end)
+    else
+        local none = Geyser.Label:new({
+            name = gid .. "_pj_noplanets", x = 28 + colW, y = listTop, width = colW, height = listH,
+        }, c)
+        none:setStyleSheet(Mux.dialogCss.subtext .. "qproperty-wordWrap: true;")
+        none:echo("No mapped planets in this cartel yet. Explore the cartel (map explore cartel) " ..
+            "or type the command instead.")
+    end
+
+    if offer then
+        local lbl = Geyser.Label:new({
+            name = gid .. "_pj_who", x = 14, y = listTop + listH + 34, width = 70, height = 26,
+        }, c)
+        lbl:setStyleSheet(Mux.dialogCss.subtext .. "padding:0;")
+        lbl:echo("Player")
+        nameInput = Geyser.CommandLine:new({
+            name = gid .. "_pj_whoin", x = 84, y = listTop + listH + 34, width = w - 98, height = 26,
+        }, c)
+        nameInput:setStyleSheet("background-color: rgba(18,20,32,255); color: #e8ebf5; font-size: 12px; " ..
+            "border: 1px solid rgba(72,85,128,180); border-radius: 3px; padding-left: 6px;")
+        nameInput:setAction(function() refreshPreview() end)
+    end
+
+    refreshPreview()
+
+    local btnY = (dlgH - 26) - 42
+    local cancel = Geyser.Label:new({ name = gid .. "_pj_cancel", x = 14, y = btnY, width = 120, height = 32 }, c)
+    cancel:setStyleSheet(Mux.dialogCss.button)
+    cancel:echo("<center>Cancel</center>")
+    Mux.wireDialogButton(cancel, Mux.dialogCss.button, Mux.dialogCss.buttonHover)
+    cancel:setClickCallback(function() target:close() end)
+
+    local ok = Geyser.Label:new({ name = gid .. "_pj_ok", x = w - 134, y = btnY, width = 120, height = 32 }, c)
+    ok:setStyleSheet(Mux.dialogCss.buttonPrimary)
+    ok:echo("<center>" .. pending.okLabel .. "</center>")
+    Mux.wireDialogButton(ok, Mux.dialogCss.buttonPrimary, Mux.dialogCss.buttonPrimaryHover)
+    ok:setClickCallback(function()
+        local who = nameInput and nameInput:getText() or ""
+        if not choice.commodity or not choice.planet or (offer and who == "") then
+            refreshPreview()
+            preview:echo("<span style='color:#ff7777;'>Pick a commodity and a planet" ..
+                (offer and ", and enter the player's name" or "") .. ".</span>")
+            return
+        end
+        target:close()
+        send(commandText())
+    end)
+end
+
+-- kind: "depot" | "planet" | "offer"
+local function openPostDialog(kind)
+    if not (Mux and Mux.createDialog and Mux.registerContent and Mux._applyContent) then
+        cecho("\n<yellow>[jobs]<reset> Dialogs require Muxlet.\n")
+        return
+    end
+    if not Mux._content or not Mux._content["f2t_post_job_dialog"] then
+        Mux.registerContent("f2t_post_job_dialog", {
+            internal = true,
+            name     = "Post Job",
+            apply    = function(target)
+                target.contentBg:echo("")
+                target.contentBg:setStyleSheet("background-color:rgba(0,0,0,0);border:none;")
+                target.contentBg:hide()
+                postDialogBuild(target)
+            end,
+        })
+    end
+
+    local commodities = {}
+    for _, item in ipairs(f2tCommodityList and f2tCommodityList() or {}) do
+        commodities[#commodities + 1] = item.name
+    end
+
+    local here = f2t_get_current_planet and f2t_get_current_planet() or "this planet"
+    local specs = {
+        depot = {
+            title = "Post Job", okLabel = "Post Job", planetHeading = "From planet",
+            intro = string.format("A 75-ton job, bought at the origin exchange and delivered to your " ..
+                "company depot on <b>%s</b>. The cargo and hauling fee are charged now.", here),
+        },
+        planet = {
+            title = "Post Job", okLabel = "Post Job", planetHeading = "To planet",
+            intro = string.format("A 75-ton job from <b>%s</b>'s stockpile to another planet's exchange. " ..
+                "Only post to planets that are buying it.", here),
+        },
+        offer = {
+            title = "Offer Job", okLabel = "Offer Job", planetHeading = "To planet",
+            intro = string.format("Offer a job from <b>%s</b> straight to a Commander or Captain. " ..
+                "If they reject it, the goods are lost.", here),
+        },
+    }
+    local spec = specs[kind]
+    spec.kind        = kind
+    spec.width       = 480
+    spec.height      = kind == "offer" and 470 or 430
+    spec.commodities = commodities
+    spec.planets     = cartelPlanets()
+    _pendingPostDialog = spec
+
+    local d = Mux.createDialog({
+        title     = spec.title,
+        width     = spec.width,
+        height    = spec.height,
+        singleton = "f2t_post_job_dialog",
+    })
+    Mux._applyContent(d, "f2t_post_job_dialog")
+    d:show()
+    d:raise()
+end
+
+-- Rank progress for the action row: hauling credits toward promotion.
+local function progressHtml()
+    local credits = f2t_ac_get_hauling_credits and f2t_ac_get_hauling_credits()
+    if not credits then return "" end
+    local color = credits >= 500 and "#3ecf5e" or "#c8c8c8"
+    return string.format("<span style='%scolor:#888888;'>Hauling credits </span>" ..
+        "<span style='%scolor:%s;font-weight:bold;'>%d</span><span style='%scolor:#888888;'>/500</span>",
+        CELL_FONT, CELL_FONT, color, credits, CELL_FONT)
+end
+
+local function boardSummaryHtml()
+    return string.format("<span style='%scolor:#888888;'>%d job%s on the board</span>",
+        CELL_FONT, #jobs, #jobs == 1 and "" or "s")
+end
+
+local function renderActionInfo(inst)
+    if not inst.actInfo then return end
+    inst.actInfo:echo(canTakeJobs() and progressHtml() or boardSummaryHtml())
+end
 
 -- Computes route distance and bonus/penalty pay for one gmcp.jobs.board entry.
 local function buildJobRow(entry)
@@ -442,11 +475,17 @@ local function buildCols()
             sort_value    = function(row) return tonumber(row.jobNumber) or 0 end,
             scrollbox_pct = 10,
             render_label  = function(v, _row, cell)
-                cell:echo(string.format(
-                    "<span style='%scolor:#7aa2ff;text-decoration:underline;'>%s</span>",
-                    CELL_FONT, v or ""))
-                cell:setToolTip("Accept job " .. tostring(v))
-                cell:setClickCallback(function() acceptJob(v) end)
+                if canTakeJobs() then
+                    cell:echo(string.format(
+                        "<span style='%scolor:#7aa2ff;text-decoration:underline;'>%s</span>",
+                        CELL_FONT, v or ""))
+                    cell:setToolTip("Accept job " .. tostring(v) .. " (ac " .. tostring(v) .. ")")
+                    cell:setClickCallback(function() acceptJob(v) end)
+                else
+                    cell:echo(string.format("<span style='%scolor:#888888;'>%s</span>", CELL_FONT, v or ""))
+                    cell:setToolTip("Only Commanders and Captains can take jobs")
+                    cell:setClickCallback(function() end)
+                end
             end,
         },
         {
@@ -591,7 +630,7 @@ local function layoutInstance(gid)
     local curH = currentJob and inst.curH or 0
     inst.currentJobBar:resize(nil, curH)
 
-    local colY = inst.barH + curH
+    local colY = inst.topH + curH
     inst.colBar:move(nil, colY)
 
     local scrollTop = colY + inst.colH
@@ -605,6 +644,7 @@ local function refreshInstance(gid)
     local inst = instances[gid]
     if not inst then return end
     layoutInstance(gid)
+    renderActionInfo(inst)
     f2tTableSetData(inst.tableId, jobs)
     if inst.noJobsLbl then
         if #jobs == 0 then inst.noJobsLbl:show() else inst.noJobsLbl:hide() end
@@ -680,6 +720,33 @@ registerAnonymousEventHandler("gmcp.char.job", onGmcpCharJob)
 
 -- ── Content build ─────────────────────────────────────────────────────────────
 
+-- Buttons for the rank's action row; empty for ranks that only watch the board.
+local function actionButtons()
+    if canTakeJobs() then
+        return {
+            { label = "📦 Collect", tip = "Collect cargo for the accepted job (collect)", css = _BTN_COLLECT_CSS,
+              run = function() send("collect", false) end },
+            { label = "✅ Deliver", tip = "Deliver cargo at the destination (deliver)", css = _BTN_DELIVER_CSS,
+              run = function() send("deliver", false) end },
+        }
+    end
+    local kind = postKind()
+    if kind == "depot" then
+        return {
+            { label = "📮 Post Job", tip = "Post a job delivering to your depot here (post job)", css = _BTN_POST_CSS,
+              run = function() openPostDialog("depot") end },
+        }
+    elseif kind == "planet" then
+        return {
+            { label = "📮 Post Job", tip = "Post a job from this planet (post job)", css = _BTN_POST_CSS,
+              run = function() openPostDialog("planet") end },
+            { label = "🤝 Offer Job", tip = "Offer a job to a named hauler (offer ... job)", css = _BTN_OFFER_CSS,
+              run = function() openPostDialog("offer") end },
+        }
+    end
+    return {}
+end
+
 local function buildContent(target)
     local gid = target._gid
 
@@ -700,62 +767,49 @@ local function buildContent(target)
         return string.format("%s_hj_%d", gid, wc)
     end
 
-    local barH    = f2tScaled(target, H_BAR)
     local colH    = f2tScaled(target, H_COL)
     local cellPt  = f2tUiPt(target, CELL_PT)
     local labelPt = f2tTextPt(target, LABEL_PT)
 
-    -- ── Button strip ──────────────────────────────────────────────────────────
-    local bar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = barH,
-    }, target.content)
-    bar:setStyleSheet(_HDR_BAR_CSS)
+    local strip = f2tHaulStripCreate(target)
+    local barH  = strip.height
 
-    local buttons = {
-        { label = "📦 Collect", cmd = "collect", tip = "Collect cargo for the accepted job", css = _BTN_COLLECT_CSS },
-        { label = "✅ Deliver", cmd = "deliver", tip = "Deliver cargo at the destination",   css = _BTN_DELIVER_CSS },
-    }
-    local btnW = f2tScaled(target, 76)
-    for i, b in ipairs(buttons) do
-        local btn = Geyser.Label:new({
-            name = wid(), x = 6 + (i - 1) * (btnW + 8), y = 4, width = btnW, height = barH - 8, fontSize = labelPt,
-        }, bar)
-        btn:setStyleSheet(b.css)
-        btn:echo("<center>" .. b.label .. "</center>")
-        btn:setToolTip(b.tip)
-        local cmd = b.cmd
-        btn:setClickCallback(function() send(cmd, false) end)
+    -- ── Rank action row ───────────────────────────────────────────────────────
+    local buttons = actionButtons()
+    local actH = (#buttons > 0) and f2tScaled(target, H_ACT) or 0
+    local actBar, actInfo
+    if actH > 0 then
+        actBar = Geyser.Label:new({
+            name = wid(), x = 0, y = barH, width = "100%", height = actH,
+        }, target.content)
+        actBar:setStyleSheet(_ACT_BAR_CSS)
+
+        local btnW = f2tScaled(target, 92)
+        for i, b in ipairs(buttons) do
+            local btn = Geyser.Label:new({
+                name = wid(), x = 6 + (i - 1) * (btnW + 8), y = 4, width = btnW, height = actH - 8,
+                fontSize = labelPt,
+            }, actBar)
+            btn:setStyleSheet(b.css)
+            btn:echo("<center>" .. b.label .. "</center>")
+            btn:setToolTip(b.tip)
+            btn:setClickCallback(b.run)
+        end
+
+        local infoX = 6 + #buttons * (btnW + 8)
+        actInfo = Geyser.Label:new({
+            name = wid(), x = infoX, y = 0, width = "100%-" .. (infoX + 6) .. "px", height = "100%",
+            fontSize = cellPt,
+        }, actBar)
+        actInfo:setStyleSheet(
+            "background-color: transparent; border: none; qproperty-alignment: AlignRight|AlignVCenter;")
     end
-
-    -- ── Haul automation control ──────────────────────────────────────────────
-    local haulBtnX = 6 + 2 * (btnW + 8)
-    local haulBtnW = f2tScaled(target, 70)
-    local haulBtn = Geyser.Label:new({
-        name = wid(), x = haulBtnX, y = 4, width = haulBtnW, height = barH - 8, fontSize = labelPt,
-    }, bar)
-    haulBtn:setStyleSheet(_BTN_HAUL_CSS)
-    haulBtn:echo("<center>Haul ▾</center>")
-    haulBtn:setOnEnter(function()
-        showHoverTip(instances[gid], target, haulBtnX, "Start/stop the hauling automation")
-    end)
-    haulBtn:setOnLeave(function() hideHoverTip(instances[gid]) end)
-
-    local statusX = haulBtnX + haulBtnW + 8
-    local haulStatusLbl = Geyser.Label:new({
-        name = wid(), x = statusX, y = 0, width = "100%-" .. (statusX + 6) .. "px", height = "100%",
-        fontSize = cellPt,
-    }, bar)
-    haulStatusLbl:setStyleSheet("background-color: transparent; border: none;")
-    haulStatusLbl:setOnEnter(function()
-        local inst = instances[gid]
-        if inst then showHoverTip(inst, target, statusX, inst.haulTooltipText) end
-    end)
-    haulStatusLbl:setOnLeave(function() hideHoverTip(instances[gid]) end)
+    local topH = barH + actH
 
     -- ── Active-job strip ──────────────────────────────────────────────────────
     -- Hidden/zero-height until gmcp.char.job has a job; layoutInstance() sizes it.
     local currentJobBar = Geyser.Label:new({
-        name = wid(), x = 0, y = barH, width = "100%", height = 0,
+        name = wid(), x = 0, y = topH, width = "100%", height = 0,
     }, target.content)
     currentJobBar:setStyleSheet(_CUR_BAR_CSS)
     currentJobBar:hide()
@@ -775,7 +829,7 @@ local function buildContent(target)
 
     -- ── Column header bar ─────────────────────────────────────────────────────
     local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = barH, width = "100%", height = colH,
+        name = wid(), x = 0, y = topH, width = "100%", height = colH,
     }, target.content)
     colBar:setStyleSheet([[
         background-color: rgba(18, 20, 35, 200);
@@ -784,7 +838,7 @@ local function buildContent(target)
     ]])
 
     -- ── ScrollBox ─────────────────────────────────────────────────────────────
-    local scrollTop = barH + colH
+    local scrollTop = topH + colH
     local scroll = Geyser.ScrollBox:new({
         name   = wid(),
         x = 0, y = scrollTop,
@@ -837,6 +891,8 @@ local function buildContent(target)
     f2tTableSetColHdrs(tableId, colHdrs)
 
     instances[gid] = {
+        target        = target,
+        rank          = f2t_get_rank(),
         tableId       = tableId,
         colBar        = colBar,
         currentJobBar = currentJobBar,
@@ -845,28 +901,35 @@ local function buildContent(target)
         contentLabel  = contentLabel,
         contentW      = contentW,
         noJobsLbl     = noJobsLbl,
-        haulStatusLbl = haulStatusLbl,
-        haulBtnX      = haulBtnX,
-        haulMenu      = nil,
-        haulMenuGen   = 0,
-        barH          = barH,
+        actInfo       = actInfo,
+        topH          = topH,
         curH          = f2tScaled(target, H_CUR),
         colH          = colH,
         statusPx      = f2tScaled(target, 8),
     }
 
-    haulBtn:setClickCallback(function() toggleHaulMenu(instances[gid], target) end)
-
-    renderHaulStatus(instances[gid])
-    ensureHaulPoll()
-
     refreshInstance(gid)
 end
 
+-- A promotion changes what the action row offers and whether jobs can be
+-- accepted, so the panel rebuilds; any other vitals tick only refreshes the
+-- credit readout.
+registerAnonymousEventHandler("gmcp.char.vitals", function()
+    local rank = f2t_get_rank()
+    for _, inst in pairs(instances) do
+        if inst.rank ~= rank then
+            inst.rank = rank
+            f2tRebuildForTextScale(inst.target)
+        else
+            pcall(renderActionInfo, inst)
+        end
+    end
+end)
+
 local function buildHaulingJobsDef()
     return {
-        name        = "Hauling Jobs",
-        description = "Armstrong Cuthbert job board with route distance and effective pay.",
+        name        = "Jobs",
+        description = "Armstrong Cuthbert workboard with route distance, effective pay, and posting for higher ranks.",
         group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
@@ -882,6 +945,7 @@ local function buildHaulingJobsDef()
                 f2tTableDestroy(inst.tableId)
                 instances[target._gid] = nil
             end
+            f2tHaulStripRemove(target._gid)
         end,
         resize = function(target)
             local inst = instances[target._gid]

@@ -40,10 +40,16 @@ local _HDR_ACTIVE_CSS = [[
     }
     QLabel::hover { color: rgba(180,255,180,255); }
 ]]
+-- The QToolTip rule keeps cell tooltips readable; without it Qt draws them
+-- solid black. It only takes when the label's own rule is a QLabel{} block.
 local _CELL_CSS = [[
     QLabel {
         background-color: transparent; border: none;
         padding: 0 3px; color: #c8c8c8;
+    }
+    QToolTip {
+        background-color: #1d2030; color: #e8ebf5;
+        border: 1px solid rgba(255,255,255,0.18); padding: 3px;
     }
 ]]
 

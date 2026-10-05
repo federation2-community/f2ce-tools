@@ -1,36 +1,45 @@
 [
   {
     "name": "galaxy_nav_line",
-    "patterns": [{"pattern": "^(.+)$", "type": "regex"}]
+    "patterns": [
+      {
+        "pattern": "^(.+)$",
+        "type": "regex"
+      }
+    ]
   },
   {
     "name": "galaxy_nav_end",
-    "patterns": [{"pattern": "^$", "type": "regex"}]
-  },
-  {
-    "name": "price_checker_line",
-    "patterns": [{"pattern": "^([\\w\\s]+): ([\\w\\s]+) is (buying|selling) (\\d+) tons at (\\d+)ig/ton$", "type": "regex"}]
-  },
-  {
-    "name": "price_checker_profit_tick",
-    "patterns": [{"pattern": "^$", "type": "regex"}]
+    "patterns": [
+      {
+        "pattern": "^$",
+        "type": "regex"
+      }
+    ]
   },
   {
     "name": "exchange_spam",
     "patterns": [
-      {"pattern": "^\\+{3} The exchange display shows the prices for .+ \\+{3}", "type": "regex"},
-      {"pattern": "^\\+{3} The display shows the prices for .+ \\+{3}", "type": "regex"},
-      {"pattern": "^\\+{3} Exchange will buy \\d+ tons at \\d+.+ \\+{3}", "type": "regex"},
-      {"pattern": "^\\+{3} Exchange has .+ for sale \\+{3}", "type": "regex"},
-      {"pattern": "^\\+{3} Offer price is \\d+.+ for first \\d+ tons \\+{3}", "type": "regex"}
-    ]
-  },
-  {
-    "name": "price_checker_search_hide",
-    "patterns": [
-      {"pattern": "^Your comm unit lights up as your brokers, Messrs Trum.*", "type": "regex"},
-      {"pattern": "^requested spot market p.*", "type": "regex"},
-      {"pattern": ".*is not currently trading in this commodity$", "type": "regex"}
+      {
+        "pattern": "^\\+{3} The exchange display shows the prices for .+ \\+{3}",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\+{3} The display shows the prices for .+ \\+{3}",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\+{3} Exchange will buy \\d+ tons at \\d+.+ \\+{3}",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\+{3} Exchange has .+ for sale \\+{3}",
+        "type": "regex"
+      },
+      {
+        "pattern": "^\\+{3} Offer price is \\d+.+ for first \\d+ tons \\+{3}",
+        "type": "regex"
+      }
     ]
   }
 ]

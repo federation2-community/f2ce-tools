@@ -607,7 +607,7 @@ function f2t_hauling_po_find_next_sell()
     f2t_debug_log("[hauling/po] Finding next sell location for %s (attempt %d/%d)",
         commodity, F2T_HAULING_STATE.po_sell_attempts, max_attempts)
 
-    f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
+    f2t_price_check_for("hauling", commodity, function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end

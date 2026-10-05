@@ -6,7 +6,10 @@
 --   Prices  - every commodity the exchange lists: base, Buying/Selling price,
 --             stock. Deltas vs base are colored from the player's side
 --             (green = exchange pays a premium / charges under base). Click
---             Buying to sell a 75-ton lot, Selling to buy one.
+--             Buying to sell a 75-ton lot, Selling to buy one. With Commerce:
+--             price tooltips name the cartel's best elsewhere (from the price
+--             service's cache), ▶/★ mark what hauling is trading / would
+--             trade, and a commodity name opens it in Commerce > Trading.
 --   Futures - for Traders/Financiers, the futures market table shared with
 --             fed2_futures_market (f2tFuturesMarketCols/Rows from
 --             content/futures.lua); these ranks default to this view, with a
@@ -125,9 +128,9 @@ end
 
 -- A commodity-name click sends a plain "check price" spot check so its result
 -- shows in the console as confirmation. The result line ("System: Planet is
--- buying|selling N tons at Pig/ton") is the same shape the price_checker_line
--- trigger captures/gags for its own panels, so that trigger checks this guard
--- first and lets the spot-check line through untouched.
+-- buying|selling N tons at Pig/ton") is the same shape the price service's
+-- capture trigger (commodities_price_capture) takes, so that trigger checks this
+-- guard first and lets the spot-check line through untouched.
 function f2tExchangeSpotCheckActive()
     return F2T_EXCHANGE_SPOT_CHECK_UNTIL ~= nil and os.time() < F2T_EXCHANGE_SPOT_CHECK_UNTIL
 end
@@ -228,12 +231,65 @@ local function commodGroups()
     return groups
 end
 
+-- ── Commerce context ──────────────────────────────────────────────────────────
+-- Read-only use of Commerce's state, so the board can say how this exchange
+-- compares and what hauling is doing, without sending any commands: the price
+-- service's cartel cache, and hauling's current trade and scan picks.
+
+local function ageText(at)
+    local secs = os.time() - at
+    if secs < 60 then return "just now" end
+    if secs < 3600 then return string.format("%dm ago", math.floor(secs / 60)) end
+    return string.format("%dh ago", math.floor(secs / 3600))
+end
+
+-- First exchange in a sorted price list that isn't the one the player is in.
+local function bestElsewhere(list, here)
+    for _, e in ipairs(list or {}) do
+        if e.planet ~= here then return e end
+    end
+    return nil
+end
+
+-- Tooltip line comparing this exchange with the cartel's best, or "" when no
+-- cartel prices are cached for the commodity.
+local function elsewhereNote(entry, at, label)
+    if not at then return "" end
+    if not entry then return string.format("\nNo other exchange in the cartel (prices %s)", ageText(at)) end
+    return string.format("\n%s: %s %dig/ton (%s)", label, entry.planet, entry.price, ageText(at))
+end
+
+-- Commodities hauling is moving right now, and the latest cartel scan's picks.
+local function haulingMarks()
+    local active, picks = {}, {}
+    local state = F2T_HAULING_STATE
+    if state and state.active then
+        if state.mode == "exchange" and state.current_commodity then
+            active[state.current_commodity] = true
+        elseif state.mode == "po" and state.po_current_job then
+            local job = state.po_current_job
+            if job.commodity then active[job.commodity] = true end
+            if job.bundled_commodity then active[job.bundled_commodity] = true end
+        end
+    end
+    local scan = f2tPriceLastScan and f2tPriceLastScan("cartel")
+    if scan and f2t_hauling_rank_commodities then
+        for i, analysis in ipairs(f2t_hauling_rank_commodities(scan.results)) do
+            picks[analysis.commodity] = i
+        end
+    end
+    return active, picks
+end
+
 -- ── Prices table ──────────────────────────────────────────────────────────────
 
 local function buildPriceRows()
     if not atExchange() then return {} end
     local comms = gmcp and gmcp.exchange and gmcp.exchange.commodities
     if type(comms) ~= "table" then return {} end
+
+    local here = gmcp.room.info.area
+    local active, picks = haulingMarks()
 
     local rows = {}
     for name, d in pairs(comms) do
@@ -253,6 +309,15 @@ local function buildPriceRows()
                 if tick.sell  then row.sell  = tick.sell  end
                 if tick.stock then row.stock = tick.stock end
             end
+
+            row.haulActive = active[name]
+            row.haulPick   = picks[name]
+            local cached = f2tPriceCached and f2tPriceCached(name, "cartel")
+            if cached then
+                row.pricesAt      = cached.at
+                row.sellElsewhere = bestElsewhere(cached.parsed.buy, here)
+                row.buyElsewhere  = bestElsewhere(cached.parsed.sell, here)
+            end
             rows[#rows + 1] = row
         end
     end
@@ -268,18 +333,35 @@ local function priceCols()
             default_sort  = "asc",
             sort_value    = function(r) return (r.name or ""):lower() end,
             scrollbox_pct = 26,
-            render_label  = function(v, _row, cell)
+            render_label  = function(v, row, cell)
                 local icon = iconsEnabled() and COMMOD_ICONS[v] or nil
                 local text = icon and (icon .. " " .. tostring(v or "")) or tostring(v or "")
-                cell:echo(spanRaw("left", coloredSpan(C_NM, text)))
+                local mark = ""
+                if row.haulActive then
+                    mark = coloredSpan(C_G, "▶ ")
+                elseif row.haulPick then
+                    mark = coloredSpan("#e0b84d", "★ ")
+                end
+                cell:echo(spanRaw("left", mark .. coloredSpan(C_NM, text)))
+
                 local group = commodGroups()[v]
-                cell:setToolTip(string.format(
-                    "%s%s — click for a spot price check", tostring(v or ""),
-                    group and (" — " .. group .. " group") or ""))
-                local name = tostring(v or ""):lower()
+                local lines = {
+                    string.format("%s%s", tostring(v or ""), group and (" — " .. group .. " group") or ""),
+                }
+                if row.haulActive then lines[#lines + 1] = "Hauling is trading this right now" end
+                if row.haulPick then
+                    lines[#lines + 1] = string.format(
+                        "Exchange hauling's pick #%d from the last cartel scan", row.haulPick)
+                end
+                lines[#lines + 1] = "Click to see its prices across the cartel in Commerce > Trading"
+                cell:setToolTip(table.concat(lines, "\n"))
+
+                local name = tostring(v or "")
                 cell:setClickCallback(function()
+                    if f2tPriceCheckerFocus and f2tPriceCheckerFocus(name) then return end
+                    -- No Trading panel to show it in: a spot check in the console.
                     F2T_EXCHANGE_SPOT_CHECK_UNTIL = os.time() + 2
-                    send("check price " .. name, false)
+                    send("check price " .. name:lower(), false)
                 end)
             end,
         },
@@ -312,7 +394,8 @@ local function priceCols()
                 end
                 cell:echo(spanRaw("right", priceDeltaHtml(n, row.base, false)))
                 cell:setToolTip(string.format(
-                    "Exchange pays %dig/ton — click to SELL a 75-ton lot from your hold", n))
+                    "Exchange pays %dig/ton — click to SELL a 75-ton lot from your hold", n)
+                    .. elsewhereNote(row.sellElsewhere, row.pricesAt, "Best price to sell elsewhere"))
                 local name = tostring(row.name or ""):lower()
                 cell:setClickCallback(function() send("sell " .. name, false) end)
             end,
@@ -333,7 +416,8 @@ local function priceCols()
                 end
                 cell:echo(spanRaw("right", priceDeltaHtml(n, row.base, true)))
                 cell:setToolTip(string.format(
-                    "Exchange charges %dig/ton — click to BUY a 75-ton lot", n))
+                    "Exchange charges %dig/ton — click to BUY a 75-ton lot", n)
+                    .. elsewhereNote(row.buyElsewhere, row.pricesAt, "Best price to buy elsewhere"))
                 local name = tostring(row.name or ""):lower()
                 cell:setClickCallback(function() send("buy " .. name, false) end)
             end,
@@ -811,6 +895,22 @@ table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterExchange)
 
 registerAnonymousEventHandler("gmcp.exchange.commodities", refreshAll)
 registerAnonymousEventHandler("gmcp.exchange.futures",     refreshAll)
+
+-- Commerce changes (new cartel prices, a finished scan, hauling's trade) only
+-- touch tooltips and markers; coalesced so a full scan redraws once.
+local _commerceRefreshTimer = nil
+local function refreshForCommerce(_, _, scope)
+    if scope and scope ~= "cartel" then return end
+    if not atExchange() or not next(instances) then return end
+    if _commerceRefreshTimer then return end
+    _commerceRefreshTimer = tempTimer(1, function()
+        _commerceRefreshTimer = nil
+        refreshAll()
+    end)
+end
+registerAnonymousEventHandler("f2tPriceUpdated", refreshForCommerce)
+registerAnonymousEventHandler("f2tPriceScanFinished", refreshForCommerce)
+registerAnonymousEventHandler("f2tHaulingStatusChanged", refreshForCommerce)
 
 local TICK_REFRESH_THROTTLE = 5   -- min seconds between ticker-driven table refreshes
 local lastTickRefresh = 0

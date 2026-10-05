@@ -186,7 +186,7 @@ end
 --- @param job table Deficit job; job.failedSources is a set of planet names
 --- @param callback function Called with true when the job was re-sourced, false otherwise
 function f2t_po_hauling_resource_job(job, callback)
-    f2t_price_check_commodity(job.commodity, function(_commodityName, parsedData, _analysis)
+    f2t_price_check_for("hauling", job.commodity, function(_commodityName, parsedData, _analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -276,7 +276,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
             end
 
             f2t_debug_log("[hauling/po-queue] Checking cartel sources for %s", job.commodity)
-            f2t_price_check_commodity(job.commodity, function(_commodityName, parsedData, _analysis)
+            f2t_price_check_for("hauling", job.commodity, function(_commodityName, parsedData, _analysis)
                 if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                     return
                 end
@@ -313,7 +313,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
             else
                 -- Fall back to cartel price check
                 f2t_debug_log("[hauling/po-queue] No owned destination for %s, checking cartel", job.commodity)
-                f2t_price_check_commodity(job.commodity, function(_commodity_name, _parsed_data, analysis)
+                f2t_price_check_for("hauling", job.commodity, function(_commodity_name, _parsed_data, analysis)
                     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                         return
                     end
@@ -447,13 +447,12 @@ function f2t_po_hauling_build_queue(planet_exchange_data, owned_planets, callbac
     local deficits = f2t_po_hauling_find_deficits(planet_exchange_data)
     F2T_HAULING_STATE.po_deficit_count = #deficits
 
-    -- Find excesses (unless po_mode is deficit-only)
-    local po_mode = f2t_settings_get("hauling", "po_mode")
+    -- Find excesses (unless running the deficit-only strategy)
     local excesses = {}
-    if po_mode ~= "deficit" then
+    if not F2T_HAULING_STATE.po_deficit_only then
         excesses = f2t_po_hauling_find_excesses(planet_exchange_data)
     else
-        f2t_debug_log("[hauling/po-queue] Skipping excess detection (po_mode=deficit)")
+        f2t_debug_log("[hauling/po-queue] Skipping excess detection (deficit strategy)")
     end
     F2T_HAULING_STATE.po_excess_count = #excesses
 

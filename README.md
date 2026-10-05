@@ -38,8 +38,8 @@ Run `f2t` for a full command overview, or `f2t status` to see which components a
 **Mapping & Navigation** (`map`, `nav`)
 Automatic room-by-room mapping as you move, syndicate/cartel/system galaxy topology tracking, saved destinations, speedwalk navigation by name/hash/room ID, planet and system exploration (single room, planet, system, cartel, syndicate, or full galaxy), manual room/exit editing, special exits (arrival commands, circuit travel like trains and shuttles), and map import/export.
 
-**Automated Trading** (`haul`)
-Rank-aware automated commodity trading: analyzes exchange prices, buys low, sells high, and repeats across a queue of profitable commodities. Supports Exchange mode and rank-gated modes (Armstrong Cuthbert, Akaturi merchant runs), with configurable profit margins and pause behavior.
+**Automated Hauling** (`haul`)
+Rank-aware hauling: Armstrong Cuthbert cargo jobs (Commander, Captain), Akaturi contracts (Adventurer), exchange trading that buys low and sells high across a queue of profitable commodities (Merchant and up), and planet supply that fills your planets' deficits and sells their excesses (Founder+). `haul mode` picks what `haul start` runs where a rank has more than one choice (Founder+ can choose planet, deficits only, or exchange), with configurable profit margins and pause behavior.
 
 **Factory Management** (`factory`, `fac`)
 Status table for all your factories, one-command flush-to-market, and settings for automatic pre-reset flushing.
@@ -66,12 +66,15 @@ With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 - **Galaxy Navigator** — browse every syndicate, cartel, system, and planet; click to travel
 - **F2CE Map** — the live Mudlet mapper
 - **Company** — overview, factories, financials, and portfolio (Financier+) as separate panes
-- **Exchange** — live prices (or futures for Traders/Financiers) with a ticker
+- **Exchange** — live prices (or futures for Traders/Financiers) with a ticker; hover a price for the cartel's best elsewhere, ▶/★ mark what hauling is trading or would trade, and a commodity name opens it in Commerce > Trading
 - **Futures Market** — contracts on offer and your open positions, with profit scoring
-- **Price Checker** — cartel price scanning for the best profit
+- **Commerce** — hauling for every rank, each with the Haul start/pause/stop strip and mode picker:
+  - **Jobs** — Armstrong Cuthbert workboard with route distance and effective pay; Commanders and Captains accept, collect and deliver, Industrialists and up post and offer jobs
+  - **Akaturi** — the current courier contract and points toward promotion
+  - **Trading** — price checks and full price scans across the cartel or, with the Premium Ticker, the galaxy (using whichever of the Remote Price Check Service, its Upgrade and the Premium Ticker you own), scored for hauling, plus exchange hauling's live cycle
+  - **Planets** — your planets' deficits, excesses, and the planet-supply job queue (Founder+)
 - **Commodities** — reference table of names, codes, and base prices
 - **Cargo** — live ship manifest
-- **Hauling Jobs** — Armstrong Cuthbert job board with route distance and effective pay
 - **Stockpiles** — preview and apply planned stock levels and spreads for your planets' exchanges (Founder+)
 - **Player Info** — rank, fuel, stamina, groats, slithies, and hold at a glance
 - **Chat** — com/say/tell history with filters and timestamps

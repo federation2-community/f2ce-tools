@@ -39,9 +39,11 @@ local C_MA = "#ffa366"   -- suspended-row text: warm/bright so it stays legible 
 local TOOLTIP_CSS =
     "QToolTip{background-color:#1d2030;color:#e8ebf5;border:1px solid rgba(255,255,255,0.18);padding:3px;}"
 
-local BG_NORMAL    = "background-color:transparent; border:none; padding:0;" .. TOOLTIP_CSS
-local BG_OWNED     = "background-color:rgba(25,25,50,160); border:none; padding:0;" .. TOOLTIP_CSS
-local BG_SUSPENDED = "background-color:rgba(60,12,12,140); border:none; padding:0;" .. TOOLTIP_CSS
+-- QLabel{}-wrapped: a bare declaration list plus a QToolTip{} rule makes Qt
+-- drop back to the solid-black native tooltip.
+local BG_NORMAL    = "QLabel{background-color:transparent; border:none; padding:0;}" .. TOOLTIP_CSS
+local BG_OWNED     = "QLabel{background-color:rgba(25,25,50,160); border:none; padding:0;}" .. TOOLTIP_CSS
+local BG_SUSPENDED = "QLabel{background-color:rgba(60,12,12,140); border:none; padding:0;}" .. TOOLTIP_CSS
 
 local _COL_HDR_CSS = [[
     QLabel {

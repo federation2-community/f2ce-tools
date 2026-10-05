@@ -8,6 +8,15 @@ Mux.createDeclarativeCondition({
     cond = {
         path = "gmcp.char.vitals.rank",
         type = "gmcp_contains",
+        values = "Adventur"
+    },
+    id = "AdventurerRank",
+    label = "AdventurerRank"
+})
+Mux.createDeclarativeCondition({
+    cond = {
+        path = "gmcp.char.vitals.rank",
+        type = "gmcp_contains",
         values = "Industrialist,Manufacturer,Financier"
     },
     id = "CompanyRanks",
@@ -50,11 +59,13 @@ Mux.createDeclarativeCondition({
 })
 Mux.createDeclarativeCondition({
     cond = {
-        path = "gmcp.char.vitals.tools.remote-access-cert",
-        type = "gmcp_exists"
+        path = "gmcp.char.vitals.rank",
+        type = "gmcp_contains",
+        values = "Merchant,Trader,Industrialist,Manufacturer,Financier,Founder,Engineer,Mogul,Technocrat,"
+            .. "Gengineer,Magnate,Plutocrat,Syndicrat"
     },
-    id = "RemoteAccessCert",
-    label = "RemoteAccessCert"
+    id = "TradingRanks",
+    label = "TradingRanks"
 })
 Mux.createDeclarativeCondition({
     cond = {
@@ -665,12 +676,11 @@ Mux.registerWorkspace("f2ce-tools", {
                             }
                         },
                         {
-                            _activeContent = "fed2_hauling_jobs",
+                            activeTabName = "Jobs",
                             closeable = false,
-                            contentState = {},
                             contentable = false,
                             movable = true,
-                            name = "Hauling",
+                            name = "Commerce",
                             nameAlign = "center",
                             propertiesButton = false,
                             renamable = false,
@@ -702,7 +712,87 @@ Mux.registerWorkspace("f2ce-tools", {
                                     enabled = true,
                                     id = "r13"
                                 }
-                            }
+                            },
+                            tabs = {
+                                {
+                                    _activeContent = "fed2_hauling_jobs",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Jobs",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false
+                                },
+                                {
+                                    _activeContent = "fed2_akaturi",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Akaturi",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false,
+                                    rules = {
+                                        {
+                                            act = "mux.showSelf",
+                                            actElse = "mux.hideSelf",
+                                            cond = {
+                                                ref = "AdventurerRank"
+                                            },
+                                            enabled = true,
+                                            id = "r35"
+                                        }
+                                    }
+                                },
+                                {
+                                    _activeContent = "fed2_price_checker",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Trading",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false,
+                                    rules = {
+                                        {
+                                            act = "mux.showSelf",
+                                            actElse = "mux.hideSelf",
+                                            cond = {
+                                                ref = "TradingRanks"
+                                            },
+                                            enabled = true,
+                                            id = "r36"
+                                        }
+                                    }
+                                },
+                                {
+                                    _activeContent = "fed2_planet_supply",
+                                    closeable = false,
+                                    contentState = {},
+                                    contentable = false,
+                                    movable = false,
+                                    name = "Planets",
+                                    nameAlign = "center",
+                                    propertiesButton = false,
+                                    renamable = false,
+                                    rules = {
+                                        {
+                                            act = "mux.showSelf",
+                                            actElse = "mux.hideSelf",
+                                            cond = {
+                                                ref = "PlanetOwnerRanks"
+                                            },
+                                            enabled = true,
+                                            id = "r37"
+                                        }
+                                    }
+                                }
+                            },
+                            tabsLocked = true
                         },
                         {
                             activeTabName = "Overview",
@@ -850,49 +940,6 @@ Mux.registerWorkspace("f2ce-tools", {
                                     },
                                     enabled = true,
                                     id = "r34"
-                                }
-                            },
-                            visible = false
-                        },
-                        {
-                            _activeContent = "fed2_price_checker",
-                            closeable = false,
-                            contentState = {
-                                selectedCommodity = "Alloys"
-                            },
-                            contentable = false,
-                            movable = true,
-                            name = "Price Checker",
-                            nameAlign = "center",
-                            propertiesButton = false,
-                            renamable = false,
-                            rules = {
-                                {
-                                    act = "mux.showSelf",
-                                    actElse = "mux.hideSelf",
-                                    cond = {
-                                        ref = "RemoteAccessCert"
-                                    },
-                                    enabled = true,
-                                    id = "r5"
-                                },
-                                {
-                                    act = "mux.overlay.disconnected.show",
-                                    actElse = "mux.overlay.disconnected.hide",
-                                    cond = {
-                                        ref = "disconnected"
-                                    },
-                                    enabled = true,
-                                    id = "r14"
-                                },
-                                {
-                                    act = "mux.overlay.connecting.show",
-                                    actElse = "mux.overlay.connecting.hide",
-                                    cond = {
-                                        ref = "connecting"
-                                    },
-                                    enabled = true,
-                                    id = "r15"
                                 }
                             },
                             visible = false

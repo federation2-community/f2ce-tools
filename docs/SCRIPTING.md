@@ -28,7 +28,7 @@ f2tControlRelease("mybot")
 | `f2tControlNativeActivity()` | `string` or `nil` | Name of the F2CE-Tools automation currently running. |
 
 While a package holds control, the player's `haul start`, `map explore ...`
-and `nav <destination>` (and the Hauling panel's Start button) are refused
+and `nav <destination>` (and the Commerce panels' Haul menu) are refused
 with a message naming the package. Stop, pause, resume and status commands
 still work. Your package's own calls are never blocked.
 
@@ -48,7 +48,7 @@ Register with `registerAnonymousEventHandler(name, fn)`.
 | `f2tControlChanged` | `owner` (`nil` once released) | Control was acquired, released or revoked |
 | `f2tControlRevoked` | `owner, reason` | The player took control back |
 | `f2tSpeedwalkFinished` | `result, roomId, settled` | A walk ended. `result` is `"completed"`, `"stopped"` or `"failed"`. `settled` is `false` when navigation is still working toward the destination (a recovery leg or a self-healing exploration started from this one), so wait for a settled event before acting on the result. |
-| `f2tHaulingStatusChanged` | | Hauling was started, paused, resumed or stopped |
+| `f2tHaulingStatusChanged` | | Hauling was started, paused, resumed or stopped, moved to a new phase, or its mode setting changed |
 | `f2tStockpileChanged` | | A stockpile preview, update or setting changed |
 
 ## Useful entry points
@@ -79,11 +79,28 @@ f2t_bulk_sell_start(nil, nil, function(_, lotsSold, status) end)  -- sell the wh
 `status` is `"success"` when at least one lot traded. Short commodity names
 (`petros`, `semis`) are accepted.
 
-**Prices** (needs a remote-access certificate)
+**Prices** (needs the Remote Price Check Service)
 
 ```lua
-f2t_price_check_commodity("alloys", function(commodity, rows, analysis) end)
+f2t_price_check_for("mybot", "alloys", function(commodity, parsed, analysis, err) end)
+f2t_price_check_for("mybot", "alloys", callback, "galaxy")   -- Premium Ticker, every open planet
+f2t_price_get_all_data(function(results, err) end, { owner = "mybot", maxAge = 600, scope = "cartel" })
+f2t_price_cancel_all("mybot")   -- withdraw your own pending checks and scan
 ```
+
+Checks queue and run one at a time, shared with F2CE-Tools' own hauling and
+panels, so they never read each other's output. `parsed` and `analysis` are
+always tables (empty on failure); `err` names why a check failed (no
+subscription, Sol, no reply). `maxAge` lets a scan finished within that many
+seconds answer instead of a new one.
+
+The `cartel` scope (the default) uses the cartel check, or in Sol the
+Upgrade's system check from outside an exchange, else the Premium Ticker
+filtered to the cartel; `galaxy` needs the Premium Ticker.
+`f2tPriceServices()` reports which services the player owns and
+`f2tPriceRemoteForm(scope)` whether a check can run from where they stand.
+`f2tPriceCached(commodity, scope)` returns the last result anyone got, and
+`f2tPriceUpdated` (commodity, scope) fires on each one.
 
 **Planet owners**
 
@@ -93,8 +110,10 @@ f2tStockpilePreview("Tempest", function(plan, err) end)
 f2tStockpileApply(function(ok, err) end)
 ```
 
-**Hauling**: `f2t_hauling_start(mode)`, `f2t_hauling_pause()`,
-`f2t_hauling_resume()`, `f2t_hauling_stop()`.
+**Hauling**: `f2t_hauling_start(mode)` (`mode` is `ac`, `akaturi`, `exchange`,
+`planet` or `deficit`; `nil` uses the player's `haul mode`), `f2t_hauling_pause()`,
+`f2t_hauling_resume()`, `f2t_hauling_stop()`. `f2tHaulingSnapshot()` returns the
+current run state, mode, phase and session totals.
 
 ## Stability
 

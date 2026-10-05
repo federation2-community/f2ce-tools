@@ -54,15 +54,6 @@
     ]
   },
   {
-    "name": "price_output_blank",
-    "patterns": [
-      {
-        "pattern": "^$",
-        "type": "regex"
-      }
-    ]
-  },
-  {
     "name": "price_output_continuation",
     "patterns": [
       {
@@ -77,6 +68,10 @@
       {
         "pattern": "Your comm unit lights up as your brokers",
         "type": "substring"
+      },
+      {
+        "pattern": "^\\S.* system prices for \\S.*:$",
+        "type": "regex"
       }
     ]
   },
@@ -134,6 +129,43 @@
     "patterns": [
       {
         "pattern": "^75 tons of (.+) sold (?:to the exchange )?for ([\\d,]+)ig",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "price_output_error",
+    "patterns": [
+      {
+        "pattern": "^I'm sorry, this facility is not available for the Sol cartel!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You don't have a remote access subscription certificate[!.]$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^Your brokers are unable to trace that commodity\\.$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need to be at least a merchant to use the exchange!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need to upgrade your remote access subscription\\.$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need to be in an exchange to check commodity prices!$",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You don't have access to the premium price checking facility",
+        "type": "regex"
+      },
+      {
+        "pattern": "^You need a remote access certificate to use the premium",
         "type": "regex"
       }
     ]

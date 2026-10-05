@@ -2,7 +2,7 @@
 --
 -- Price checking/analysis (price, pr) and bulk trading (bb, bs).  No enabled
 -- toggle: the commands are the entry points, and the capture triggers self-gate
--- on F2T_PRICE_CAPTURE_ACTIVE / F2T_BULK_STATE.active.
+-- on the price service's in-flight request / F2T_BULK_STATE.active.
 --
 -- Provides the price/bulk functions that hauling's exchange and PO modes depend
 -- on (f2t_price_get_all_data, f2t_bulk_buy_start, f2t_bulk_sell_start, etc.).
@@ -19,12 +19,6 @@ f2t_settings_register("commodities", "results_count", {
     default     = 5,
     min = 1, max = 20,
 })
-
--- ── Price capture state ───────────────────────────────────────────────────────
-F2T_PRICE_CAPTURE_ACTIVE   = false
-F2T_PRICE_CAPTURE_DATA     = {}
-F2T_PRICE_CURRENT_COMMODITY = nil
-F2T_PRICE_CALLBACK         = nil
 
 -- ── Bulk operation state ──────────────────────────────────────────────────────
 F2T_BULK_STATE = {
@@ -94,6 +88,13 @@ f2t_register_help("price", {
         {cmd = "pr <commodity>", desc = "Shorthand for price command"},
         {cmd = "", desc = ""},
         {cmd = "price all", desc = "Analyze all commodities, sorted by profitability"},
+        {cmd = "price <commodity> galaxy", desc = "Every open planet in the galaxy (Premium Ticker)"},
+        {cmd = "price all galaxy", desc = "Analyze all commodities galaxy-wide (Premium Ticker)"},
+        {cmd = "", desc = ""},
+        {cmd = "Services:", desc = ""},
+        {cmd = "  Remote Price Check", desc = "Cartel-wide checks; not in Sol"},
+        {cmd = "  Upgrade", desc = "Your current system's planets, outside an exchange (covers Sol)"},
+        {cmd = "  Premium Ticker", desc = "The whole galaxy from anywhere; stands in for the cartel check in Sol"},
         {cmd = "", desc = ""},
         {cmd = "price settings", desc = "List all commodities settings"},
         {cmd = "price settings set <name> <value>", desc = "Change a setting (e.g., results_count)"}

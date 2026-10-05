@@ -22,7 +22,7 @@ function f2tControlNativeActivity()
     if F2T_SPEEDWALK_ACTIVE then return "navigation" end
     if F2T_BULK_STATE and F2T_BULK_STATE.active then return "bulk trading" end
     if f2t_po and f2t_po.phase ~= "idle" then return "planet economy capture" end
-    if F2T_PRICE_CAPTURE_ACTIVE then return "price check" end
+    if f2tPriceServiceBusy and f2tPriceServiceBusy() then return "price check" end
     if F2T_STOCKPILE and F2T_STOCKPILE.applying then return "stockpile update" end
     return nil
 end

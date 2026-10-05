@@ -1,24 +1,32 @@
--- Remote cartel price-checking content. The free, no-subscription spot check
--- ('check price commodity') lives as a click on the commodity name in the
--- Exchange content's Prices pane; this tab is the one remote command the
--- player actually uses: `c price <commodity> cartel` (needs the
--- remote-access-cert tool from the Remote Price Check Service).
+-- Commerce > Trading: a view over the price service (commodities/price_service.lua)
+-- plus exchange hauling's live cycle.
 --
--- Find Best iterates every commodity with `c price <c> cartel` and reports
--- the best cartel-wide spread.
+-- Scope: Cartel (the cartel check, or in Sol the Upgrade's system check or the
+-- Premium Ticker filtered to Sol) or Galaxy (the Premium Ticker). The service
+-- picks the command from the price services the player owns.
 --
--- The commodity picker matches the Exchange content's list: icon-prefixed
--- rows that obey the shared exchange/show_icons setting.
+-- Prices view: the selected commodity's last prices for the scope from the
+-- service's cache, whoever checked them, hauling included. Check queues a
+-- fresh remote check. The exchange the player stands in is the Exchange
+-- content's job; its commodity names open them here (f2tPriceCheckerFocus).
+--
+-- Results view: the service's full scan, the same one `price all` and exchange
+-- hauling use, as a sortable table scored both ways: best single spread and
+-- hauling's top-exchange average. Exchange hauling's picks are starred and
+-- excluded commodities dimmed; Haul these starts hauling on that scan.
+--
+-- While exchange hauling runs, a row under the controls shows the commodity it
+-- is trading and where; clicking it loads that commodity's prices.
 
 local H_BAR  = 28
 local H_STAT = 18
+local H_RUN  = 20
 local H_COL  = 20
 local ROW_H  = 20
 local SB_W   = 17
 local CELL_PT    = 10     -- cell, dropdown and empty-state font size (pt)
 local LABEL_PT   = 8      -- column header and button font size (pt)
 local STATUS_PT  = 6.75   -- status strip font size (pt): 9px
-local CONSOLE_PT = 9      -- Find Best console font size (pt)
 
 -- Size comes from the label's fontSize (cells: f2tTableSetScrollbox's cellPt).
 local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
@@ -47,6 +55,12 @@ local _COL_HDR_CSS = [[
     QLabel::hover { color: white; }
 ]]
 
+local _COL_BAR_CSS = [[
+    background-color: rgba(18, 20, 35, 200);
+    border: none;
+    border-bottom: 1px solid rgba(60, 65, 100, 180);
+]]
+
 local _DROP_CSS = [[
     QLabel {
         background-color: rgba(28,32,50,210);
@@ -63,7 +77,7 @@ local _DROP_CSS = [[
 ]]
 
 -- Accent-colored action buttons: a left accent bar plus a tinted hover state,
--- distinct per action so Check vs Find Best read apart at a glance.
+-- distinct per action so they read apart at a glance.
 local function actionBtnCss(accent, accentHover)
     return string.format([[
         QLabel {
@@ -84,7 +98,10 @@ local function actionBtnCss(accent, accentHover)
 end
 
 local _CHECK_BTN_CSS = actionBtnCss("#3aa0ff", "#5cb8ff")
-local _FIND_BTN_CSS  = actionBtnCss("#e0b84d", "#f0cc66")
+local _SCAN_BTN_CSS  = actionBtnCss("#e0b84d", "#f0cc66")
+local _VIEW_BTN_CSS  = actionBtnCss("#8a8fb0", "#b0b5d8")
+local _SCOPE_BTN_CSS = actionBtnCss("#b48cff", "#c8a8ff")
+local _HAUL_BTN_CSS  = actionBtnCss("#3ecf5e", "#5ce87c")
 
 local _ITEM_CSS = [[
     QLabel {
@@ -99,92 +116,368 @@ local _ITEM_CSS = [[
     }
 ]]
 
-local TOOL_REMOTE = "remote-access-cert"
+local _RUN_ROW_CSS = [[
+    QLabel {
+        background-color: rgba(20, 30, 46, 230);
+        border: none;
+        border-bottom: 1px solid rgba(70, 90, 140, 160);
+        border-left: 3px solid #7aa2ff;
+        padding-left: 6px;
+    }
+    QLabel::hover { background-color: rgba(30, 44, 68, 240); }
+]]
 
--- ── Shared state (triggers read this) ────────────────────────────────────────
+-- ── Shared state ──────────────────────────────────────────────────────────────
 
-F2T_PRICE_CHECKER = F2T_PRICE_CHECKER or {
-    selectedCommodity = nil,
-    currentCommodity  = nil,   -- commodity of the in-flight/last cp
-    rows              = {},    -- current price table rows
-    profitSearch      = {
-        active      = false,
-        list        = {},
-        index       = 1,
-        results     = {},
-        best        = nil,
-        bestProfit  = -math.huge,
-        totalCount  = 0,
-        data        = {},      -- rows captured for the commodity being scanned
-    },
+F2T_PRICE_CHECKER = {
+    selectedCommodity = F2T_PRICE_CHECKER and F2T_PRICE_CHECKER.selectedCommodity or nil,
+    view       = "prices",   -- "prices" or "results"
+    scope      = F2T_PRICE_CHECKER and F2T_PRICE_CHECKER.scope or "cartel",   -- "cartel" or "galaxy"
+    pendingFor = nil,        -- commodity whose check this panel is waiting on
+    lastError  = nil,        -- reason the last Check or scan couldn't run
 }
 
 -- Per-pane state, keyed by target._gid
 local instances = {}
 
--- Set right before the Check button sends its command; the ui trigger only
--- gags the raw price line while this is true, so a manually typed
--- `c price`/`c premium` still prints normally. Cleared once the line goes
--- quiet for 0.5s (or a manual click never gets a response, after a longer
--- safety window).
-local awaitingCheckCommand = false
-local _awaitCheckTimer = nil
-
-local function clearAwaitingCheckCommand()
-    awaitingCheckCommand = false
-    if _awaitCheckTimer then killTimer(_awaitCheckTimer); _awaitCheckTimer = nil end
+local function atExchange()
+    return f2t_has_room_flag and f2t_has_room_flag("exchange") or false
 end
 
-local function armAwaitingCheckCommand()
-    awaitingCheckCommand = true
-    if _awaitCheckTimer then killTimer(_awaitCheckTimer) end
-    _awaitCheckTimer = tempTimer(3, clearAwaitingCheckCommand)
-end
-
-local function extendAwaitingCheckCommand()
-    if not awaitingCheckCommand then return end
-    if _awaitCheckTimer then killTimer(_awaitCheckTimer) end
-    _awaitCheckTimer = tempTimer(0.5, clearAwaitingCheckCommand)
-end
-
--- ── Commodity list (from resources/commodities.json) ─────────────────────────
-
-local _commodities = nil
-local function commodityList()
-    if _commodities then return _commodities end
-    local filePath = getMudletHomeDir() .. "/f2ce-tools/commodities.json"
-    local file = io.open(filePath, "r")
-    if not file then return {} end
-    local raw = file:read("*all")
-    file:close()
-    local ok, data = pcall(yajl.to_value, raw)
-    if not ok or not data or not data.groups then return {} end
-    local list = {}
-    for _, group in ipairs(data.groups) do
-        for _, c in ipairs(group.commodities) do
-            list[#list + 1] = { name = c.name, basePrice = c.basePrice }
-        end
-    end
-    table.sort(list, function(a, b) return a.name < b.name end)
-    _commodities = list
-    return list
-end
-
--- Find Best works with lowercased commodity names (the game command needs
--- them lowercase); resolve back to the properly-cased name from
--- commodities.json before displaying/storing one, so the dropdown label and
--- its icon lookup (keyed by proper case) match what picking it manually gives.
 local function canonicalCommodityName(name)
     if not name then return name end
-    for _, c in ipairs(commodityList()) do
+    for _, c in ipairs(f2tCommodityList()) do
         if c.name:lower() == name:lower() then return c.name end
     end
     return name
 end
 
+local function ageText(at)
+    local secs = os.time() - at
+    if secs < 60 then return "just now" end
+    if secs < 3600 then return string.format("%dm ago", math.floor(secs / 60)) end
+    return string.format("%dh ago", math.floor(secs / 3600))
+end
+
+-- ── Data ──────────────────────────────────────────────────────────────────────
+
+-- Price rows for the selected commodity from the cache.
+local function priceRows()
+    local selected = F2T_PRICE_CHECKER.selectedCommodity
+    if not selected then return {} end
+    local cached = f2tPriceCached(selected, F2T_PRICE_CHECKER.scope)
+    return cached and cached.rows or {}
+end
+
+-- Analyses of the running scan, else the last finished one, plus when it finished.
+local function scanResults()
+    local scope = F2T_PRICE_CHECKER.scope
+    local running = f2tPriceScanState()
+    if running and running.scope == scope then return running.results, nil end
+    local last = f2tPriceLastScan(scope)
+    if last then return last.results, last.at end
+    return {}, nil
+end
+
+local function resultRows()
+    local results = scanResults()
+    local picks = {}
+    -- Hauling trades within the cartel, so only a cartel scan has its picks.
+    if f2t_hauling_rank_commodities and F2T_PRICE_CHECKER.scope == "cartel" then
+        for i, analysis in ipairs(f2t_hauling_rank_commodities(results)) do
+            picks[analysis.commodity] = i
+        end
+    end
+    local rows = {}
+    for _, a in ipairs(results) do
+        rows[#rows + 1] = {
+            commodity = a.commodity,
+            bestBuy   = a.bestBuyPrice,
+            bestSell  = a.bestSellPrice,
+            spread    = a.spread,
+            profit    = (#a.top_buy > 0 and #a.top_sell > 0) and a.profit or nil,
+            margin    = (#a.top_buy > 0 and #a.top_sell > 0) and a.margin or nil,
+            pick      = picks[a.commodity],
+            excluded  = f2t_hauling_commodity_excluded and f2t_hauling_commodity_excluded(a.commodity),
+        }
+    end
+    return rows
+end
+
+-- ── Status line ───────────────────────────────────────────────────────────────
+
+local SCOPE_LABEL = { cartel = "Cartel", galaxy = "Galaxy" }
+
+local FORM_LABEL = {
+    cartel        = "Cartel prices",
+    system        = "System prices",
+    premiumCartel = "Cartel prices (Premium Ticker)",
+    premium       = "Galaxy prices",
+}
+
+local function servicesHtml()
+    local services = f2tPriceServices()
+    local function mark(owned, name)
+        return string.format("<span style='color:%s;'>%s %s</span>", owned and "#3ecf5e" or "#5a6488",
+            owned and "✓" or "✗", name)
+    end
+    return mark(services.remote, "Remote") .. " · " .. mark(services.upgrade, "Upgrade") .. " · " ..
+        mark(services.premium, "Premium")
+end
+
+local function statusHtml()
+    local state = F2T_PRICE_CHECKER
+    local function line(color, text)
+        return string.format("<span style='color:%s;padding-left:6px;'>%s</span>", color, text)
+    end
+
+    local running = f2tPriceScanState()
+    if running then
+        return line("#8896c0", string.format("Scanning %s %d/%d — %s", SCOPE_LABEL[running.scope] or "",
+            running.index, running.total, running.commodity or ""))
+    end
+    if state.lastError then return line("#c09060", state.lastError) end
+
+    if state.view == "results" then
+        local _, at = scanResults()
+        if not at then return line("#5a6488", "No scan yet — Scan prices every commodity") end
+        return line("#8896c0", string.format("%s scan from %s%s", SCOPE_LABEL[state.scope], ageText(at),
+            state.scope == "cartel" and " · ★ exchange hauling's picks" or ""))
+    end
+
+    local selected = state.selectedCommodity
+    if not selected then return line("#5a6488", "Pick a commodity, then Check · " .. servicesHtml()) end
+    if state.pendingFor == selected then return line("#8896c0", "Checking " .. selected .. "…") end
+    local cached = f2tPriceCached(selected, state.scope)
+    if cached then
+        return line("#8896c0", string.format("%s: %s · %s", FORM_LABEL[cached.form] or "Prices", selected,
+            ageText(cached.at)))
+    end
+    return line("#5a6488", "No prices for " .. selected .. " yet — Check")
+end
+
+-- ── Exchange hauling row ──────────────────────────────────────────────────────
+
+-- Exchange hauling's current cycle, or nil when it isn't trading.
+local function runRowHtml()
+    local state = F2T_HAULING_STATE
+    if not (state and state.active and state.mode == "exchange") then return nil end
+    if not state.current_commodity then
+        return string.format("<span style='%scolor:#8896c0;'>Exchange hauling: %s</span>",
+            CELL_FONT, f2t_hauling_phase_label(state.current_phase) or "starting")
+    end
+    local icon = f2tCommodityIconPrefix and f2tCommodityIconPrefix(state.current_commodity) or ""
+    local route = ""
+    if state.buy_location and state.sell_location then
+        route = string.format(
+            " <span style='color:#cccc44;'>%s %dig</span> → <span style='color:#00cc44;'>%s %dig</span>",
+            state.buy_location.planet or "?", state.buy_location.price or 0,
+            state.sell_location.planet or "?", state.sell_location.price or 0)
+    end
+    local queue = ""
+    if state.commodity_queue and #state.commodity_queue > 0 then
+        queue = string.format(" <span style='color:#5a6488;'>· %d/%d · cycle %d</span>",
+            state.queue_index or 1, #state.commodity_queue, (state.commodity_cycles or 0) + 1)
+    end
+    return string.format("<span style='%scolor:#e8ebf5;'><b>%s%s</b>%s%s</span>",
+        CELL_FONT, icon, state.current_commodity, route, queue)
+end
+
+-- ── Rendering ─────────────────────────────────────────────────────────────────
+
+local function canHaulScan()
+    local _, at = scanResults()
+    return at ~= nil and F2T_PRICE_CHECKER.scope == "cartel"
+        and f2t_hauling_strategy_available and f2t_hauling_strategy_available("exchange")
+        and not (F2T_HAULING_STATE and F2T_HAULING_STATE.active)
+end
+
+local function layout(inst)
+    local html = runRowHtml()
+    local runH = html and inst.runH or 0
+    if html then
+        inst.runRow:echo(html)
+        inst.runRow:show()
+    else
+        inst.runRow:hide()
+    end
+
+    local statusY = inst.barH + runH
+    inst.status:move(nil, statusY)
+    local tableTop = statusY + inst.statH
+    for _, view in ipairs({ inst.prices, inst.results }) do
+        view.colBar:move(nil, tableTop)
+        local scrollTop = tableTop + inst.colH
+        view.scroll:move(nil, scrollTop)
+        view.scroll:resize(nil, "100%-" .. scrollTop .. "px")
+    end
+    local emptyTop = tableTop + inst.colH
+    inst.emptyLbl:move(nil, emptyTop)
+    inst.emptyLbl:resize(nil, "100%-" .. emptyTop .. "px")
+end
+
+local function render(inst)
+    local state = F2T_PRICE_CHECKER
+    local showResults = state.view == "results"
+
+    local label = state.selectedCommodity or "Select Commodity"
+    local icon = (f2tCommodityIconPrefix and state.selectedCommodity)
+        and f2tCommodityIconPrefix(state.selectedCommodity) or ""
+    inst.dropBtn:echo("<center>" .. icon .. label .. " ▼</center>")
+    inst.scanBtn:echo(f2tPriceScanState() and "<center>■ Stop</center>" or "<center>💹 Scan</center>")
+    inst.viewBtn:echo(showResults and "<center>≡ Prices</center>" or "<center>≡ Results</center>")
+    inst.scopeBtn:echo("<center>◎ " .. SCOPE_LABEL[state.scope] .. "</center>")
+
+    inst.status:echo(statusHtml())
+    if showResults and canHaulScan() then inst.haulBtn:show() else inst.haulBtn:hide() end
+
+    local active, idle = inst.prices, inst.results
+    if showResults then active, idle = inst.results, inst.prices end
+    idle.colBar:hide(); idle.scroll:hide()
+    active.colBar:show(); active.scroll:show()
+
+    local rows = showResults and resultRows() or priceRows()
+    f2tTableSetData(active.tableId, rows)
+    if #rows == 0 then
+        inst.emptyLbl:echo(emptyStateHtml(showResults
+            and "No scan yet. Scan checks every commodity (Remote Price Check Service)."
+            or "No prices yet — pick a commodity and Check."))
+        inst.emptyLbl:show()
+        inst.emptyLbl:raise()
+    else
+        inst.emptyLbl:hide()
+    end
+end
+
+local _renderTimer = nil
+local function renderAll()
+    if _renderTimer then killTimer(_renderTimer) end
+    _renderTimer = tempTimer(0.1, function()
+        _renderTimer = nil
+        for _, inst in pairs(instances) do pcall(render, inst) end
+    end)
+end
+
+registerAnonymousEventHandler("f2tPriceUpdated", function(_, commodity, scope)
+    if commodity == F2T_PRICE_CHECKER.pendingFor and scope == F2T_PRICE_CHECKER.scope then
+        F2T_PRICE_CHECKER.pendingFor = nil
+    end
+    renderAll()
+end)
+registerAnonymousEventHandler("f2tPriceScanProgress", renderAll)
+registerAnonymousEventHandler("f2tPriceScanFinished", renderAll)
+registerAnonymousEventHandler("f2tHaulingStatusChanged", function()
+    for _, inst in pairs(instances) do pcall(layout, inst) end
+    renderAll()
+end)
+
+-- ── Actions ───────────────────────────────────────────────────────────────────
+
+local function selectCommodity(name)
+    F2T_PRICE_CHECKER.selectedCommodity = canonicalCommodityName(name)
+    F2T_PRICE_CHECKER.view = "prices"
+    F2T_PRICE_CHECKER.lastError = nil
+    renderAll()
+end
+
+function f2tPriceCheckerCheck()
+    local state = F2T_PRICE_CHECKER
+    local selected = state.selectedCommodity
+    state.view = "prices"
+    state.lastError = nil
+    if not selected then
+        state.lastError = "Select a commodity first"
+        renderAll()
+        return
+    end
+
+    local form, reason = f2tPriceRemoteForm(state.scope)
+    if form then
+        state.pendingFor = selected
+        f2t_price_check_for("panel", selected, function(_name, _parsed, _analysis, err)
+            if state.pendingFor == selected then state.pendingFor = nil end
+            if err then state.lastError = selected .. ": " .. err end
+            renderAll()
+        end, state.scope)
+    elseif atExchange() then
+        state.lastError = reason .. ". This exchange's prices are in the Exchange tab."
+    else
+        state.lastError = reason
+    end
+    renderAll()
+end
+
+local function toggleScan()
+    local state = F2T_PRICE_CHECKER
+    state.lastError = nil
+    if f2tPriceScanState() then
+        f2t_price_cancel_all("panel")
+    else
+        local started = f2t_price_get_all_data(function(_results, err)
+            if err then state.lastError = "Scan stopped: " .. err end
+            renderAll()
+        end, { owner = "panel", scope = state.scope })
+        if not started then
+            local _, reason = f2tPriceRemoteForm(state.scope)
+            state.lastError = reason or "Scan couldn't start"
+        end
+    end
+    state.view = "results"
+    renderAll()
+end
+
+-- Visible Trading panel's target, or nil. Rule-hidden tabs (the panel or any
+-- tab above it) can't be brought forward.
+local function visibleTarget()
+    for _, inst in pairs(instances) do
+        local node, hidden = inst.target, false
+        while node do
+            if node._conditionHidden then hidden = true; break end
+            node = node.pane
+        end
+        if not hidden then return inst.target end
+    end
+    return nil
+end
+
+--- Bring a Trading panel forward with a commodity's cartel prices
+--- @param commodity string
+--- @return boolean False when no Trading panel can be shown
+function f2tPriceCheckerFocus(commodity)
+    local target = visibleTarget()
+    if not target then return false end
+
+    F2T_PRICE_CHECKER.scope = "cartel"
+    selectCommodity(commodity)
+    local cached = f2tPriceCached(F2T_PRICE_CHECKER.selectedCommodity, "cartel")
+    local stale = not cached or os.time() - cached.at > F2T_PRICE_SCAN_REUSE_SECONDS
+    if stale and f2tPriceRemoteForm("cartel") then f2tPriceCheckerCheck() end
+
+    -- Activate the tab at each level, innermost first, up to its pane.
+    local tab, host = target, target.pane
+    while host do
+        if host.activateTab then host:activateTab(tab.id) end
+        tab, host = host, host.pane
+    end
+    return true
+end
+
+local function toggleScope()
+    local state = F2T_PRICE_CHECKER
+    state.lastError = nil
+    if state.scope == "galaxy" then
+        state.scope = "cartel"
+    elseif f2tPriceServices().premium then
+        state.scope = "galaxy"
+    else
+        state.lastError = "Galaxy-wide checks need the Premium Ticker (buy premium ticker)"
+    end
+    renderAll()
+end
+
 -- ── Table columns ─────────────────────────────────────────────────────────────
 
-local function buildCols()
+local function priceCols()
     return {
         {
             key           = "system",
@@ -234,7 +527,7 @@ local function buildCols()
                     or  "Exchange is selling — click to buy here")
                 cell:setClickCallback(function()
                     local cmd = (v == "buying") and "sell " or "buy "
-                    send(cmd .. (F2T_PRICE_CHECKER.currentCommodity or ""), false)
+                    send(cmd .. (F2T_PRICE_CHECKER.selectedCommodity or ""):lower(), false)
                 end)
             end,
         },
@@ -259,7 +552,7 @@ local function buildCols()
             render_label  = function(v, row, cell)
                 -- Highlight the best buy (lowest selling) and best sell (highest buying).
                 local bestBuy, bestSell = math.huge, -1
-                for _, r in ipairs(F2T_PRICE_CHECKER.rows) do
+                for _, r in ipairs(priceRows()) do
                     if r.action == "selling" and r.price < bestBuy  then bestBuy  = r.price end
                     if r.action == "buying"  and r.price > bestSell then bestSell = r.price end
                 end
@@ -276,243 +569,56 @@ local function buildCols()
     }
 end
 
--- ── Instance refresh ──────────────────────────────────────────────────────────
-
--- Kept so a panel built later (or rebuilt at a new text size) shows it too.
-local lastStatus = ""
-
-local function setStatus(text)
-    lastStatus = text or ""
-    for _, inst in pairs(instances) do
-        if inst.status then inst.status:echo(lastStatus) end
-    end
+local function priceCell(value, dim, color)
+    if not value then return string.format("<span style='%scolor:#555555;'>—</span>", CELL_FONT) end
+    return string.format("<span style='%scolor:%s;'>%s</span>", CELL_FONT, dim and "#666666" or color,
+        tostring(math.floor(value)))
 end
 
--- Shown when there are no rows and no scan is running (the search console
--- overlays the table area on its own while a scan is active).
-local function updateEmptyState(inst)
-    if not inst.noRowsLbl then return end
-    local empty = #F2T_PRICE_CHECKER.rows == 0 and not F2T_PRICE_CHECKER.profitSearch.active
-    if empty then inst.noRowsLbl:show() else inst.noRowsLbl:hide() end
-end
-
-local _renderTimer = nil
-local function refreshAllDebounced()
-    if _renderTimer then killTimer(_renderTimer) end
-    _renderTimer = tempTimer(0.15, function()
-        _renderTimer = nil
-        for _, inst in pairs(instances) do
-            pcall(f2tTableSetData, inst.tableId, F2T_PRICE_CHECKER.rows)
-            updateEmptyState(inst)
-        end
-    end)
-end
-
-local function updateSelectorButtons()
-    local label = F2T_PRICE_CHECKER.selectedCommodity or "Select Commodity"
-    local icon = (f2tCommodityIconPrefix and F2T_PRICE_CHECKER.selectedCommodity)
-        and f2tCommodityIconPrefix(F2T_PRICE_CHECKER.selectedCommodity) or ""
-    for _, inst in pairs(instances) do
-        if inst.dropBtn then inst.dropBtn:echo("<center>" .. icon .. label .. " ▼</center>") end
-    end
-end
-
--- ── Trigger entry points ──────────────────────────────────────────────────────
-
--- True only while a check sent by the Check button is in flight; the ui
--- trigger uses this (rather than HasOpenPanels) to decide whether to gag
--- raw price lines, so a manually typed `c price`/`c premium` always prints.
-function f2tPriceCheckerAwaitingCommand()
-    return awaitingCheckCommand
-end
-
-function f2tPriceCheckerIsSearching()
-    return F2T_PRICE_CHECKER.profitSearch.active
-end
-
-function f2tPriceCheckerLine(system, planet, action, quantity, price)
-    extendAwaitingCheckCommand()
-    local row = {
-        system   = system,
-        planet   = planet,
-        action   = action,
-        quantity = tonumber(quantity),
-        price    = tonumber(price),
-    }
-    if F2T_PRICE_CHECKER.profitSearch.active then
-        table.insert(F2T_PRICE_CHECKER.profitSearch.data, row)
-    else
-        table.insert(F2T_PRICE_CHECKER.rows, row)
-        refreshAllDebounced()
-    end
-end
-
--- ── Best-profit search ────────────────────────────────────────────────────────
-
-local function searchConsoles(fn)
-    for _, inst in pairs(instances) do
-        if inst.searchConsole then pcall(fn, inst.searchConsole) end
-    end
-end
-
-local function printSearchHeader(mc, ps)
-    mc:cecho(string.format("<yellow>Searching %d commodities for best profit...\n\n", ps.totalCount))
-end
-
-local function printSearchResult(mc, result)
-    mc:cecho(string.format("<%s>%-20s: %+5dig/ton<reset>\n",
-        result.profit > 0 and "green" or "red", result.commodity,
-        result.profit ~= -math.huge and result.profit or 0))
-end
-
-local function printSearchVerdict(mc, ps)
-    mc:cecho("\n<white>==========================================\n")
-    if ps.best then
-        local best = ps.results[1]
-        local bestName = canonicalCommodityName(best.commodity)
-        mc:cecho("<yellow>BEST PROFIT: <reset>")
-        mc:cechoLink("<green><b>" .. bestName .. "</b><reset>",
-            function()
-                F2T_PRICE_CHECKER.selectedCommodity = bestName
-                updateSelectorButtons()
-                if f2tPriceCheckerCheck then f2tPriceCheckerCheck() end
+local function resultCols()
+    local function numberCol(key, label, pct, color, tip, extra)
+        local col = {
+            key           = key,
+            label         = label,
+            sortable      = true,
+            sort_value    = function(r) return r[key] or -math.huge end,
+            scrollbox_pct = pct,
+            header_tooltip = tip,
+            render_label  = function(v, row, cell)
+                cell:echo(priceCell(v, row.excluded, type(color) == "function" and color(v) or color))
             end,
-            "View full cartel prices for " .. bestName, true)
-        mc:cecho(string.format(" | <green>%dig/ton profit<reset>\n", best.profit))
-        mc:cecho(string.format("Buy at %dig, sell at %dig\n", best.bestBuy, best.bestSell))
-    else
-        mc:cecho("<red>No profitable commodities found<reset>\n")
+        }
+        for k, val in pairs(extra or {}) do col[k] = val end
+        return col
     end
-    mc:cecho("<white>==========================================<reset>\n")
-    mc:cecho("<dim_grey>Click the commodity name to load full cartel prices.<reset>\n")
-end
+    local function gainColor(v) return (v or 0) > 0 and "#00cc44" or "#ff5555" end
 
--- Redraws the current or finished scan into a fresh console. Results are in
--- scan order while it runs and best-first once it's done, as they were printed.
-local function replaySearch(mc)
-    local ps = F2T_PRICE_CHECKER.profitSearch
-    mc:clear()
-    printSearchHeader(mc, ps)
-    for _, result in ipairs(ps.results) do printSearchResult(mc, result) end
-    if not ps.active then printSearchVerdict(mc, ps) end
-    mc:show()
-    mc:raise()
-end
-
-local function searchNext()
-    local ps = F2T_PRICE_CHECKER.profitSearch
-    if not ps.active then return end
-
-    local commodity = ps.list[ps.index]
-    if not commodity then
-        -- Done: show verdict.
-        ps.active = false
-        pcall(disableTrigger, "price_checker_profit_tick")   -- catch-all ^$ pattern; armed only while scanning
-        table.sort(ps.results, function(a, b) return a.profit > b.profit end)
-        searchConsoles(function(mc) printSearchVerdict(mc, ps) end)
-        if ps.best then
-            F2T_PRICE_CHECKER.selectedCommodity = canonicalCommodityName(ps.results[1].commodity)
-            updateSelectorButtons()
-        end
-        setStatus(string.format(
-            "<span style='color:#8896c0;padding-left:6px;'>Scan complete — best: %s</span>",
-            ps.best or "none"))
-        return
-    end
-
-    ps.data = {}
-    F2T_PRICE_CHECKER.currentCommodity = commodity
-    setStatus(string.format(
-        "<span style='color:#8896c0;padding-left:6px;'>Scanning %d/%d — %s</span>",
-        ps.index, ps.totalCount, commodity))
-    send("c price " .. commodity:lower() .. " cartel", false)
-end
-
--- Called by the price_checker_profit_tick trigger on the blank line ending a cp burst.
-function f2tPriceCheckerProfitTick()
-    local ps = F2T_PRICE_CHECKER.profitSearch
-    if not ps.active or #ps.data == 0 then return false end
-
-    local bestBuy, bestSell = math.huge, -1
-    for _, item in ipairs(ps.data) do
-        if item.action == "selling" and item.price < bestBuy  then bestBuy  = item.price end
-        if item.action == "buying"  and item.price > bestSell then bestSell = item.price end
-    end
-    local profit = (bestBuy ~= math.huge and bestSell ~= -1) and (bestSell - bestBuy) or -math.huge
-
-    local commodity = F2T_PRICE_CHECKER.currentCommodity
-    local result = { commodity = commodity, profit = profit, bestBuy = bestBuy, bestSell = bestSell }
-    table.insert(ps.results, result)
-    if profit > ps.bestProfit then
-        ps.bestProfit = profit
-        ps.best       = commodity
-    end
-
-    searchConsoles(function(mc) printSearchResult(mc, result) end)
-
-    ps.data  = {}
-    ps.index = ps.index + 1
-    tempTimer(0.5, searchNext)
-    return true
-end
-
-local function findBestProfit()
-    if not f2t_check_tool_requirement(TOOL_REMOTE, "Best-profit scan", "Remote Price Check Service") then return end
-
-    local ps = {
-        active     = true,
-        list       = {},
-        index      = 1,
-        results    = {},
-        best       = nil,
-        bestProfit = -math.huge,
-        totalCount = 0,
-        data       = {},
+    return {
+        {
+            key           = "commodity",
+            label         = "Commodity",
+            sortable      = true,
+            sort_value    = function(r) return r.commodity:lower() end,
+            scrollbox_pct = 28,
+            render_label  = function(v, row, cell)
+                local icon = f2tCommodityIconPrefix and f2tCommodityIconPrefix(v) or ""
+                local star = row.pick and "<span style='color:#e0b84d;'>★</span>" or "&nbsp;&nbsp;"
+                cell:echo(string.format("<span style='%scolor:%s;'>%s%s%s</span>",
+                    CELL_FONT, row.excluded and "#666666" or "#e6d28c", star, icon, v))
+                local tip = "Show " .. v .. "'s prices"
+                if row.pick then tip = tip .. " — exchange hauling would trade this (#" .. row.pick .. ")" end
+                if row.excluded then tip = tip .. " — excluded from hauling" end
+                cell:setToolTip(tip)
+                cell:setClickCallback(function() selectCommodity(v) end)
+            end,
+        },
+        numberCol("bestBuy", "Buy", 13, "#cccc44", "Lowest price to buy at"),
+        numberCol("bestSell", "Sell", 13, "#00cc44", "Highest price to sell at"),
+        numberCol("spread", "Spread", 15, gainColor, "Best single trade: Sell − Buy (ig/ton)"),
+        numberCol("profit", "Avg", 16, gainColor,
+            "Hauling's score: average of the top exchanges on each side (ig/ton)", { default_sort = "desc" }),
+        numberCol("margin", "Margin", 15, gainColor, "Average profit as a percentage of the average buy price"),
     }
-    for _, c in ipairs(commodityList()) do
-        table.insert(ps.list, c.name:lower())
-    end
-    table.sort(ps.list)
-    ps.totalCount = #ps.list
-    F2T_PRICE_CHECKER.profitSearch = ps
-
-    if ps.totalCount == 0 then
-        cecho("\n<red>[price checker]<reset> Commodity list unavailable\n")
-        ps.active = false
-        return
-    end
-
-    searchConsoles(function(mc)
-        mc:clear()
-        mc:show()
-        mc:raise()
-        printSearchHeader(mc, ps)
-    end)
-    pcall(enableTrigger, "price_checker_profit_tick")
-    searchNext()
-end
-
--- ── Check button ──────────────────────────────────────────────────────────────
-
-function f2tPriceCheckerCheck()
-    if not F2T_PRICE_CHECKER.selectedCommodity then
-        cecho("\n<red>[price checker]<reset> Select a commodity first\n")
-        return
-    end
-    if not f2t_check_tool_requirement(TOOL_REMOTE, "Price checking", "Remote Price Check Service") then return end
-
-    F2T_PRICE_CHECKER.currentCommodity = F2T_PRICE_CHECKER.selectedCommodity:lower()
-    F2T_PRICE_CHECKER.rows = {}
-    refreshAllDebounced()
-    for _, inst in pairs(instances) do
-        if inst.searchConsole then inst.searchConsole:hide() end
-    end
-    setStatus(string.format(
-        "<span style='color:#8896c0;padding-left:6px;'>Cartel prices: %s</span>",
-        F2T_PRICE_CHECKER.selectedCommodity))
-
-    armAwaitingCheckCommand()
-    send("c price " .. F2T_PRICE_CHECKER.selectedCommodity:lower() .. " cartel", false)
 end
 
 -- ── Commodity dropdown (icon-aware, matching Exchange's Prices list) ─────────
@@ -526,7 +632,7 @@ local function toggleDropdown(inst, target)
 
     inst.dropGen = (inst.dropGen or 0) + 1
     local gen  = inst.dropGen
-    local list = commodityList()
+    local list = f2tCommodityList()
     local rowH = f2tScaled(target, 22)
     local ddH  = math.min(#list * rowH, math.max(80, target.content:get_height() - inst.barH - 4))
     local cellPt = f2tUiPt(target, CELL_PT)
@@ -563,9 +669,8 @@ local function toggleDropdown(inst, target)
             CELL_FONT, icon, item.name, CELL_FONT, item.basePrice or "?"))
         local name = item.name
         lbl:setClickCallback(function()
-            F2T_PRICE_CHECKER.selectedCommodity = name
-            updateSelectorButtons()
             if inst.dropdown then inst.dropdown:hide(); inst.dropdown = nil end
+            selectCommodity(name)
         end)
     end
 
@@ -575,6 +680,47 @@ local function toggleDropdown(inst, target)
 end
 
 -- ── Content build ─────────────────────────────────────────────────────────────
+
+-- One sortable table (prices or results) under a column header strip.
+local function buildTable(target, wid, tableId, cols, cellPt, labelPt, colH)
+    local colBar = Geyser.Label:new({
+        name = wid(), x = 0, y = 0, width = "100%", height = colH,
+    }, target.content)
+    colBar:setStyleSheet(_COL_BAR_CSS)
+
+    local scroll = Geyser.ScrollBox:new({
+        name = wid(), x = 0, y = colH, width = "100%", height = "100%-" .. colH .. "px",
+    }, target.content)
+
+    local contentW = math.max(100, target.content:get_width() - SB_W)
+    local contentLabel = Geyser.Label:new({
+        name = wid(), x = 0, y = 0, width = contentW, height = 1000,
+    }, scroll)
+    contentLabel:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+
+    f2tTableCreate(tableId, cols)
+    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
+
+    local colHdrs, xPct = {}, 0
+    for _, col in ipairs(cols) do
+        local lbl = Geyser.Label:new({
+            name = wid(), x = xPct .. "%", y = 0,
+            width = col.scrollbox_pct .. "%", height = "100%", fontSize = labelPt,
+        }, colBar)
+        lbl:setStyleSheet(_COL_HDR_CSS)
+        lbl:echo(col.label)
+        if col.sortable then
+            local key = col.key
+            lbl:setClickCallback(function() f2tTableToggleSort(tableId, key) end)
+            lbl:setToolTip(col.header_tooltip or ("Sort by " .. col.label))
+        end
+        colHdrs[col.key] = lbl
+        xPct = xPct + col.scrollbox_pct
+    end
+    f2tTableSetColHdrs(tableId, colHdrs)
+
+    return { tableId = tableId, colBar = colBar, scroll = scroll, contentLabel = contentLabel, contentW = contentW }
+end
 
 local function buildContent(target)
     local gid = target._gid
@@ -586,9 +732,7 @@ local function buildContent(target)
     end
 
     if instances[gid] then
-        f2tTableSetData(instances[gid].tableId, F2T_PRICE_CHECKER.rows)
-        updateSelectorButtons()
-        updateEmptyState(instances[gid])
+        render(instances[gid])
         return
     end
 
@@ -598,148 +742,123 @@ local function buildContent(target)
         return string.format("%s_pc_%d", gid, wc)
     end
 
+    local strip   = f2tHaulStripCreate(target)
+    local stripH  = strip.height
     local barH    = f2tScaled(target, H_BAR)
     local statH   = f2tScaled(target, H_STAT)
+    local runH    = f2tScaled(target, H_RUN)
     local colH    = f2tScaled(target, H_COL)
     local cellPt  = f2tUiPt(target, CELL_PT)
     local labelPt = f2tTextPt(target, LABEL_PT)
 
     -- ── Controls bar ──────────────────────────────────────────────────────────
     local bar = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = "100%", height = barH,
+        name = wid(), x = 0, y = stripH, width = "100%", height = barH,
     }, target.content)
     bar:setStyleSheet(_HDR_BAR_CSS)
 
-    local dropBtn = Geyser.Label:new({
-        name = wid(), x = 5, y = 4, width = "48%", height = barH - 8, fontSize = labelPt,
-    }, bar)
-    dropBtn:setStyleSheet(_DROP_CSS)
-    dropBtn:setToolTip("Select a commodity")
+    local function button(x, w, css, tip)
+        local btn = Geyser.Label:new({
+            name = wid(), x = x, y = 4, width = w, height = barH - 8, fontSize = labelPt,
+        }, bar)
+        btn:setStyleSheet(css)
+        btn:setToolTip(tip)
+        return btn
+    end
 
-    local checkBtn = Geyser.Label:new({
-        name = wid(), x = "51%", y = 4, width = "24%", height = barH - 8, fontSize = labelPt,
-    }, bar)
-    checkBtn:setStyleSheet(_CHECK_BTN_CSS)
+    local dropBtn  = button(5, "33%", _DROP_CSS, "Select a commodity")
+    local checkBtn = button("35%", "15%", _CHECK_BTN_CSS,
+        "Check the selected commodity across the scope, with whichever price service reaches it")
     checkBtn:echo("<center>🔍 Check</center>")
-    checkBtn:setToolTip("Check cartel prices for the selected commodity")
-    checkBtn:setClickCallback(function() f2tPriceCheckerCheck() end)
+    local scanBtn = button("51%", "15%", _SCAN_BTN_CSS,
+        "Price every commodity across the scope (a Cartel scan is the one exchange hauling uses)")
+    local scopeBtn = button("67%", "16%", _SCOPE_BTN_CSS,
+        "Cartel, or Galaxy with the Premium Ticker")
+    local viewBtn = button("84%", "15%", _VIEW_BTN_CSS, "Switch between prices and scan results")
 
-    local bestBtn = Geyser.Label:new({
-        name = wid(), x = "77%", y = 4, width = "22%", height = barH - 8, fontSize = labelPt,
-    }, bar)
-    bestBtn:setStyleSheet(_FIND_BTN_CSS)
-    bestBtn:echo("<center>💹 Find Best</center>")
-    bestBtn:setToolTip("Scan every commodity for the best cartel profit spread")
-    bestBtn:setClickCallback(function()
-        if not F2T_PRICE_CHECKER.profitSearch.active then findBestProfit() end
+    -- ── Exchange hauling row (shown only while it trades) ─────────────────────
+    local runRow = Geyser.Label:new({
+        name = wid(), x = 0, y = stripH + barH, width = "100%", height = runH, fontSize = cellPt,
+    }, target.content)
+    runRow:setStyleSheet(_RUN_ROW_CSS)
+    runRow:setToolTip("Show this commodity's prices")
+    runRow:setClickCallback(function()
+        local commodity = F2T_HAULING_STATE and F2T_HAULING_STATE.current_commodity
+        if commodity then selectCommodity(commodity) end
     end)
+    runRow:hide()
 
     -- ── Status strip ──────────────────────────────────────────────────────────
     local status = Geyser.Label:new({
-        name = wid(), x = 0, y = barH, width = "100%", height = statH, fontSize = f2tTextPt(target, STATUS_PT),
+        name = wid(), x = 0, y = stripH + barH, width = "100%", height = statH,
+        fontSize = f2tTextPt(target, STATUS_PT),
     }, target.content)
     status:setStyleSheet([[
         background-color: rgba(12, 14, 24, 220);
         border: none;
         color: rgba(136, 150, 192, 255);
     ]])
-    status:echo(lastStatus)
 
-    -- ── Column header bar ─────────────────────────────────────────────────────
-    local colBar = Geyser.Label:new({
-        name = wid(), x = 0, y = barH + statH, width = "100%", height = colH,
+    local haulBtn = Geyser.Label:new({
+        name = wid(), x = "-" .. f2tScaled(target, 104) .. "px", y = 1,
+        width = f2tScaled(target, 100), height = statH - 2, fontSize = f2tTextPt(target, STATUS_PT),
+    }, status)
+    haulBtn:setStyleSheet(_HAUL_BTN_CSS)
+    haulBtn:echo("<center>▶ Haul these</center>")
+    haulBtn:setToolTip("Start exchange hauling on this scan (haul start exchange)")
+    haulBtn:setClickCallback(function() expandAlias("haul start exchange") end)
+    haulBtn:hide()
+
+    -- ── Tables ────────────────────────────────────────────────────────────────
+    local prices  = buildTable(target, wid, "price_checker_" .. gid, priceCols(), cellPt, labelPt, colH)
+    local results = buildTable(target, wid, "price_scan_" .. gid, resultCols(), cellPt, labelPt, colH)
+
+    local emptyLbl = Geyser.Label:new({
+        name = wid(), x = 0, y = 0, width = "100%", height = "100%", fontSize = cellPt,
     }, target.content)
-    colBar:setStyleSheet([[
-        background-color: rgba(18, 20, 35, 200);
-        border: none;
-        border-bottom: 1px solid rgba(60, 65, 100, 180);
-    ]])
-
-    -- ── ScrollBox table ───────────────────────────────────────────────────────
-    local scrollTop = barH + statH + colH
-    local scroll = Geyser.ScrollBox:new({
-        name   = wid(),
-        x = 0, y = scrollTop,
-        width  = "100%",
-        height = "100%-" .. scrollTop .. "px",
-    }, target.content)
-
-    local contentW = math.max(100, target.content:get_width() - SB_W)
-    local contentLabel = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = contentW, height = 1000,
-    }, scroll)
-    contentLabel:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
-
-    -- Search console overlays the table area during a best-profit scan.
-    local searchConsole = Geyser.MiniConsole:new({
-        name = wid(), x = 0, y = scrollTop, width = "100%",
-        height = "100%-" .. scrollTop .. "px", fontSize = Mux.scaledFontSize(target, CONSOLE_PT),
-    }, target.content)
-    searchConsole:setColor(18, 18, 26)
-    searchConsole:hide()
-
-    -- Overlays the table area when there are no prices yet; f2tTableSetData
-    -- leaves an empty scrollbox with no message of its own.
-    local noRowsLbl = Geyser.Label:new({
-        name = wid(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
-        fontSize = cellPt,
-    }, target.content)
-    noRowsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
-    noRowsLbl:echo(emptyStateHtml("No prices yet — pick a commodity and Check."))
-    noRowsLbl:hide()
-
-    local tableId = "price_checker_" .. gid
-    local cols    = buildCols()
-    f2tTableCreate(tableId, cols)
-    f2tTableSetScrollbox(tableId, contentLabel, contentW, f2tScaled(target, ROW_H), scroll, cellPt)
-
-    local colHdrs = {}
-    local xPct    = 0
-    for _, col in ipairs(cols) do
-        local lbl = Geyser.Label:new({
-            name  = wid(),
-            x = xPct .. "%", y = 0,
-            width = col.scrollbox_pct .. "%", height = "100%", fontSize = labelPt,
-        }, colBar)
-        lbl:setStyleSheet(_COL_HDR_CSS)
-        lbl:echo(col.label)
-        if col.sortable then
-            local tid, key = tableId, col.key
-            lbl:setClickCallback(function() f2tTableToggleSort(tid, key) end)
-            lbl:setToolTip("Sort by " .. col.label)
-        end
-        colHdrs[col.key] = lbl
-        xPct = xPct + col.scrollbox_pct
-    end
-    f2tTableSetColHdrs(tableId, colHdrs)
+    emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+    emptyLbl:hide()
 
     local inst = {
-        tableId       = tableId,
-        dropBtn       = dropBtn,
-        status        = status,
-        scroll        = scroll,
-        contentLabel  = contentLabel,
-        contentW      = contentW,
-        searchConsole = searchConsole,
-        noRowsLbl     = noRowsLbl,
-        dropdown      = nil,
-        barH          = barH,
+        target   = target,
+        dropBtn  = dropBtn,
+        scanBtn  = scanBtn,
+        scopeBtn = scopeBtn,
+        viewBtn  = viewBtn,
+        runRow   = runRow,
+        status   = status,
+        haulBtn  = haulBtn,
+        prices   = prices,
+        results  = results,
+        emptyLbl = emptyLbl,
+        dropdown = nil,
+        barH     = stripH + barH,
+        statH    = statH,
+        runH     = runH,
+        colH     = colH,
     }
     instances[gid] = inst
 
     dropBtn:setClickCallback(function() toggleDropdown(inst, target) end)
+    checkBtn:setClickCallback(function() f2tPriceCheckerCheck() end)
+    scanBtn:setClickCallback(toggleScan)
+    scopeBtn:setClickCallback(toggleScope)
+    viewBtn:setClickCallback(function()
+        F2T_PRICE_CHECKER.view = F2T_PRICE_CHECKER.view == "results" and "prices" or "results"
+        F2T_PRICE_CHECKER.lastError = nil
+        renderAll()
+    end)
 
-    updateSelectorButtons()
-    f2tTableSetData(tableId, F2T_PRICE_CHECKER.rows)
-    updateEmptyState(inst)
+    layout(inst)
+    render(inst)
 end
 
 -- ── Content registration ──────────────────────────────────────────────────────
 
 local function buildPriceCheckerDef()
     return {
-        name        = "Price Checker",
-        description = "Cartel price checks and best-profit commodity scanning.",
+        name        = "Trading",
+        description = "Price checks, full price scans scored for hauling, and exchange hauling's live cycle.",
         group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
@@ -752,46 +871,48 @@ local function buildPriceCheckerDef()
         remove = function(target)
             local inst = instances[target._gid]
             if inst then
-                f2tTableDestroy(inst.tableId)
+                f2tTableDestroy(inst.prices.tableId)
+                f2tTableDestroy(inst.results.tableId)
                 instances[target._gid] = nil
             end
+            f2tHaulStripRemove(target._gid)
         end,
         resize = function(target)
             local inst = instances[target._gid]
             if not inst then return end
             local newCw = math.max(100, target.content:get_width() - SB_W)
-            if newCw ~= inst.contentW then
-                inst.contentW = newCw
-                inst.contentLabel:resize(newCw, inst.contentLabel:get_height())
-                f2tTableOnResize(inst.tableId, newCw)
+            for _, view in ipairs({ inst.prices, inst.results }) do
+                if newCw ~= view.contentW then
+                    view.contentW = newCw
+                    view.contentLabel:resize(newCw, view.contentLabel:get_height())
+                    f2tTableOnResize(view.tableId, newCw)
+                end
             end
         end,
         serialize = function(_t)
             return {
                 selectedCommodity = F2T_PRICE_CHECKER.selectedCommodity,
+                view              = F2T_PRICE_CHECKER.view,
+                scope             = F2T_PRICE_CHECKER.scope,
             }
         end,
         restore = function(_t, data)
             if type(data.selectedCommodity) == "string" then
                 F2T_PRICE_CHECKER.selectedCommodity = data.selectedCommodity
             end
-            updateSelectorButtons()
+            if data.view == "results" or data.view == "prices" then
+                F2T_PRICE_CHECKER.view = data.view
+            end
+            if data.scope == "cartel" or data.scope == "galaxy" then
+                F2T_PRICE_CHECKER.scope = data.scope
+            end
+            renderAll()
         end,
         onReveal = function(target)
             local inst = instances[target._gid]
-            if inst then
-                f2tTableSetData(inst.tableId, F2T_PRICE_CHECKER.rows)
-                updateEmptyState(inst)
-            end
+            if inst then render(inst) end
         end,
-        onTextScale = function(target)
-            local inst = instances[target._gid]
-            local showingSearch = inst and inst.searchConsole and not inst.searchConsole.hidden
-            f2tRebuildForTextScale(target, function()
-                local rebuilt = instances[target._gid]
-                if rebuilt and showingSearch then replaySearch(rebuilt.searchConsole) end
-            end)
-        end,
+        onTextScale = function(target) f2tRebuildForTextScale(target) end,
     }
 end
 
@@ -801,11 +922,6 @@ function f2tRegisterPriceChecker()
         return
     end
     Mux.registerContent("fed2_price_checker", buildPriceCheckerDef())
-    -- Package (re)install re-enables all triggers; the profit-tick trigger is a
-    -- catch-all blank-line pattern, so park it unless a scan is actually running.
-    if not (F2T_PRICE_CHECKER.profitSearch and F2T_PRICE_CHECKER.profitSearch.active) then
-        pcall(disableTrigger, "price_checker_profit_tick")
-    end
     if f2t_debug_log then f2t_debug_log("[price_checker] registered fed2_price_checker content") end
 end
 

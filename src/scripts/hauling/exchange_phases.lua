@@ -27,28 +27,54 @@ local function pause_on_nav_failure()
     f2t_hauling_pause(true)
 end
 
+--- Whether exchange hauling skips a commodity (hauling/excluded_commodities)
+--- @param commodity string
+--- @return boolean
+function f2t_hauling_commodity_excluded(commodity)
+    return parse_excluded_commodities()[commodity:lower()] == true
+end
+
+--- Commodities exchange hauling would queue from a price scan, best first
+--- @param results table Array of price analyses (f2t_price_get_all_data)
+--- @return table Up to five analyses
+function f2t_hauling_rank_commodities(results)
+    local excluded = parse_excluded_commodities()
+
+    local tradeable = {}
+    for _, analysis in ipairs(results) do
+        if excluded[analysis.commodity:lower()] then
+            f2t_debug_log("[hauling] Skipping excluded commodity: %s", analysis.commodity)
+        elseif analysis.profit and analysis.profit > 0 and
+           #analysis.top_buy > 0 and #analysis.top_sell > 0 then
+            table.insert(tradeable, analysis)
+        end
+    end
+
+    table.sort(tradeable, function(a, b)
+        return a.profit > b.profit
+    end)
+
+    local queue = {}
+    for i = 1, math.min(5, #tradeable) do queue[i] = tradeable[i] end
+    return queue
+end
+
 -- Phase 1: analyze commodities, queue the most profitable
 function f2t_hauling_phase_analyze()
     f2t_debug_log("[hauling] Phase: Analyzing commodities")
-    cecho("\n<green>[hauling]<reset> Analyzing commodity prices (this may take a minute)...\n")
 
-    f2t_price_get_all_data(function(results)
+    local started, how = f2t_price_get_all_data(function(results, err)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
 
-        local excluded = parse_excluded_commodities()
-
-        local tradeable = {}
-        for _, analysis in ipairs(results) do
-            local commodity_lower = analysis.commodity:lower()
-            if excluded[commodity_lower] then
-                f2t_debug_log("[hauling] Skipping excluded commodity: %s", analysis.commodity)
-            elseif analysis.profit and analysis.profit > 0 and
-               #analysis.top_buy > 0 and #analysis.top_sell > 0 then
-                table.insert(tradeable, analysis)
-            end
+        if err then
+            cecho(string.format("\n<red>[hauling]<reset> Price scan stopped: %s\n", err))
+            f2t_hauling_stop()
+            return
         end
+
+        local tradeable = f2t_hauling_rank_commodities(results)
 
         if #tradeable == 0 then
             cecho("\n<red>[hauling]<reset> No profitable commodities found\n")
@@ -56,12 +82,8 @@ function f2t_hauling_phase_analyze()
             return
         end
 
-        table.sort(tradeable, function(a, b)
-            return a.profit > b.profit
-        end)
-
         F2T_HAULING_STATE.commodity_queue = {}
-        local count = math.min(5, #tradeable)
+        local count = #tradeable
         for i = 1, count do
             local comm = tradeable[i]
             table.insert(F2T_HAULING_STATE.commodity_queue, {
@@ -77,7 +99,15 @@ function f2t_hauling_phase_analyze()
         cecho(string.format("\n<green>[hauling]<reset> Queued <cyan>%d<reset> profitable commodities\n", count))
 
         f2t_hauling_next_commodity()
-    end)
+    end, { owner = "hauling", maxAge = F2T_PRICE_SCAN_REUSE_SECONDS })
+
+    if not started then
+        f2t_hauling_stop()
+    elseif how == "reused" then
+        cecho("\n<green>[hauling]<reset> Using the price scan from the last few minutes\n")
+    else
+        cecho("\n<green>[hauling]<reset> Analyzing commodity prices (this may take a minute)...\n")
+    end
 end
 
 -- Move to next commodity in queue
@@ -264,7 +294,7 @@ end
 function f2t_hauling_get_commodity_details(commodity)
     f2t_debug_log("[hauling] Getting details for: %s", commodity)
 
-    f2t_price_check_commodity(commodity, function(commodity_name, _parsed_data, analysis)
+    f2t_price_check_for("hauling", commodity, function(commodity_name, _parsed_data, analysis)
         f2t_debug_log("[hauling] Received commodity details callback for: %s", commodity_name)
         f2t_debug_log("[hauling] State - active: %s, paused: %s",
             tostring(F2T_HAULING_STATE.active), tostring(F2T_HAULING_STATE.paused))
@@ -357,7 +387,7 @@ function f2t_hauling_remove_current_commodity()
 
         F2T_HAULING_STATE.dump_attempts = 0
 
-        f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
+        f2t_price_check_for("hauling", commodity, function(_commodity_name, _parsed_data, analysis)
             if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
                 return
             end
@@ -485,7 +515,7 @@ function f2t_hauling_find_next_dump_location()
         return
     end
 
-    f2t_price_check_commodity(commodity, function(_commodity_name, _parsed_data, analysis)
+    f2t_price_check_for("hauling", commodity, function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
@@ -956,7 +986,8 @@ function f2t_hauling_find_next_sell_location()
 
     F2T_HAULING_STATE.sell_attempts = F2T_HAULING_STATE.sell_attempts + 1
 
-    f2t_price_check_commodity(F2T_HAULING_STATE.current_commodity, function(_commodity_name, _parsed_data, analysis)
+    f2t_price_check_for("hauling", F2T_HAULING_STATE.current_commodity,
+        function(_commodity_name, _parsed_data, analysis)
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end

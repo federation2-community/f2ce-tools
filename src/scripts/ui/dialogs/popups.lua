@@ -46,7 +46,7 @@ local _INTRO_HTML =
 local _COMPONENTS = {
     { name = "Map & Nav",         desc = "auto-mapping, galaxy topology, speedwalk travel" },
     { name = "Galaxy Navigator",  desc = "browse syndicates, cartels, systems, and planets; click to travel" },
-    { name = "Hauling",           desc = "rank-aware automated commodity trading" },
+    { name = "Commerce",          desc = "rank-aware hauling: AC jobs, Akaturi, trading, planet supply" },
     { name = "Factory",           desc = "status table, one-command flush-to-market" },
     { name = "Company",           desc = "factory, financial, and portfolio overview panes (rank-gated)" },
     { name = "Planet Owner",      desc = "exchange breakdowns for your planets" },

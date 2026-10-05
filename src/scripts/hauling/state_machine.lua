@@ -2,11 +2,20 @@
 -- Manages the buy/sell cycle for automated commodity trading
 
 -- Start hauling automation
---- @param requested_mode string|nil Optional mode override (e.g., "exchange" to force exchange mode for Founder+)
+--- @param requested_mode string|nil Strategy to run (see F2T_HAUL_STRATEGIES); nil uses hauling/mode
 function f2t_hauling_start(requested_mode)
     if F2T_HAULING_STATE.active then
         cecho("\n<yellow>[hauling]<reset> Hauling already active\n")
         return
+    end
+
+    local strategy, strategy_note = f2t_hauling_resolve_strategy(requested_mode)
+    if not strategy then
+        cecho(string.format("\n<red>[hauling]<reset> %s\n", strategy_note or "Cannot determine hauling mode"))
+        return
+    end
+    if strategy_note then
+        cecho(string.format("\n<yellow>[hauling]<reset> %s\n", strategy_note))
     end
 
     -- Check if cargo hold is empty
@@ -72,23 +81,18 @@ function f2t_hauling_start(requested_mode)
 
     -- NOTE: Don't start completion timer yet - it will be started when entering buying/selling phase
 
-    -- Detect which hauling mode to use based on rank
-    local mode, err = f2t_hauling_detect_mode(requested_mode)
-
-    if not mode then
-        -- Mode detection failed
-        cecho(string.format("\n<red>[hauling]<reset> %s\n", err or "Cannot determine hauling mode"))
-        f2t_hauling_do_stop()
-        return
-    end
-
     -- Store mode and display to user
+    local strategy_def = F2T_HAUL_STRATEGIES[strategy]
+    local mode = strategy_def.mode
     F2T_HAULING_STATE.mode = mode
+    F2T_HAULING_STATE.strategy = strategy
+    F2T_HAULING_STATE.po_deficit_only = strategy_def.deficitOnly or false
     local rank = f2t_get_rank() or "unknown"
     local mode_name = f2t_hauling_get_mode_name(mode)
+    if strategy_def.deficitOnly then mode_name = mode_name .. " (deficits only)" end
 
     cecho(string.format("\n<cyan>[hauling]<reset> Rank: %s - Using %s\n", rank, mode_name))
-    f2t_debug_log("[hauling] Mode selected: %s (%s)", mode, mode_name)
+    f2t_debug_log("[hauling] Strategy selected: %s (%s)", strategy, mode_name)
 
     -- Exchange and PO modes depend on other components.  Exchange needs the
     -- commodities module (price analysis + bulk buy/sell); PO additionally needs
@@ -115,17 +119,9 @@ function f2t_hauling_start(requested_mode)
     -- front rather than letting the sequence silently stall in "analyzing" the
     -- first time a price-check call is gated deep inside the phase logic.
     if mode == "exchange" or mode == "po" then
-        if not f2t_check_tool_requirement("remote-access-cert", mode_name, "Remote Price Check Service") then
-            f2t_hauling_do_stop()
-            return
-        end
-
-        -- The base service doesn't work inside Sol; only the upgrade tier does.
-        if f2t_map_get_current_cartel() == "Sol" and not f2t_has_tool("price-check-upgrade") then
-            cecho(string.format(
-                "\n<red>[hauling]<reset> %s requires the <cyan>Remote Price Check Service Upgrade<reset> tool\n",
-                mode_name))
-            cecho("<dim_grey>The base service doesn't work inside Sol; you need the upgrade tier too.<reset>\n")
+        local price_form, price_reason = f2tPriceRemoteForm()
+        if not price_form then
+            cecho(string.format("\n<red>[hauling]<reset> %s: %s\n", mode_name, price_reason))
             cecho("<dim_grey>See: https://federation2.com/guide/#sec-230.20<reset>\n")
             f2t_hauling_do_stop()
             return
@@ -395,18 +391,9 @@ function f2t_hauling_finish_stop()
     -- Unregister from stamina monitor (monitoring continues in standalone mode)
     f2t_stamina_unregister_client()
 
-    -- Cancel any active price all operation
-    if f2t_price_cancel_all and f2t_price_cancel_all() then
-        f2t_debug_log("[hauling] Cancelled active price all operation")
-    end
-
-    -- Clear any active price capture state
-    if F2T_PRICE_CAPTURE_ACTIVE then
-        F2T_PRICE_CAPTURE_ACTIVE = false
-        F2T_PRICE_CAPTURE_DATA = {}
-        F2T_PRICE_CURRENT_COMMODITY = nil
-        F2T_PRICE_CALLBACK = nil
-        f2t_debug_log("[hauling] Cleared active price capture state")
+    -- Withdraw hauling's price checks; anyone else's keep running
+    if f2t_price_cancel_all and f2t_price_cancel_all("hauling") then
+        f2t_debug_log("[hauling] Withdrew pending price checks")
     end
 
     -- Reset active state (but preserve statistics for status display)
@@ -416,6 +403,7 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.paused_room_id = nil
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.mode = nil
+    F2T_HAULING_STATE.po_deficit_only = false
     F2T_HAULING_STATE.current_phase = nil
     F2T_HAULING_STATE.handler_id = nil
     F2T_HAULING_STATE.commodity_queue = {}
@@ -474,7 +462,13 @@ function f2t_hauling_finish_stop()
         F2T_AKATURI_STATE.current_match_index = 0
     end
 
-    -- Clear PO state
+    -- Clear PO state, keeping what the last session worked on for display
+    if #F2T_HAULING_STATE.po_job_queue > 0 then
+        F2T_HAULING_STATE.po_last_queue = F2T_HAULING_STATE.po_job_queue
+    end
+    if #F2T_HAULING_STATE.po_owned_planets > 0 then
+        F2T_HAULING_STATE.po_last_planets = F2T_HAULING_STATE.po_owned_planets
+    end
     F2T_HAULING_STATE.po_owned_planets = {}
     F2T_HAULING_STATE.po_current_system = nil
     F2T_HAULING_STATE.po_planet_exchange_data = {}
@@ -639,7 +633,9 @@ function f2t_hauling_show_status()
             or F2T_HAULING_STATE.pause_requested and "PAUSING..."
             or "RUNNING"
         cecho(string.format("  State: <cyan>%s<reset>\n", state_str))
-        cecho(string.format("  Phase: <cyan>%s<reset>\n",
+        cecho(string.format("  Mode: <cyan>%s<reset>\n", f2t_hauling_strategy_label(F2T_HAULING_STATE.strategy)))
+        cecho(string.format("  Phase: <cyan>%s<reset> <dim_grey>(%s)<reset>\n",
+            f2t_hauling_phase_label(F2T_HAULING_STATE.current_phase) or "none",
             F2T_HAULING_STATE.current_phase or "none"))
         if F2T_HAULING_STATE.current_phase == "cycle_pausing" and F2T_HAULING_STATE.cycle_pause_end_time then
             local remaining = F2T_HAULING_STATE.cycle_pause_end_time - os.time()
@@ -649,6 +645,11 @@ function f2t_hauling_show_status()
         end
     else
         cecho("\n<green>[hauling]<reset> Status: <yellow>STOPPED<reset>\n")
+        local next_strategy = f2t_hauling_default_strategy()
+        if next_strategy then
+            cecho(string.format("  Next start: <cyan>%s<reset> <dim_grey>(haul mode to change)<reset>\n",
+                f2t_hauling_strategy_label(next_strategy)))
+        end
 
         -- If no statistics exist, nothing to show
         if F2T_HAULING_STATE.total_cycles == 0 and #F2T_HAULING_STATE.commodity_history == 0 then
@@ -810,11 +811,13 @@ function f2t_hauling_transition(new_phase)
         f2t_map_brief_hold_release("hauling")
         cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n", new_phase))
         f2t_debug_log("[hauling] Deferred pause activated at phase: %s", new_phase)
+        raiseEvent("f2tHaulingStatusChanged")
         return
     end
 
     f2t_debug_log("[hauling] Transitioning to phase: %s", new_phase)
     F2T_HAULING_STATE.current_phase = new_phase
+    raiseEvent("f2tHaulingStatusChanged")
 
     -- Execute phase
     if new_phase == "analyzing" then
@@ -948,6 +951,90 @@ function f2t_hauling_transition(new_phase)
         cecho(string.format("\n<red>[hauling]<reset> Unknown phase: %s\n", new_phase))
         f2t_hauling_stop()
     end
+end
+
+-- ========================================
+-- Shared: Status for display
+-- ========================================
+
+local PHASE_LABELS = {
+    analyzing                    = "analyzing prices",
+    navigating_to_buy            = "heading to buy",
+    buying                       = "buying",
+    navigating_to_sell           = "heading to sell",
+    selling                      = "selling",
+    next_commodity               = "next commodity",
+    cycle_pausing                = "cycle pause",
+    ac_fetching_jobs             = "selecting job",
+    ac_selecting_job             = "selecting job",
+    ac_navigating_to_source      = "heading to pickup",
+    ac_accepting_job             = "accepting job",
+    ac_collecting                = "collecting cargo",
+    ac_navigating_to_dest        = "heading to dropoff",
+    ac_delivering                = "delivering cargo",
+    akaturi_getting_job          = "getting contract",
+    akaturi_parsing_pickup       = "reading contract",
+    akaturi_searching_pickup     = "finding pickup",
+    akaturi_navigating_pickup    = "heading to pickup",
+    akaturi_collecting           = "collecting package",
+    akaturi_searching_delivery   = "finding dropoff",
+    akaturi_navigating_delivery  = "heading to dropoff",
+    akaturi_delivering           = "delivering package",
+    akaturi_navigating_to_planet_for_pickup   = "finding pickup",
+    akaturi_navigating_to_planet_for_delivery = "finding dropoff",
+    po_scanning_system           = "scanning system",
+    po_scanning_exchanges        = "scanning exchanges",
+    po_building_queue            = "planning jobs",
+    po_navigating_to_buy         = "heading to buy",
+    po_navigating_to_bundled_buy = "heading to buy",
+    po_buying                    = "buying",
+    po_navigating_to_sell        = "heading to sell",
+    po_selling                   = "selling",
+    po_checking_deficits         = "checking deficits",
+    po_next_job                  = "next job",
+}
+
+--- Plain-English label for a phase constant
+--- @param phase string|nil
+--- @return string|nil
+function f2t_hauling_phase_label(phase)
+    if not phase then return nil end
+    return PHASE_LABELS[phase] or phase:gsub("_", " ")
+end
+
+--- Read-only view of the automation state, shared by `haul status` consumers
+--- and the Commerce panels
+--- @return table
+function f2tHaulingSnapshot()
+    local state = F2T_HAULING_STATE
+    local runState
+    if not state.active then
+        runState = "stopped"
+    elseif state.stopping then
+        runState = "stopping"
+    elseif state.paused then
+        runState = "paused"
+    elseif state.pause_requested then
+        runState = "pausing"
+    else
+        runState = "running"
+    end
+
+    local nextStrategy, nextNote = f2t_hauling_default_strategy()
+    return {
+        active          = state.active,
+        runState        = runState,
+        strategy        = state.active and state.strategy or nextStrategy,
+        lastStrategy    = state.strategy,
+        strategyNote    = not state.active and nextNote or nil,
+        phase           = state.current_phase,
+        phaseLabel      = state.active and f2t_hauling_phase_label(state.current_phase) or nil,
+        totalCycles     = state.total_cycles or 0,
+        sessionProfit   = state.session_profit or 0,
+        deficitCycles   = state.po_deficit_cycles or 0,
+        excessCycles    = state.po_excess_cycles or 0,
+        cyclePauseLeft  = state.cycle_pause_end_time and math.max(0, state.cycle_pause_end_time - os.time()) or nil,
+    }
 end
 
 -- ========================================

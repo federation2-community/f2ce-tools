@@ -24,8 +24,7 @@ if subcommand == "all" then
         return
     end
 
-    -- Execute price all
-    f2t_price_show_all()
+    f2t_price_show_all(rest and rest:lower():match("^%s*galaxy%s*$") and "galaxy" or nil)
 
 elseif subcommand == "settings" then
     -- Handle settings subcommands
@@ -33,6 +32,7 @@ elseif subcommand == "settings" then
     f2t_handle_settings_command("commodities", settings_args)
 
 else
-    -- Treat as commodity name
-    f2t_price_show(args)
+    -- Commodity name, optionally followed by the galaxy scope
+    local commodity, scope = args:match("^(%S+)%s+(galaxy)%s*$")
+    f2t_price_show(commodity or args, scope)
 end
