@@ -26,8 +26,10 @@ local STATIC_ACTIONS = {
     { id = "f2tMap_r3_copyLocation",  parent = ROOM_MENU,    label = "Copy location" },
     { id = "f2tMap_r4_routeInfo",     parent = ROOM_MENU,    label = "Route info" },
     { id = "f2tMap_r5_details",       parent = ROOM_MENU,    label = "Details" },
-    { id = "f2tMap_e1_planet",        parent = EXPLORE_MENU, label = "Explore this planet" },
-    { id = "f2tMap_e2_system",        parent = EXPLORE_MENU, label = "Explore this system" },
+    { id = "f2tMap_e1_planetBrief",   parent = EXPLORE_MENU, label = "This planet (brief)" },
+    { id = "f2tMap_e2_planetFull",    parent = EXPLORE_MENU, label = "This planet (full)" },
+    { id = "f2tMap_e3_systemBrief",   parent = EXPLORE_MENU, label = "This system (brief)" },
+    { id = "f2tMap_e4_systemFull",    parent = EXPLORE_MENU, label = "This system (full)" },
 }
 
 local WALK_PAUSE_ID    = "f2tMap_20_walkPause"
@@ -86,14 +88,60 @@ local function selectedRooms(...)
     return rooms
 end
 
-local function exploreScope(roomId, key, kind, startExplore)
-    local name = getRoomUserData(roomId, key) or ""
-    if name == "" then
-        menuEcho(string.format("%s is not on a known %s", getRoomName(roomId) or "That room", kind))
+local viewedAreaId = nil
+
+local function currentViewedArea()
+    if viewedAreaId and getRoomAreaName(viewedAreaId) then return viewedAreaId end
+    local roomId = F2T_MAP_CURRENT_ROOM_ID
+    return roomId and roomExists(roomId) and getRoomArea(roomId) or nil
+end
+
+-- Planet areas are named after their planet; space areas hold orbit rooms
+-- tagged with other planets' names, so only a non-space room counts.
+local function planetOfArea(areaId)
+    for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
+        if getRoomUserData(roomId, "fed2_flag_space") ~= "true" then
+            local planet = getRoomUserData(roomId, "fed2_planet") or ""
+            if planet ~= "" then return planet end
+        end
+    end
+    return nil
+end
+
+-- A selected room (planet room or orbit) wins over the area being viewed.
+local function resolvePlanet(rooms)
+    local planet = rooms[1] and getRoomUserData(rooms[1], "fed2_planet") or ""
+    if planet ~= "" then return planet end
+    local areaId = currentViewedArea()
+    return areaId and planetOfArea(areaId)
+end
+
+local function resolveSystem(rooms)
+    local system = rooms[1] and getRoomUserData(rooms[1], "fed2_system") or ""
+    if system ~= "" then return system end
+    local areaId = currentViewedArea()
+    system = areaId and getAreaUserData(areaId, "fed2_system") or ""
+    return system ~= "" and system or nil
+end
+
+local function explorePlanet(rooms, mode)
+    local planet = resolvePlanet(rooms)
+    if not planet then
+        menuEcho("No planet here: view a planet's map or right-click its orbit")
         return
     end
     if f2tControlBlocks("Exploration") then return end
-    startExplore("brief", name)
+    f2t_map_explore_planet_start(mode, planet)
+end
+
+local function exploreSystem(rooms, mode)
+    local system = resolveSystem(rooms)
+    if not system then
+        menuEcho("No known system for this part of the map")
+        return
+    end
+    if f2tControlBlocks("Exploration") then return end
+    f2t_map_explore_system_start(mode, system)
 end
 
 local function toggleAvoid(rooms)
@@ -129,15 +177,14 @@ local ROOM_ACTIONS = {
     f2tMap_r3_copyLocation = function(rooms) copyLocation(rooms[1]) end,
     f2tMap_r4_routeInfo    = function(rooms) f2t_map_show_route_info(nil, tostring(rooms[1])) end,
     f2tMap_r5_details      = function(rooms) f2t_map_manual_room_info(rooms[1]) end,
-    f2tMap_e1_planet       = function(rooms)
-        exploreScope(rooms[1], "fed2_planet", "planet", f2t_map_explore_planet_start)
-    end,
-    f2tMap_e2_system       = function(rooms)
-        exploreScope(rooms[1], "fed2_system", "system", f2t_map_explore_system_start)
-    end,
 }
 
+-- Actions that work without a selection; rooms may be empty.
 local GENERAL_ACTIONS = {
+    f2tMap_e1_planetBrief = function(rooms) explorePlanet(rooms, "brief") end,
+    f2tMap_e2_planetFull  = function(rooms) explorePlanet(rooms, "full") end,
+    f2tMap_e3_systemBrief = function(rooms) exploreSystem(rooms, "brief") end,
+    f2tMap_e4_systemFull  = function(rooms) exploreSystem(rooms, "full") end,
     f2tMap_60_center = function()
         local roomId = F2T_MAP_CURRENT_ROOM_ID
         if not roomId or not roomExists(roomId) then
@@ -159,14 +206,14 @@ local GENERAL_ACTIONS = {
 }
 
 function f2tMapMenuHandle(_, uniqueName, ...)
+    local rooms = selectedRooms(...)
     local general = GENERAL_ACTIONS[uniqueName]
     if general then
-        general()
+        general(rooms)
         return
     end
     local roomAction = ROOM_ACTIONS[uniqueName]
     if not roomAction then return end
-    local rooms = selectedRooms(...)
     if #rooms == 0 then
         menuEcho("Right-click a room first (or left-click it, then right-click anywhere)")
         return
@@ -189,6 +236,7 @@ F2T_MAP_MENU_HANDLER_IDS = {
     registerAnonymousEventHandler(MENU_EVENT, f2tMapMenuHandle),
     registerAnonymousEventHandler("sysMapWindowMousePressEvent", f2tMapMenuRefresh),
     registerAnonymousEventHandler("sysManualLocationSetEvent", f2tMapMenuUndoManualLocation),
+    registerAnonymousEventHandler("sysMapAreaChanged", function(_, areaId) viewedAreaId = tonumber(areaId) end),
     registerAnonymousEventHandler("sysUninstallPackage", function(_, packageName)
         if packageName == "f2ce-tools" then f2tMapMenuUnregister() end
     end),
