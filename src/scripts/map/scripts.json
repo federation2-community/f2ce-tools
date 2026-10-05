@@ -46,5 +46,6 @@
   {"name": "core"},
   {"name": "events"},
   {"name": "map_info"},
+  {"name": "context_menu"},
   {"name": "help"}
 ]

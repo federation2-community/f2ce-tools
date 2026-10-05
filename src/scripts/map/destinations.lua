@@ -11,15 +11,23 @@ local function ensureDestinations()
     return map_data.destinations
 end
 
-function f2t_map_destination_add(dest_name)
+-- Saves roomId when given, otherwise the current room.
+function f2t_map_destination_add(dest_name, roomId)
     if not dest_name or dest_name == "" then
         cecho("\n<red>[map]<reset> Destination name required\n"); return false
     end
     dest_name = string.lower(dest_name)
-    if not f2t_map_ensure_current_location(f2t_map_destination_add, {dest_name}) then return false end
-    local hash = getRoomHashByID(F2T_MAP_CURRENT_ROOM_ID)
+    if roomId then
+        if not roomExists(roomId) then
+            cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(roomId))); return false
+        end
+    else
+        if not f2t_map_ensure_current_location(f2t_map_destination_add, {dest_name}) then return false end
+        roomId = F2T_MAP_CURRENT_ROOM_ID
+    end
+    local hash = getRoomHashByID(roomId)
     if not hash or hash == "" then
-        cecho("\n<red>[map]<reset> Current room has no Fed2 hash - cannot save destination\n"); return false
+        cecho("\n<red>[map]<reset> Room has no Fed2 hash - cannot save destination\n"); return false
     end
     local destinations = ensureDestinations()
     if destinations[dest_name] then
@@ -27,7 +35,7 @@ function f2t_map_destination_add(dest_name)
     end
     destinations[dest_name] = hash
     f2t_save_settings()
-    local room_name = getRoomName(F2T_MAP_CURRENT_ROOM_ID)
+    local room_name = getRoomName(roomId)
     cecho(string.format(
         "\n<green>[map]<reset> Destination '<yellow>%s<reset>' saved for <cyan>%s<reset>\n", dest_name, room_name))
     return true

@@ -26,6 +26,7 @@ f2t_register_help("map", {
         {cmd="Saved Destinations:", desc=""},
         {cmd="map dest", desc="List all saved destinations"},
         {cmd="map dest add <name>", desc="Save current location"},
+        {cmd="map dest room <room_id> <name>", desc="Save a mapped room"},
         {cmd="map dest remove <name>", desc="Remove destination"},
         {cmd="", desc=""},
         {cmd="Search Rooms:", desc=""},
@@ -98,9 +99,10 @@ f2t_register_help("map dest", {
     usage = {
         {cmd="map dest", desc="List all saved destinations"},
         {cmd="map dest add <name>", desc="Save current location as destination"},
+        {cmd="map dest room <room_id> <name>", desc="Save a mapped room as destination"},
         {cmd="map dest remove <name>", desc="Remove a saved destination"},
     },
-    examples = {"map dest add home", "map dest remove home", "map dest"},
+    examples = {"map dest add home", "map dest room 1234 depot", "map dest remove home", "map dest"},
 })
 
 f2t_register_help("map settings", {

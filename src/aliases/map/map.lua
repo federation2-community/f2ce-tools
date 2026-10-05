@@ -88,6 +88,14 @@ handlers["dest"] = function()
         end
         f2t_map_destination_add(dest_rest)
 
+    elseif dest_subcommand == "room" then
+        local roomId, roomDestName = dest_rest:match("^(%d+)%s+(.+)$")
+        if not roomId then
+            cecho("\n<red>[map]<reset> Usage: map dest room <room_id> <name>\n")
+            return
+        end
+        f2t_map_destination_add(roomDestName, tonumber(roomId))
+
     elseif dest_subcommand == "remove" or dest_subcommand == "rm" then
         if dest_rest == "" then
             cecho("\n<red>[map]<reset> Usage: map dest remove <name>\n")
