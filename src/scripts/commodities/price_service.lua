@@ -13,6 +13,8 @@
 --   cartel scope: the cartel check; in Sol the upgraded system check, else the
 --                 premium ticker filtered to the current cartel
 --   galaxy scope: the premium ticker, unfiltered
+--   exchange scope: check price X at the exchange the player stands in (no
+--                   service needed; read from its exchange.commodity GMCP)
 --
 -- Capture starts on the brokers' intro line (the premium ticker has none, so it
 -- starts on sending), collects the price rows, and ends on the blank line after
@@ -127,7 +129,7 @@ end
 
 local function commandFor(form, commodity)
     local name = commodity:lower()
-    if form == "system" then return "check price " .. name end
+    if form == "system" or form == "exchange" then return "check price " .. name end
     if form == "premium" or form == "premiumCartel" then return "check premium " .. name end
     return "check price " .. name .. " cartel"
 end
@@ -246,7 +248,12 @@ startNext = function()
     local req = table.remove(F2T_PRICE.queue, 1)
     if not req then return end
 
-    local form, reason = f2tPriceRemoteForm(req.scope)
+    local form, reason
+    if req.scope == "exchange" then
+        if atExchange() then form = "exchange" else reason = "Not at an exchange" end
+    else
+        form, reason = f2tPriceRemoteForm(req.scope)
+    end
     if not form then
         F2T_PRICE.current = req
         finish(req, nil, nil, reason)
@@ -272,6 +279,43 @@ function f2t_price_check_for(owner, commodity, callback, scope)
     })
     startNext()
 end
+
+--- Queue a check of the exchange the player is standing in. Needs no price
+--- service: the reply's +++ lines are gagged and the result is read from the
+--- exchange.commodity GMCP message the server sends with it.
+--- @param owner string
+--- @param commodity string
+--- @param callback function|nil fn(commodity, parsed, analysis, err)
+function f2t_price_check_here(owner, commodity, callback)
+    f2t_price_check_for(owner, commodity, callback, "exchange")
+end
+
+--- True while the reply to a check of this exchange is due (its +++ lines get gagged)
+function f2tPriceLocalReplyActive()
+    local req = F2T_PRICE.current
+    return req ~= nil and req.form == "exchange" and not req.done
+end
+
+registerAnonymousEventHandler("gmcp.exchange.commodity", function()
+    local req = F2T_PRICE.current
+    if not (req and req.form == "exchange" and not req.done) then return end
+    local e = gmcp and gmcp.exchange and gmcp.exchange.commodity
+    if type(e) ~= "table" or type(e.name) ~= "string" or e.name:lower() ~= req.commodity:lower() then return end
+
+    req.done = true
+    local system = f2t_get_current_system and f2t_get_current_system() or ""
+    local planet = f2t_get_current_planet and f2t_get_current_planet() or ""
+    local parsed = { buy = {}, sell = {} }
+    if tonumber(e.buy) and tonumber(e.buy) > 0 then
+        parsed.buy[1] = { system = system, planet = planet, location = system .. ": " .. planet,
+            quantity = 75, price = tonumber(e.buy) }
+    end
+    if tonumber(e.sell) and tonumber(e.sell) > 0 then
+        parsed.sell[1] = { system = system, planet = planet, location = system .. ": " .. planet,
+            quantity = tonumber(e.stock) or 0, price = tonumber(e.sell) }
+    end
+    finish(req, parsed, f2t_price_analyze_commodity(req.commodity, parsed), nil)
+end)
 
 --- Queue a cartel-scope price check on behalf of a script or command
 --- @param commodity string

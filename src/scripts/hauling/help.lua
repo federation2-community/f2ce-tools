@@ -18,7 +18,7 @@ f2t_register_help("haul", {
         {cmd = "  auto", desc = "Your rank's default (the one listed first below)"},
         {cmd = "  ac", desc = "Armstrong Cuthbert cargo jobs (Commander, Captain)"},
         {cmd = "  akaturi", desc = "Akaturi courier contracts (Adventurer)"},
-        {cmd = "  exchange", desc = "Exchange trading (Merchant and up)"},
+        {cmd = "  exchange", desc = "Exchange trading (Merchant to Manufacturer, Founder+; not Financier)"},
         {cmd = "  planet", desc = "Supply your planets' deficits, sell their excesses (Founder+)"},
         {cmd = "  deficit", desc = "Supply your planets' deficits only (Founder+)"},
     },

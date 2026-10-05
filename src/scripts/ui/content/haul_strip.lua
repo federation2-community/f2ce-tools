@@ -1,7 +1,9 @@
 -- Hauling control strip shared by every Commerce panel: a Haul menu (actions
--- valid for the current state), a Mode menu when the rank has more than one
--- strategy, and a status readout. Every menu item runs the `haul` command it
--- names, so the panel and the command line stay one interface.
+-- valid for the current state), the mode `haul start` runs (a menu when the
+-- rank has more than one), and a status readout that runs `haul status` on
+-- click. Every menu item runs the `haul` command it names, so the panel and
+-- the command line stay one interface. The Haul menu is left out when there
+-- is nothing it could do, and the status says why.
 
 local CELL_PT  = 10   -- status font size (pt)
 local LABEL_PT = 8    -- button and menu font size (pt)
@@ -67,23 +69,10 @@ end
 --- Haul menu entries valid for the current state
 local function haulMenuItems(snap)
     if not snap.active then
-        local items = {}
-        local available = f2t_hauling_available_strategies()
-        if snap.strategy then
-            items[#items + 1] = {
-                label = "▶ Start " .. f2t_hauling_strategy_label(snap.strategy), command = "haul start",
-            }
+        if snap.strategy and f2t_hauling_strategy_ready(snap.strategy) then
+            return { { label = "▶ Start", command = "haul start" } }
         end
-        -- One-off starts in the rank's other modes, without changing the default.
-        for _, id in ipairs(available) do
-            if id ~= snap.strategy then
-                items[#items + 1] = {
-                    label = "▷ " .. f2t_hauling_strategy_label(id) .. " once", command = "haul start " .. id,
-                }
-            end
-        end
-        items[#items + 1] = { label = "ⓘ Status", command = "haul status" }
-        return items
+        return {}
     end
 
     local items = {}
@@ -96,7 +85,6 @@ local function haulMenuItems(snap)
     end
     items[#items + 1] = { label = "■ Stop",      command = "haul stop" }
     items[#items + 1] = { label = "⏹ Terminate", command = "haul terminate" }
-    items[#items + 1] = { label = "ⓘ Status",    command = "haul status" }
     return items
 end
 
@@ -176,7 +164,16 @@ end
 local function statusHtml(snap)
     local style = STATE_STYLE[snap.runState] or STATE_STYLE.stopped
     local detail = ""
-    if snap.active and snap.phaseLabel then
+    local ready, reason = true, nil
+    if not snap.active and snap.strategy then
+        ready, reason = f2t_hauling_strategy_ready(snap.strategy)
+    elseif not snap.active then
+        reason = f2t_hauling_unavailable_reason()
+        ready = reason == nil
+    end
+    if not ready then
+        detail = string.format(" <span style='%scolor:#c09060;'>%s</span>", CELL_FONT, reason)
+    elseif snap.active and snap.phaseLabel then
         detail = string.format(" <span style='%scolor:#888888;'>%s</span>", CELL_FONT, snap.phaseLabel)
     elseif snap.totalCycles > 0 then
         detail = string.format(" <span style='%scolor:#666666;'>last: %d cycle%s</span>",
@@ -207,19 +204,31 @@ end
 local function render(strip)
     local snap = f2tHaulingSnapshot()
     strip.statusLbl:echo(statusHtml(snap))
-    strip.tooltipText = statusTooltip(snap)
+    strip.tooltipText = statusTooltip(snap) .. "  —  click for haul status"
 
-    local multi = #f2t_hauling_available_strategies() > 1
-    if multi then
-        strip.modeBtn:echo(string.format("<center>%s ▾</center>", f2t_hauling_strategy_label(snap.strategy)))
+    local x = 6
+    if #haulMenuItems(snap) > 0 then
+        strip.haulBtn:move(x, nil)
+        strip.haulBtn:show()
+        x = x + strip.haulBtnW + 6
+    else
+        strip.haulBtn:hide()
+    end
+
+    strip.multiMode = #f2t_hauling_available_strategies() > 1
+    if snap.strategy then
+        strip.modeBtn:echo(string.format("<center>%s%s</center>", f2t_hauling_strategy_label(snap.strategy),
+            strip.multiMode and " ▾" or ""))
+        strip.modeBtn:move(x, nil)
         strip.modeBtn:show()
-        strip.statusLbl:move(strip.statusXMulti, nil)
-        strip.statusLbl:resize("100%-" .. (strip.statusXMulti + 6) .. "px", nil)
+        strip.modeBtnX = x
+        x = x + strip.modeBtnW + 8
     else
         strip.modeBtn:hide()
-        strip.statusLbl:move(strip.statusXSingle, nil)
-        strip.statusLbl:resize("100%-" .. (strip.statusXSingle + 6) .. "px", nil)
     end
+
+    strip.statusLbl:move(x, nil)
+    strip.statusLbl:resize("100%-" .. (x + 6) .. "px", nil)
 end
 
 local function renderAll()
@@ -227,6 +236,8 @@ local function renderAll()
 end
 
 registerAnonymousEventHandler("f2tHaulingStatusChanged", renderAll)
+-- Price services decide whether exchange and planet hauling can start.
+registerAnonymousEventHandler("gmcp.char.vitals.tools", renderAll)
 registerAnonymousEventHandler("gmcp.char.vitals", function()
     -- Only the rank matters here; skip the redraw for every other vitals tick.
     local rank = f2t_get_rank()
@@ -289,33 +300,32 @@ function f2tHaulStripCreate(target)
     haulBtn:setStyleSheet(_BTN_HAUL_CSS)
     haulBtn:echo("<center>Haul ▾</center>")
 
-    local modeBtnX = haulBtnX + haulBtnW + 6
     local modeBtnW = f2tScaled(target, 92)
     local modeBtn = Geyser.Label:new({
-        name = gid .. "_hs_mode", x = modeBtnX, y = 4, width = modeBtnW, height = height - 8, fontSize = labelPt,
+        name = gid .. "_hs_mode", x = haulBtnX + haulBtnW + 6, y = 4, width = modeBtnW, height = height - 8,
+        fontSize = labelPt,
     }, bar)
     modeBtn:setStyleSheet(_BTN_MODE_CSS)
 
-    local statusXSingle = modeBtnX + 2
-    local statusXMulti  = modeBtnX + modeBtnW + 8
     local statusLbl = Geyser.Label:new({
-        name = gid .. "_hs_status", x = statusXMulti, y = 0,
-        width = "100%-" .. (statusXMulti + 6) .. "px", height = "100%",
+        name = gid .. "_hs_status", x = 0, y = 0, width = "100%", height = "100%",
         fontSize = f2tUiPt(target, CELL_PT),
     }, bar)
     statusLbl:setStyleSheet("background-color: transparent; border: none;")
 
     local strip = {
-        target        = target,
-        height        = height,
-        bar           = bar,
-        modeBtn       = modeBtn,
-        statusLbl     = statusLbl,
-        statusXSingle = statusXSingle,
-        statusXMulti  = statusXMulti,
-        menu          = nil,
-        menuGen       = 0,
-        rank          = f2t_get_rank(),
+        target    = target,
+        height    = height,
+        bar       = bar,
+        haulBtn   = haulBtn,
+        haulBtnW  = haulBtnW,
+        modeBtn   = modeBtn,
+        modeBtnW  = modeBtnW,
+        modeBtnX  = haulBtnX + haulBtnW + 6,
+        statusLbl = statusLbl,
+        menu      = nil,
+        menuGen   = 0,
+        rank      = f2t_get_rank(),
     }
     strips[gid] = strip
 
@@ -328,13 +338,18 @@ function f2tHaulStripCreate(target)
 
     modeBtn:setClickCallback(function()
         hideHoverTip(strip)
-        openMenu(strip, modeBtnX, modeMenuItems(f2tHaulingSnapshot()))
+        if strip.multiMode then openMenu(strip, strip.modeBtnX, modeMenuItems(f2tHaulingSnapshot())) end
     end)
     modeBtn:setOnEnter(function()
-        showHoverTip(strip, modeBtnX, "What 'haul start' runs (haul mode ...)")
+        showHoverTip(strip, strip.modeBtnX, strip.multiMode and "What 'haul start' runs (haul mode ...)"
+            or "What 'haul start' runs at your rank")
     end)
     modeBtn:setOnLeave(function() hideHoverTip(strip) end)
 
+    statusLbl:setClickCallback(function()
+        hideHoverTip(strip)
+        haulCommand("haul status")
+    end)
     statusLbl:setOnEnter(function()
         showHoverTip(strip, strip.statusLbl:get_x() - target.content:get_x(), strip.tooltipText)
     end)

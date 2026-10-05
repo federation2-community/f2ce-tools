@@ -39,7 +39,7 @@ Run `f2t` for a full command overview, or `f2t status` to see which components a
 Automatic room-by-room mapping as you move, syndicate/cartel/system galaxy topology tracking, saved destinations, speedwalk navigation by name/hash/room ID, planet and system exploration (single room, planet, system, cartel, syndicate, or full galaxy), manual room/exit editing, special exits (arrival commands, circuit travel like trains and shuttles), and map import/export.
 
 **Automated Hauling** (`haul`)
-Rank-aware hauling: Armstrong Cuthbert cargo jobs (Commander, Captain), Akaturi contracts (Adventurer), exchange trading that buys low and sells high across a queue of profitable commodities (Merchant and up), and planet supply that fills your planets' deficits and sells their excesses (Founder+). `haul mode` picks what `haul start` runs where a rank has more than one choice (Founder+ can choose planet, deficits only, or exchange), with configurable profit margins and pause behavior.
+Rank-aware hauling: Armstrong Cuthbert cargo jobs (Commander, Captain), Akaturi contracts (Adventurer), exchange trading that buys low and sells high across a queue of profitable commodities (the ranks the game lets trade on the exchanges: Merchant to Manufacturer, and Founder+; not Financier), and planet supply that fills your planets' deficits and sells their excesses (Founder+). `haul mode` picks what `haul start` runs where a rank has more than one choice (Founder+ can choose planet, deficits only, or exchange), with configurable profit margins and pause behavior.
 
 **Factory Management** (`factory`, `fac`)
 Status table for all your factories, one-command flush-to-market, and settings for automatic pre-reset flushing.
@@ -71,7 +71,7 @@ With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 - **Commerce** — hauling for every rank, each with the Haul start/pause/stop strip and mode picker:
   - **Jobs** — Armstrong Cuthbert workboard with route distance and effective pay; Commanders and Captains accept, collect and deliver, Industrialists and up post and offer jobs
   - **Akaturi** — the current courier contract and points toward promotion
-  - **Trading** — price checks and full price scans across the cartel or, with the Premium Ticker, the galaxy (using whichever of the Remote Price Check Service, its Upgrade and the Premium Ticker you own), scored for hauling, plus exchange hauling's live cycle
+  - **Trading** — price checks and full price scans across the cartel or, with the Premium Ticker, the galaxy (using whichever of the Remote Price Check Service, its Upgrade and the Premium Ticker you own; with none, the exchange you're in), scored for hauling, plus exchange hauling's live cycle
   - **Planets** — your planets' deficits, excesses, and the planet-supply job queue (Founder+)
 - **Commodities** — reference table of names, codes, and base prices
 - **Cargo** — live ship manifest

@@ -5,10 +5,14 @@
 -- Premium Ticker filtered to Sol) or Galaxy (the Premium Ticker). The service
 -- picks the command from the price services the player owns.
 --
--- Prices view: the selected commodity's last prices for the scope from the
--- service's cache, whoever checked them, hauling included. Check queues a
--- fresh remote check. The exchange the player stands in is the Exchange
--- content's job; its commodity names open them here (f2tPriceCheckerFocus).
+-- Prices view: the selected commodity's most recent prices, the scope's from
+-- the service's cache (whoever checked them, hauling included) or this
+-- exchange's. Check queues a remote check, or with no price service, at an
+-- exchange, a check of that exchange. The Exchange content's commodity names
+-- open them here (f2tPriceCheckerFocus).
+--
+-- Scan, Results and the scope button only appear with a service that makes
+-- them work; the panel rebuilds when the player's services change.
 --
 -- Results view: the service's full scan, the same one `price all` and exchange
 -- hauling use, as a sortable table scored both ways: best single spread and
@@ -161,12 +165,26 @@ end
 
 -- ── Data ──────────────────────────────────────────────────────────────────────
 
--- Price rows for the selected commodity from the cache.
-local function priceRows()
+-- The selected commodity's most recent cached prices: the scope's or this
+-- exchange's, whichever was checked last.
+local function shownEntry()
     local selected = F2T_PRICE_CHECKER.selectedCommodity
-    if not selected then return {} end
-    local cached = f2tPriceCached(selected, F2T_PRICE_CHECKER.scope)
-    return cached and cached.rows or {}
+    if not selected then return nil end
+    local scoped = f2tPriceCached(selected, F2T_PRICE_CHECKER.scope)
+    local here = f2tPriceCached(selected, "exchange")
+    if scoped and here then return here.at > scoped.at and here or scoped end
+    return scoped or here
+end
+
+local function priceRows()
+    local entry = shownEntry()
+    return entry and entry.rows or {}
+end
+
+-- Which optional controls this player's price services make usable.
+local function capabilities()
+    local services = f2tPriceServices()
+    return { scan = services.remote or services.premium, scope = services.premium }
 end
 
 -- Analyses of the running scan, else the last finished one, plus when it finished.
@@ -183,7 +201,8 @@ local function resultRows()
     local results = scanResults()
     local picks = {}
     -- Hauling trades within the cartel, so only a cartel scan has its picks.
-    if f2t_hauling_rank_commodities and F2T_PRICE_CHECKER.scope == "cartel" then
+    if f2t_hauling_rank_commodities and F2T_PRICE_CHECKER.scope == "cartel"
+        and f2t_hauling_strategy_available and f2t_hauling_strategy_available("exchange") then
         for i, analysis in ipairs(f2t_hauling_rank_commodities(results)) do
             picks[analysis.commodity] = i
         end
@@ -213,6 +232,7 @@ local FORM_LABEL = {
     system        = "System prices",
     premiumCartel = "Cartel prices (Premium Ticker)",
     premium       = "Galaxy prices",
+    exchange      = "This exchange",
 }
 
 local function servicesHtml()
@@ -248,7 +268,7 @@ local function statusHtml()
     local selected = state.selectedCommodity
     if not selected then return line("#5a6488", "Pick a commodity, then Check · " .. servicesHtml()) end
     if state.pendingFor == selected then return line("#8896c0", "Checking " .. selected .. "…") end
-    local cached = f2tPriceCached(selected, state.scope)
+    local cached = shownEntry()
     if cached then
         return line("#8896c0", string.format("%s: %s · %s", FORM_LABEL[cached.form] or "Prices", selected,
             ageText(cached.at)))
@@ -316,17 +336,29 @@ local function layout(inst)
     inst.emptyLbl:resize(nil, "100%-" .. emptyTop .. "px")
 end
 
+-- With no price service a check only works inside an exchange.
+local function canCheckHere(caps)
+    return caps.scan or atExchange()
+end
+
 local function render(inst)
     local state = F2T_PRICE_CHECKER
+    local caps = capabilities()
+    local checkable = canCheckHere(caps)
+    if checkable then inst.checkBtn:show() else inst.checkBtn:hide() end
+    if not caps.scan then state.view = "prices" end
+    if not caps.scope then state.scope = "cartel" end
     local showResults = state.view == "results"
 
     local label = state.selectedCommodity or "Select Commodity"
     local icon = (f2tCommodityIconPrefix and state.selectedCommodity)
         and f2tCommodityIconPrefix(state.selectedCommodity) or ""
     inst.dropBtn:echo("<center>" .. icon .. label .. " ▼</center>")
-    inst.scanBtn:echo(f2tPriceScanState() and "<center>■ Stop</center>" or "<center>💹 Scan</center>")
-    inst.viewBtn:echo(showResults and "<center>≡ Prices</center>" or "<center>≡ Results</center>")
-    inst.scopeBtn:echo("<center>◎ " .. SCOPE_LABEL[state.scope] .. "</center>")
+    if inst.scanBtn then
+        inst.scanBtn:echo(f2tPriceScanState() and "<center>■ Stop</center>" or "<center>💹 Scan</center>")
+        inst.viewBtn:echo(showResults and "<center>≡ Prices</center>" or "<center>≡ Results</center>")
+    end
+    if inst.scopeBtn then inst.scopeBtn:echo("<center>◎ " .. SCOPE_LABEL[state.scope] .. "</center>") end
 
     inst.status:echo(statusHtml())
     if showResults and canHaulScan() then inst.haulBtn:show() else inst.haulBtn:hide() end
@@ -338,7 +370,13 @@ local function render(inst)
 
     local rows = showResults and resultRows() or priceRows()
     f2tTableSetData(active.tableId, rows)
-    if #rows == 0 then
+    if not checkable and #rows == 0 then
+        inst.emptyLbl:echo(emptyStateHtml("Go to an exchange to check its prices." ..
+            "<br><br>For prices across the cartel without travelling, buy the Remote Price Check Service " ..
+            "from the brokers on Earth (BUY REMOTE SERVICE)."))
+        inst.emptyLbl:show()
+        inst.emptyLbl:raise()
+    elseif #rows == 0 then
         inst.emptyLbl:echo(emptyStateHtml(showResults
             and "No scan yet. Scan checks every commodity (Remote Price Check Service)."
             or "No prices yet — pick a commodity and Check."))
@@ -358,11 +396,30 @@ local function renderAll()
     end)
 end
 
-registerAnonymousEventHandler("f2tPriceUpdated", function(_, commodity, scope)
-    if commodity == F2T_PRICE_CHECKER.pendingFor and scope == F2T_PRICE_CHECKER.scope then
-        F2T_PRICE_CHECKER.pendingFor = nil
-    end
+registerAnonymousEventHandler("f2tPriceUpdated", function(_, commodity)
+    if commodity == F2T_PRICE_CHECKER.pendingFor then F2T_PRICE_CHECKER.pendingFor = nil end
     renderAll()
+end)
+
+-- Stepping in or out of an exchange decides whether Check works without a
+-- price service; redraw only when that flips, not on every move.
+local wasAtExchange = nil
+registerAnonymousEventHandler("gmcp.room.info", function()
+    local now = atExchange()
+    if now ~= wasAtExchange then
+        wasAtExchange = now
+        if next(instances) then renderAll() end
+    end
+end)
+
+-- Buying or letting lapse a price service changes which controls exist.
+registerAnonymousEventHandler("gmcp.char.vitals.tools", function()
+    local caps = capabilities()
+    for _, inst in pairs(instances) do
+        if inst.caps.scan ~= caps.scan or inst.caps.scope ~= caps.scope then
+            f2tRebuildForTextScale(inst.target)
+        end
+    end
 end)
 registerAnonymousEventHandler("f2tPriceScanProgress", renderAll)
 registerAnonymousEventHandler("f2tPriceScanFinished", renderAll)
@@ -400,9 +457,14 @@ function f2tPriceCheckerCheck()
             renderAll()
         end, state.scope)
     elseif atExchange() then
-        state.lastError = reason .. ". This exchange's prices are in the Exchange tab."
+        state.pendingFor = selected
+        f2t_price_check_here("panel", selected, function(_name, _parsed, _analysis, err)
+            if state.pendingFor == selected then state.pendingFor = nil end
+            if err then state.lastError = selected .. ": " .. err end
+            renderAll()
+        end)
     else
-        state.lastError = reason
+        state.lastError = reason .. ". At an exchange, Check shows that exchange's prices."
     end
     renderAll()
 end
@@ -449,9 +511,8 @@ function f2tPriceCheckerFocus(commodity)
 
     F2T_PRICE_CHECKER.scope = "cartel"
     selectCommodity(commodity)
-    local cached = f2tPriceCached(F2T_PRICE_CHECKER.selectedCommodity, "cartel")
-    local stale = not cached or os.time() - cached.at > F2T_PRICE_SCAN_REUSE_SECONDS
-    if stale and f2tPriceRemoteForm("cartel") then f2tPriceCheckerCheck() end
+    local cached = shownEntry()
+    if not cached or os.time() - cached.at > F2T_PRICE_SCAN_REUSE_SECONDS then f2tPriceCheckerCheck() end
 
     -- Activate the tab at each level, innermost first, up to its pane.
     local tab, host = target, target.pane
@@ -513,7 +574,7 @@ local function priceCols()
             sortable      = true,
             sort_value    = function(r) return r.action end,
             scrollbox_pct = 16,
-            render_label  = function(v, _row, cell)
+            render_label  = function(v, row, cell)
                 -- The exchange is buying → the player can SELL there, and vice versa.
                 local html
                 if v == "buying" then
@@ -522,13 +583,22 @@ local function priceCols()
                     html = string.format("<span style='%scolor:#cccc44;'>[BUY]</span>", CELL_FONT)
                 end
                 cell:echo(html)
-                cell:setToolTip(v == "buying"
-                    and "Exchange is buying — click to sell here"
-                    or  "Exchange is selling — click to buy here")
-                cell:setClickCallback(function()
-                    local cmd = (v == "buying") and "sell " or "buy "
-                    send(cmd .. (F2T_PRICE_CHECKER.selectedCommodity or ""):lower(), false)
-                end)
+                local what = v == "buying" and "Exchange is buying" or "Exchange is selling"
+                local here = atExchange() and row.planet == f2t_get_current_planet()
+                if not f2t_can_trade_on_exchanges() then
+                    cell:setToolTip(what .. " — your rank can't trade on the exchanges")
+                    cell:setClickCallback(function() end)
+                elseif not here then
+                    cell:setToolTip(what .. " — trade here from its exchange")
+                    cell:setClickCallback(function() end)
+                else
+                    cell:setToolTip(what .. (v == "buying" and " — click to sell a lot here"
+                        or " — click to buy a lot here"))
+                    cell:setClickCallback(function()
+                        local cmd = (v == "buying") and "sell " or "buy "
+                        send(cmd .. (F2T_PRICE_CHECKER.selectedCommodity or ""):lower(), false)
+                    end)
+                end
             end,
         },
         {
@@ -766,15 +836,34 @@ local function buildContent(target)
         return btn
     end
 
-    local dropBtn  = button(5, "33%", _DROP_CSS, "Select a commodity")
-    local checkBtn = button("35%", "15%", _CHECK_BTN_CSS,
-        "Check the selected commodity across the scope, with whichever price service reaches it")
+    -- Right-aligned buttons this player can use; the commodity picker takes the rest.
+    local caps = capabilities()
+    local specs = {
+        { key = "check", pct = 15, css = _CHECK_BTN_CSS,
+          tip = "Check the selected commodity with your price service, or at the exchange you're in" },
+    }
+    if caps.scan then
+        specs[#specs + 1] = { key = "scan", pct = 15, css = _SCAN_BTN_CSS,
+            tip = "Price every commodity (a Cartel scan is the one exchange hauling uses)" }
+    end
+    if caps.scope then
+        specs[#specs + 1] = { key = "scope", pct = 16, css = _SCOPE_BTN_CSS,
+            tip = "Cartel, or the whole galaxy with the Premium Ticker" }
+    end
+    if caps.scan then
+        specs[#specs + 1] = { key = "view", pct = 15, css = _VIEW_BTN_CSS,
+            tip = "Switch between prices and scan results" }
+    end
+    local used = 0
+    for _, spec in ipairs(specs) do used = used + spec.pct + 1 end
+    local dropBtn = button(5, (99 - used - 1) .. "%", _DROP_CSS, "Select a commodity")
+    local btns, x = {}, 100 - used
+    for _, spec in ipairs(specs) do
+        btns[spec.key] = button(x .. "%", spec.pct .. "%", spec.css, spec.tip)
+        x = x + spec.pct + 1
+    end
+    local checkBtn, scanBtn, scopeBtn, viewBtn = btns.check, btns.scan, btns.scope, btns.view
     checkBtn:echo("<center>🔍 Check</center>")
-    local scanBtn = button("51%", "15%", _SCAN_BTN_CSS,
-        "Price every commodity across the scope (a Cartel scan is the one exchange hauling uses)")
-    local scopeBtn = button("67%", "16%", _SCOPE_BTN_CSS,
-        "Cartel, or Galaxy with the Premium Ticker")
-    local viewBtn = button("84%", "15%", _VIEW_BTN_CSS, "Switch between prices and scan results")
 
     -- ── Exchange hauling row (shown only while it trades) ─────────────────────
     local runRow = Geyser.Label:new({
@@ -821,7 +910,9 @@ local function buildContent(target)
 
     local inst = {
         target   = target,
+        caps     = caps,
         dropBtn  = dropBtn,
+        checkBtn = checkBtn,
         scanBtn  = scanBtn,
         scopeBtn = scopeBtn,
         viewBtn  = viewBtn,
@@ -841,13 +932,15 @@ local function buildContent(target)
 
     dropBtn:setClickCallback(function() toggleDropdown(inst, target) end)
     checkBtn:setClickCallback(function() f2tPriceCheckerCheck() end)
-    scanBtn:setClickCallback(toggleScan)
-    scopeBtn:setClickCallback(toggleScope)
-    viewBtn:setClickCallback(function()
-        F2T_PRICE_CHECKER.view = F2T_PRICE_CHECKER.view == "results" and "prices" or "results"
-        F2T_PRICE_CHECKER.lastError = nil
-        renderAll()
-    end)
+    if scanBtn then
+        scanBtn:setClickCallback(toggleScan)
+        viewBtn:setClickCallback(function()
+            F2T_PRICE_CHECKER.view = F2T_PRICE_CHECKER.view == "results" and "prices" or "results"
+            F2T_PRICE_CHECKER.lastError = nil
+            renderAll()
+        end)
+    end
+    if scopeBtn then scopeBtn:setClickCallback(toggleScope) end
 
     layout(inst)
     render(inst)

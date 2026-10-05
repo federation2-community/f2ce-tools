@@ -5,7 +5,8 @@
 -- - Groundhog (level 1): No hauling available
 -- - Commander, Captain (levels 2-3): ac
 -- - Adventurer/Adventuress (level 4): akaturi
--- - Merchant to Financier (levels 5-9): exchange
+-- - Merchant to Manufacturer (levels 5-8): exchange
+-- - Financier (level 9): none; Financiers may not trade on the exchanges
 -- - Founder+ (level 10+): planet (default), deficit, exchange
 
 -- Ordered so menus list them in a stable order.
@@ -68,8 +69,19 @@ function f2t_hauling_strategies_for_level(rankLevel)
     if not rankLevel or rankLevel < 2 then return {} end
     if rankLevel <= 3 then return { "ac" } end
     if rankLevel == 4 then return { "akaturi" } end
-    if rankLevel <= 9 then return { "exchange" } end
+    if rankLevel <= 8 then return { "exchange" } end
+    if rankLevel == 9 then return {} end
     return { "planet", "deficit", "exchange" }
+end
+
+--- Why the current character has no hauling mode, or nil when it has one
+--- @return string|nil
+function f2t_hauling_unavailable_reason()
+    local level = f2t_get_rank_level(f2t_get_rank())
+    if not level then return "Rank not known yet" end
+    if level == 1 then return "No hauling at Groundhog rank; Commanders run Armstrong Cuthbert jobs" end
+    if level == 9 then return "Financiers can't trade on the exchanges, so there's no hauling at this rank" end
+    return nil
 end
 
 --- Strategies the current character may run, rank default first
@@ -86,6 +98,22 @@ function f2t_hauling_strategy_available(strategy)
         if id == strategy then return true end
     end
     return false
+end
+
+--- Whether a strategy can start for this character
+--- @param strategy string Strategy id
+--- @return boolean ready, string|nil reason Player-facing reason when not ready
+function f2t_hauling_strategy_ready(strategy)
+    local def = F2T_HAUL_STRATEGIES[strategy]
+    if not def then return false, "Unknown hauling mode" end
+    -- Exchange and planet hauling choose where to buy and sell from remote price checks.
+    if def.mode == "exchange" or def.mode == "po" then
+        local services = f2tPriceServices and f2tPriceServices()
+        if not (services and (services.remote or services.premium)) then
+            return false, def.label .. " hauling needs the Remote Price Check Service"
+        end
+    end
+    return true, nil
 end
 
 --- Display label for a strategy id
@@ -128,8 +156,8 @@ function f2t_hauling_resolve_strategy(requested)
         return nil, string.format("Unknown rank: %s", rank)
     end
 
-    if rankLevel == 1 then
-        return nil, "Hauling is not available at Groundhog rank. Reach Commander rank to use Armstrong Cuthbert jobs."
+    if #f2t_hauling_strategies_for_level(rankLevel) == 0 then
+        return nil, f2t_hauling_unavailable_reason()
     end
 
     if requested and requested ~= "" then

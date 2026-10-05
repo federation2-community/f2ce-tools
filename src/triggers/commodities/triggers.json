@@ -167,6 +167,19 @@
       {
         "pattern": "^You need a remote access certificate to use the premium",
         "type": "regex"
+      },
+      {
+        "pattern": "^The exchange is not currently trading in this commodity$",
+        "type": "regex"
+      }
+    ]
+  },
+  {
+    "name": "trade_not_allowed",
+    "patterns": [
+      {
+        "pattern": "^You're not allowed to trade on the commodity exchanges!$",
+        "type": "regex"
       }
     ]
   }

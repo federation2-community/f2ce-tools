@@ -6,7 +6,8 @@
 --   Prices  - every commodity the exchange lists: base, Buying/Selling price,
 --             stock. Deltas vs base are colored from the player's side
 --             (green = exchange pays a premium / charges under base). Click
---             Buying to sell a 75-ton lot, Selling to buy one. With Commerce:
+--             Buying to sell a 75-ton lot, Selling to buy one (trading ranks
+--             only; Financiers and the ranks below Merchant can't). With Commerce:
 --             price tooltips name the cartel's best elsewhere (from the price
 --             service's cache), ▶/★ mark what hauling is trading / would
 --             trade, and a commodity name opens it in Commerce > Trading.
@@ -251,6 +252,9 @@ local function bestElsewhere(list, here)
     return nil
 end
 
+-- Shown instead of the buy/sell click hint to ranks the game won't let trade.
+local NO_TRADE = "your rank can't trade on the exchanges"
+
 -- Tooltip line comparing this exchange with the cartel's best, or "" when no
 -- cartel prices are cached for the commodity.
 local function elsewhereNote(entry, at, label)
@@ -273,7 +277,8 @@ local function haulingMarks()
         end
     end
     local scan = f2tPriceLastScan and f2tPriceLastScan("cartel")
-    if scan and f2t_hauling_rank_commodities then
+    local canHaul = f2t_hauling_strategy_available and f2t_hauling_strategy_available("exchange")
+    if scan and canHaul and f2t_hauling_rank_commodities then
         for i, analysis in ipairs(f2t_hauling_rank_commodities(scan.results)) do
             picks[analysis.commodity] = i
         end
@@ -393,11 +398,16 @@ local function priceCols()
                     return
                 end
                 cell:echo(spanRaw("right", priceDeltaHtml(n, row.base, false)))
-                cell:setToolTip(string.format(
-                    "Exchange pays %dig/ton — click to SELL a 75-ton lot from your hold", n)
-                    .. elsewhereNote(row.sellElsewhere, row.pricesAt, "Best price to sell elsewhere"))
                 local name = tostring(row.name or ""):lower()
-                cell:setClickCallback(function() send("sell " .. name, false) end)
+                local note = elsewhereNote(row.sellElsewhere, row.pricesAt, "Best price to sell elsewhere")
+                if f2t_can_trade_on_exchanges() then
+                    cell:setToolTip(string.format(
+                        "Exchange pays %dig/ton — click to SELL a 75-ton lot from your hold", n) .. note)
+                    cell:setClickCallback(function() send("sell " .. name, false) end)
+                else
+                    cell:setToolTip(string.format("Exchange pays %dig/ton — %s", n, NO_TRADE) .. note)
+                    cell:setClickCallback(function() end)
+                end
             end,
         },
         {
@@ -415,11 +425,15 @@ local function priceCols()
                     return
                 end
                 cell:echo(spanRaw("right", priceDeltaHtml(n, row.base, true)))
-                cell:setToolTip(string.format(
-                    "Exchange charges %dig/ton — click to BUY a 75-ton lot", n)
-                    .. elsewhereNote(row.buyElsewhere, row.pricesAt, "Best price to buy elsewhere"))
                 local name = tostring(row.name or ""):lower()
-                cell:setClickCallback(function() send("buy " .. name, false) end)
+                local note = elsewhereNote(row.buyElsewhere, row.pricesAt, "Best price to buy elsewhere")
+                if f2t_can_trade_on_exchanges() then
+                    cell:setToolTip(string.format("Exchange charges %dig/ton — click to BUY a 75-ton lot", n) .. note)
+                    cell:setClickCallback(function() send("buy " .. name, false) end)
+                else
+                    cell:setToolTip(string.format("Exchange charges %dig/ton — %s", n, NO_TRADE) .. note)
+                    cell:setClickCallback(function() end)
+                end
             end,
         },
         {

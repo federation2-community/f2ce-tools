@@ -102,7 +102,7 @@
     "name": "daily_limit_error",
     "patterns": [
       {
-        "pattern": "^Your order is rejected, since you have exceeded the daily gross income limit for commodity trading!$",
+        "pattern": "^Your order is rejected, since you have exceeded the daily gross",
         "type": "regex"
       }
     ]

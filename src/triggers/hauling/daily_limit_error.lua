@@ -1,5 +1,9 @@
 -- hauling_daily_limit_error — patterns declared in triggers.json
--- Handle daily gross income limit error during hauling
+-- A Trader past the daily gross income limit for commodity trading: every buy
+-- and sell is refused until the next day, so end any bulk trade and hauling.
+if f2t_bulk_buy_error then f2t_bulk_buy_error("Daily gross income limit for commodity trading reached") end
+if f2t_bulk_sell_error then f2t_bulk_sell_error("Daily gross income limit for commodity trading reached") end
+
 if F2T_HAULING_STATE and F2T_HAULING_STATE.active then
     cecho("\n<red>[hauling]<reset> DAILY INCOME LIMIT REACHED - Cannot continue trading\n")
     cecho("\n<dim_grey>You have hit the maximum daily gross income for commodity trading.<reset>\n")

@@ -8,7 +8,8 @@
 -- Strategy by rank (see mode_detection.lua; hauling/mode picks among them):
 --   Commander/Captain        -> ac: Armstrong Cuthbert jobs (standalone)
 --   Adventurer/Adventuress   -> akaturi: Akaturi contracts (standalone)
---   Merchant...Financier     -> exchange: Exchange trading (needs commodities module)
+--   Merchant...Manufacturer  -> exchange: Exchange trading (needs commodities module)
+--   Financier                -> none: Financiers may not trade on the exchanges
 --   Founder+                 -> planet / deficit: Planet Owner trading, or exchange
 
 F2T_HAULING_STATE = {
