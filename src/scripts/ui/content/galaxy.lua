@@ -497,22 +497,16 @@ local function poiVisible(flag)
 end
 
 -- Only called for planets already known to be mapped (see planetMapped), so
--- an unmapped planet never pays for a room scan that can't find anything. Most
--- player planets cram every service into the shuttlepad's own room, so a
--- flag whose room matches the shuttlepad's is folded away rather than
--- stacking a redundant chip next to it.
+-- an unmapped planet never pays for a room scan that can't find anything.
+-- Each flag's own setting alone decides its chip, even when several share a room.
 local function planetFlags(ctx, name)
     local area_id = areaIdFor(ctx, name)
     if not area_id then return {} end
 
     local room_of = areaDigest(ctx, area_id).flagRoom
-    local shuttlepad_room = room_of.shuttlepad
-
     local present = {}
     for _, flag in ipairs(PLANET_POI_FLAGS) do
-        local room_id    = room_of[flag]
-        local co_located = shuttlepad_room and flag ~= "shuttlepad" and room_id == shuttlepad_room
-        if room_id and not co_located and poiVisible(flag) then
+        if room_of[flag] and poiVisible(flag) then
             present[#present + 1] = flag
         end
     end
@@ -1465,5 +1459,19 @@ end)
 registerAnonymousEventHandler("f2tMapDataChanged", function()
     f2t_galaxy_refresh_open()
 end)
+
+-- Repaint when a POI icon setting flips.  Re-hooked on every muxletReady
+-- because a Muxlet reload clears its onChange listeners.
+local function hookPoiSettings()
+    if not (Mux and Mux.settings and Mux.settings.onChange) then return end
+    for _, flag in ipairs(PLANET_POI_FLAGS) do
+        Mux.settings.onChange("galaxy", "poi_" .. flag, function()
+            f2t_galaxy_refresh_open()
+        end)
+    end
+end
+
+hookPoiSettings()
+registerAnonymousEventHandler("muxletReady", hookPoiSettings)
 
 f2t_debug_log("[galaxy] module loaded")

@@ -346,4 +346,23 @@ registerAnonymousEventHandler("f2tChatUpdated", function(_, mode)
     end
 end)
 
+-- Apply the Settings UI toggle to every open chat panel.  Re-hooked on every
+-- muxletReady because a Muxlet reload clears its onChange listeners.
+local function hookTimestampSetting()
+    if not (Mux and Mux.settings and Mux.settings.onChange) then return end
+    Mux.settings.onChange("chat", "show_timestamps", function(value)
+        local showTs = value and true or false
+        for gid, inst in pairs(instances) do
+            if inst.showTs ~= showTs then
+                inst.showTs = showTs
+                local ok = pcall(replay, inst)
+                if not ok then instances[gid] = nil end
+            end
+        end
+    end)
+end
+
+hookTimestampSetting()
+registerAnonymousEventHandler("muxletReady", hookTimestampSetting)
+
 if f2t_debug_log then f2t_debug_log("[chat] content module loaded") end
