@@ -179,6 +179,10 @@ function f2t_death_stop_all_components()
         end
     end
 
+    if f2tStaminaCancelTrip and f2tStaminaCancelTrip(true) then
+        f2t_debug_log("[death] Cancelled food run")
+    end
+
     -- Stop active speedwalk/navigation
     if F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[death] Stopping active speedwalk")

@@ -1,593 +1,519 @@
--- Stamina monitor: watches character stamina and navigates to a food source
--- when low. Integrates with components that need stamina management (e.g. hauling).
+-- Stamina monitor: when stamina falls to the threshold, walks to a bar, eats
+-- until full and walks back, pausing and resuming whatever automation
+-- (hauling, exploring) registered itself as the client.
 
--- State
+-- What each sustenance buys, per the server (Player::BuyFood/BuyPizza/BuyRound).
+-- All three only work in a bar-flagged room. Pizza and round also feed
+-- everyone else in the room, at the same price per head.
+F2T_STAMINA_FOOD_TYPES = {
+    food  = { command = "buy food",  gain = 5, desc = "a slice of pizza for you: +5 stamina for 10ig" },
+    pizza = { command = "buy pizza", gain = 5, desc = "pizza for the whole room: +5 stamina each, 10ig a head" },
+    round = { command = "buy round", gain = 2, desc = "ale for the whole room: +2 stamina each, 5ig a head" },
+}
+F2T_STAMINA_FOOD_ORDER = { "food", "pizza", "round" }
 
-F2T_STAMINA_STATE = F2T_STAMINA_STATE or {
-    monitoring_active = false,      -- Is stamina monitoring running?
-    current_phase = "idle",          -- idle, waiting_for_client_pause, navigating_to_food, buying_food, navigating_back
+-- Used when the food source is "nearest" and no mapped bar is reachable.
+F2T_STAMINA_FALLBACK_SOURCE = "Sol.Earth.454"
 
-    -- Client registration (component that called us)
-    client_pause_callback = nil,     -- Function to pause client activity
-    client_resume_callback = nil,    -- Function to resume client activity
-    client_check_active = nil,       -- Function to check if client is active
+F2T_STAMINA_DISMISS_COOLDOWN = 300
+F2T_STAMINA_PROMPT_TIMEOUT   = 30
+-- Polls are 0.5s: ask for an immediate pause at 60s, give up at 120s.
+local WAIT_IMMEDIATE_POLLS = 120
+local WAIT_GIVE_UP_POLLS   = 240
+-- A buy whose stamina change hasn't shown up by then counts as having failed.
+local BUY_TIMEOUT          = 3
+local MAX_BUYS_WITHOUT_GAIN = 2
 
-    -- State before food trip
-    return_location = nil,           -- Room hash to return to after eating
-    client_was_paused = false,       -- Did we pause the client?
-    wait_poll_count = 0,             -- Polls elapsed while waiting for client pause
-
-    -- Current stamina tracking
-    current_stamina = 0,
-    max_stamina = 1,
-
-    -- GMCP event handler IDs
-    gmcp_handler_id = nil,               -- Stamina vitals handler
-    nav_handler_id = nil,                -- Navigation completion handler
-
-    -- Standalone mode (yes/no prompt)
-    standalone_prompt_active = false,    -- Is prompt showing?
-    standalone_prompt_aliases = {},      -- Alias IDs for cleanup
-    standalone_prompt_timer = nil,       -- Timeout timer ID
-    standalone_dismissed_at = nil        -- Timestamp when user said "no"
+local PHASE_TEXT = {
+    idle      = "idle",
+    waiting   = "waiting for activity to pause",
+    toFood    = "walking to the bar",
+    eating    = "eating",
+    returning = "walking back",
 }
 
--- Cooldown before re-prompting after user says "no" (5 minutes)
-F2T_STAMINA_DISMISS_COOLDOWN = 300
-
--- Prompt timeout (30 seconds)
-F2T_STAMINA_PROMPT_TIMEOUT = 30
-
--- Client registration
-
--- config: {pause_callback, resume_callback, check_active}
---   pause_callback: function() - called to pause client activity
---   resume_callback: function() - called to resume client activity
---   check_active: function() -> boolean - returns true if client is active
-function f2t_stamina_register_client(config)
-    if not config or not config.pause_callback or not config.resume_callback or not config.check_active then
-        cecho("\n<red>[stamina]<reset> Invalid client registration: missing required callbacks\n")
-        return false
+-- Replace any previous load's state: its handlers would call functions that
+-- no longer exist, and a phase left over from it would block every new trip.
+do
+    local previous = F2T_STAMINA_STATE
+    if previous then
+        for _, key in ipairs({ "gmcp_handler_id", "nav_handler_id", "vitalsHandlerId", "walkHandlerId" }) do
+            if previous[key] then killAnonymousEventHandler(previous[key]) end
+        end
+        for _, aliasId in ipairs(previous.standalone_prompt_aliases or (previous.prompt or {}).aliases or {}) do
+            killAlias(aliasId)
+        end
+        local promptTimer = previous.standalone_prompt_timer or (previous.prompt or {}).timer
+        if promptTimer then killTimer(promptTimer) end
     end
 
-    F2T_STAMINA_STATE.client_pause_callback = config.pause_callback
-    F2T_STAMINA_STATE.client_resume_callback = config.resume_callback
-    F2T_STAMINA_STATE.client_check_active = config.check_active
+    local client = previous and previous.client
+    if not client and previous and previous.client_check_active then
+        client = {
+            pause    = previous.client_pause_callback,
+            resume   = previous.client_resume_callback,
+            isActive = previous.client_check_active,
+        }
+    end
 
-    f2t_debug_log("[stamina] Client registered")
-    return true
+    F2T_STAMINA_STATE = {
+        phase           = "idle",
+        client          = client,
+        clientPaused    = false,
+        manual          = false,
+        returnRoom      = nil,
+        destinationName = nil,
+        failure         = nil,
+        waitPolls       = 0,
+        buys            = 0,
+        buysWithoutGain = 0,
+        lastStamina     = nil,
+        buyTimer        = nil,
+        prompt          = { active = false, aliases = {}, timer = nil, dismissedAt = nil },
+    }
 end
 
-function f2t_stamina_unregister_client()
-    F2T_STAMINA_STATE.client_pause_callback = nil
-    F2T_STAMINA_STATE.client_resume_callback = nil
-    F2T_STAMINA_STATE.client_check_active = nil
-    f2t_debug_log("[stamina] Client unregistered")
-end
+local state = F2T_STAMINA_STATE
 
--- Monitoring control
+-- Readings
 
-function f2t_stamina_start_monitoring()
-    if F2T_STAMINA_STATE.monitoring_active then
-        f2t_debug_log("[stamina] Already monitoring")
-        return
-    end
-
-    F2T_STAMINA_STATE.monitoring_active = true
-    F2T_STAMINA_STATE.current_phase = "idle"
-
-    f2t_stamina_register_gmcp_handler()
-
-    f2t_debug_log("[stamina] Monitoring started")
-end
-
-function f2t_stamina_stop_monitoring()
-    if not F2T_STAMINA_STATE.monitoring_active then
-        return
-    end
-
-    F2T_STAMINA_STATE.monitoring_active = false
-    F2T_STAMINA_STATE.current_phase = "idle"
-
-    if F2T_STAMINA_STATE.gmcp_handler_id then
-        killAnonymousEventHandler(F2T_STAMINA_STATE.gmcp_handler_id)
-        F2T_STAMINA_STATE.gmcp_handler_id = nil
-    end
-
-    f2t_debug_log("[stamina] Monitoring stopped")
-end
-
--- GMCP event handlers
-
-function f2t_stamina_register_gmcp_handler()
-    -- Kill any existing handler first to avoid duplicates on package reload.
-    if F2T_STAMINA_STATE.gmcp_handler_id then
-        killAnonymousEventHandler(F2T_STAMINA_STATE.gmcp_handler_id)
-        F2T_STAMINA_STATE.gmcp_handler_id = nil
-    end
-
-    F2T_STAMINA_STATE.gmcp_handler_id = registerAnonymousEventHandler("gmcp.char.vitals", function()
-        tempTimer(0.1, function()
-            f2t_stamina_check_vitals()
-        end)
-    end)
-
-    f2t_debug_log("[stamina] GMCP handler registered")
-end
-
-function f2t_stamina_check_vitals()
-    if not F2T_STAMINA_STATE.monitoring_active then
-        return
-    end
-
+local function readStamina()
     local vitals = gmcp.char and gmcp.char.vitals and gmcp.char.vitals.stamina
-    if not vitals or not vitals.cur or not vitals.max then
-        return
-    end
-
-    F2T_STAMINA_STATE.current_stamina = tonumber(vitals.cur) or 0
-    F2T_STAMINA_STATE.max_stamina = tonumber(vitals.max) or 1
-
-    local percent = math.floor((F2T_STAMINA_STATE.current_stamina / F2T_STAMINA_STATE.max_stamina) * 100)
-
-    f2t_debug_log("[stamina] Current: %d/%d (%d%%)",
-        F2T_STAMINA_STATE.current_stamina,
-        F2T_STAMINA_STATE.max_stamina,
-        percent)
-
-    -- Only trigger food buying when idle (not mid food-trip already).
-    if F2T_STAMINA_STATE.current_phase == "idle" then
-        f2t_stamina_check_low_stamina(percent)
-    end
+    local current = vitals and tonumber(vitals.cur)
+    local maximum = vitals and tonumber(vitals.max)
+    if not current or not maximum or maximum <= 0 then return nil end
+    return current, maximum, math.floor(current / maximum * 100)
 end
 
-function f2t_stamina_check_low_stamina(percent)
-    local threshold = f2t_settings_get("stamina", "threshold") or 0
-    if threshold <= 0 then
-        f2t_debug_log("[stamina] Low stamina check skipped: monitoring disabled (threshold=0)")
-        return
-    end
-
-    -- 0% or below means dead or instant room damage; can't refill anyway.
-    if percent <= 0 then
-        f2t_debug_log("[stamina] Low stamina check skipped: stamina is %d%% (dead or room damage)", percent)
-        return
-    end
-
-    if percent > threshold then
-        return
-    end
-
-    f2t_debug_log("[stamina] Low stamina triggered: %d%% <= threshold %d%%", percent, threshold)
-
-    local has_client = F2T_STAMINA_STATE.client_check_active ~= nil
-    local client_active = has_client and F2T_STAMINA_STATE.client_check_active()
-
-    f2t_debug_log("[stamina] Mode check: has_client=%s, client_active=%s",
-        tostring(has_client), tostring(client_active))
-
-    if client_active then
-        f2t_stamina_cancel_standalone_prompt()
-
-        -- Component mode: auto-pause, navigate, buy food, resume.
-        f2t_debug_log("[stamina] Using COMPONENT mode")
-        cecho(string.format(
-            "\n<yellow>[stamina]<reset> Low stamina detected: %d%% (threshold: %d%%)\n", percent, threshold))
-        f2t_stamina_start_food_trip()
-        return
-    end
-
-    -- Standalone mode: show y/n prompt.
-    f2t_debug_log("[stamina] Using STANDALONE mode")
-    f2t_stamina_show_standalone_prompt(percent, threshold)
+local function threshold()
+    return tonumber(f2t_settings_get("stamina", "threshold")) or 0
 end
 
--- Food trip state machine
-
-local function f2t_stamina_save_return_location()
-    if gmcp.room and gmcp.room.info and gmcp.room.info.num then
-        local system = gmcp.room.info.system or ""
-        local area = gmcp.room.info.area or ""
-        local num = gmcp.room.info.num or ""
-        F2T_STAMINA_STATE.return_location = string.format("%s.%s.%s", system, area, num)
-        f2t_debug_log("[stamina] Saved return location: %s", F2T_STAMINA_STATE.return_location)
-    end
+function f2tStaminaFoodType()
+    local key = string.lower(f2t_settings_get("stamina", "sustenance") or "food")
+    if not F2T_STAMINA_FOOD_TYPES[key] then key = "food" end
+    return key, F2T_STAMINA_FOOD_TYPES[key]
 end
 
-function f2t_stamina_start_food_trip()
-    if F2T_STAMINA_STATE.current_phase ~= "idle" then
-        f2t_debug_log("[stamina] Already on food trip, ignoring")
-        return
-    end
-
-    local client_active = F2T_STAMINA_STATE.client_check_active and F2T_STAMINA_STATE.client_check_active()
-    if client_active and F2T_STAMINA_STATE.client_pause_callback then
-        f2t_debug_log("[stamina] Pausing client activity (client is active)")
-        F2T_STAMINA_STATE.client_pause_callback()
-        F2T_STAMINA_STATE.client_was_paused = true
-        F2T_STAMINA_STATE.wait_poll_count = 0
-        -- Client may use a deferred pause (finishes its current operation first),
-        -- so return_location is saved only after it actually pauses.
-        f2t_stamina_transition("waiting_for_client_pause")
-        return
-    else
-        f2t_debug_log("[stamina] Standalone mode - no client to pause")
-        F2T_STAMINA_STATE.client_was_paused = false
-    end
-
-    f2t_stamina_save_return_location()
-    f2t_stamina_take_nav_and_go()
+local function atBar()
+    local info = gmcp.room and gmcp.room.info
+    if info and info.flags and f2t_has_value(info.flags, "bar") then return true end
+    return f2t_map_room_has_flag ~= nil and f2t_map_room_has_flag(F2T_MAP_CURRENT_ROOM_ID, "bar")
 end
 
-function f2t_stamina_take_nav_and_go()
-    -- Clear any existing ownership first; matters if another component is paused.
-    if f2t_map_clear_nav_owner then
-        f2t_map_clear_nav_owner()
-    end
+local function clientActive()
+    return state.client ~= nil and state.client.isActive() == true
+end
 
-    -- Stamina food trips are simple: just auto-resume after an interrupt (e.g. customs).
+function f2tStaminaTripActive()
+    return state.phase ~= "idle"
+end
+
+function f2tStaminaPhaseText()
+    return PHASE_TEXT[state.phase] or state.phase
+end
+
+local function setPhase(phase)
+    f2t_debug_log("[stamina] Phase: %s -> %s", state.phase, phase)
+    state.phase = phase
+    raiseEvent("f2tStaminaChanged", phase)
+end
+
+-- The closest mapped bar by walking steps, or nil when none is reachable.
+function f2tStaminaNearestBar(fromRoom)
+    fromRoom = fromRoom or F2T_MAP_CURRENT_ROOM_ID
+    if not fromRoom or not roomExists(fromRoom) then return nil end
+    local best, bestSteps = nil, nil
+    for _, roomId in ipairs(searchRoomUserData("fed2_flag_bar", "true") or {}) do
+        roomId = tonumber(roomId)
+        if roomId == fromRoom then return roomId, 0 end
+        if roomId and getPath(fromRoom, roomId) then
+            local steps = #speedWalkDir
+            if not bestSteps or steps < bestSteps then best, bestSteps = roomId, steps end
+        end
+    end
+    return best, bestSteps
+end
+
+-- Destination string for f2t_map_navigate plus a name to show the player.
+function f2tStaminaResolveFoodSource()
+    local setting = f2t_settings_get("stamina", "food_source") or "nearest"
+    if setting ~= "" and string.lower(setting) ~= "nearest" then
+        return setting, setting
+    end
+    local roomId = f2tStaminaNearestBar()
+    if roomId then
+        return tostring(roomId), getRoomName(roomId) or ("room " .. roomId)
+    end
+    return F2T_STAMINA_FALLBACK_SOURCE, "the Starship Cantina on Earth (no closer bar mapped)"
+end
+
+-- Standalone prompt
+
+function f2t_stamina_cancel_standalone_prompt()
+    local prompt = state.prompt
+    if not prompt.active then return end
+    prompt.active = false
+    for _, aliasId in ipairs(prompt.aliases) do killAlias(aliasId) end
+    prompt.aliases = {}
+    if prompt.timer then killTimer(prompt.timer); prompt.timer = nil end
+end
+
+local function dismissPrompt(message)
+    f2t_stamina_cancel_standalone_prompt()
+    state.prompt.dismissedAt = os.time()
+    cecho(string.format("\n<dim_grey>[stamina]<reset> %s Will remind again in 5 minutes.\n", message))
+end
+
+local function showPrompt(percent)
+    local prompt = state.prompt
+    if prompt.active then return end
+    if prompt.dismissedAt and os.time() - prompt.dismissedAt < F2T_STAMINA_DISMISS_COOLDOWN then return end
+
+    prompt.active = true
+    cecho(string.format("\n<yellow>[stamina]<reset> Low stamina: <red>%d%%<reset> (threshold %d%%). "
+        .. "Go eat? Type <green>yes<reset> or <red>no<reset>, or ", percent, threshold()))
+    cechoLink("<green>[go eat]<reset>", function()
+        if state.prompt.active then f2t_stamina_cancel_standalone_prompt(); f2tStaminaEat() end
+    end, "Walk to a bar, eat until full and come back", true)
+    echo("\n")
+
+    prompt.aliases = {
+        tempAlias("^yes$", function() f2t_stamina_cancel_standalone_prompt(); f2tStaminaEat() end),
+        tempAlias("^no$", function() dismissPrompt("Dismissed.") end),
+    }
+    prompt.timer = tempTimer(F2T_STAMINA_PROMPT_TIMEOUT, function()
+        state.prompt.timer = nil
+        if state.prompt.active then dismissPrompt("No answer.") end
+    end)
+end
+
+-- Trip
+
+local function takeNavOwnership()
+    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
     if f2t_map_set_nav_owner then
         f2t_map_set_nav_owner("stamina", function(reason)
             f2t_debug_log("[stamina] Navigation interrupted by %s", reason)
             return { auto_resume = true }
         end)
     end
-
-    f2t_stamina_transition("navigating_to_food")
 end
 
--- Client may use a deferred pause (finishes its current operation before pausing).
-function f2t_stamina_phase_wait_for_client_pause()
-    -- Client was unregistered (e.g. death terminated hauling): abort the food trip.
-    if not F2T_STAMINA_STATE.client_check_active then
-        f2t_debug_log("[stamina] Client unregistered while waiting, aborting food trip")
-        cecho("\n<yellow>[stamina]<reset> Activity stopped, cancelling food trip\n")
-        F2T_STAMINA_STATE.current_phase = "idle"
-        F2T_STAMINA_STATE.client_was_paused = false
-        F2T_STAMINA_STATE.return_location = nil
+local function killBuyTimer()
+    if state.buyTimer then killTimer(state.buyTimer); state.buyTimer = nil end
+end
+
+local function resetTrip()
+    killBuyTimer()
+    state.returnRoom, state.destinationName, state.failure = nil, nil, nil
+    state.waitPolls, state.buys, state.buysWithoutGain, state.lastStamina = 0, 0, 0, nil
+    state.manual = false
+    setPhase("idle")
+end
+
+local function resumeClient()
+    if state.clientPaused and state.client then
+        state.clientPaused = false
+        state.client.resume()
+    end
+    state.clientPaused = false
+end
+
+-- Ends the trip. On failure the client stays paused while stamina is at or
+-- below the threshold, since resuming would walk it into starvation.
+local function endTrip(failure)
+    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
+    local wasPaused = state.clientPaused
+    resetTrip()
+
+    if not failure then
+        cecho("\n<green>[stamina]<reset> Stamina restored\n")
+        resumeClient()
         return
     end
 
-    local still_active = F2T_STAMINA_STATE.client_check_active()
-    if not still_active then
-        f2t_debug_log("[stamina] Client paused, proceeding to food trip")
-        -- Save location now, since the player is at the correct post-operation spot.
-        f2t_stamina_save_return_location()
-        f2t_stamina_take_nav_and_go()
+    local _, _, percent = readStamina()
+    local safe = threshold() <= 0 or (percent and percent > threshold())
+    cecho(string.format("\n<red>[stamina]<reset> Food run failed: %s\n", failure))
+    state.prompt.dismissedAt = os.time()
+    if wasPaused and safe then
+        resumeClient()
+    elseif wasPaused then
+        cecho("<yellow>[stamina]<reset> Activity stays paused so you don't starve. "
+            .. "Check <white>stamina<reset> for the food source, then resume it.\n")
+    end
+end
+
+-- Ends the trip once back, reporting any failure that sent us back early.
+local function finishTrip()
+    endTrip(state.failure)
+end
+
+local function goBack()
+    local here = F2T_MAP_CURRENT_ROOM_ID
+    if not state.returnRoom or state.returnRoom == here or not roomExists(state.returnRoom) then
+        finishTrip()
         return
     end
-
-    -- Timeout after 60 seconds (120 polls at 0.5s).
-    F2T_STAMINA_STATE.wait_poll_count = (F2T_STAMINA_STATE.wait_poll_count or 0) + 1
-    if F2T_STAMINA_STATE.wait_poll_count > 120 then
-        f2t_debug_log("[stamina] Timed out waiting for client to pause, proceeding anyway")
-        cecho("\n<yellow>[stamina]<reset> Timed out waiting for activity to pause, proceeding...\n")
-        f2t_stamina_save_return_location()
-        f2t_stamina_take_nav_and_go()
-        return
-    end
-
-    if F2T_STAMINA_STATE.wait_poll_count == 1 then
-        f2t_debug_log("[stamina] Waiting for client to pause...")
-    end
-    tempTimer(0.5, function()
-        if F2T_STAMINA_STATE.current_phase == "waiting_for_client_pause" then
-            f2t_stamina_phase_wait_for_client_pause()
-        end
-    end)
-end
-
-function f2t_stamina_finish_food_trip()
-    if F2T_STAMINA_STATE.return_location then
-        f2t_stamina_transition("navigating_back")
-    else
-        f2t_stamina_resume_client()
-    end
-end
-
-function f2t_stamina_resume_client()
-    if f2t_map_clear_nav_owner then
-        f2t_map_clear_nav_owner()
-    end
-
-    local failed = F2T_STAMINA_STATE.food_trip_failed
-    F2T_STAMINA_STATE.food_trip_failed = nil
-    F2T_STAMINA_STATE.buy_attempts = 0
-
-    F2T_STAMINA_STATE.current_phase = "idle"
-    F2T_STAMINA_STATE.return_location = nil
-
-    if failed then
-        -- Do NOT resume the client on failure, to prevent character death.
-        -- It stays paused; the user must manually stop or fix and restart.
-        f2t_debug_log("[stamina] Food trip failed: %s - client NOT resumed (safety stop)", failed)
-
-        cecho("\n<red>╔════════════════════════════════════════════════════════╗<reset>\n")
-        cecho(string.format("<red>║<reset>  <white>STAMINA REFILL FAILED:<reset> %s\n", failed))
-        cecho("<red>║<reset>  <yellow>Activity stopped to prevent character death.<reset>\n")
-        cecho("<red>║<reset>  Fix food source setting and restart, or stop manually.\n")
-        cecho("<red>╚════════════════════════════════════════════════════════╝<reset>\n")
-
-        -- Unregister so the monitor doesn't re-trigger; user must intervene.
-        F2T_STAMINA_STATE.client_was_paused = false
-        f2t_stamina_unregister_client()
-    else
-        if F2T_STAMINA_STATE.client_was_paused and F2T_STAMINA_STATE.client_resume_callback then
-            f2t_debug_log("[stamina] Resuming client activity")
-            F2T_STAMINA_STATE.client_resume_callback()
-            F2T_STAMINA_STATE.client_was_paused = false
-        else
-            f2t_debug_log("[stamina] Standalone mode - no client to resume")
-        end
-
-        cecho("\n<green>[stamina]<reset> Stamina restored, resuming normal operations\n")
-    end
-end
-
--- Tries to navigate back first, then resumes the client with the failure reason.
-function f2t_stamina_abort_food_trip(reason)
-    f2t_debug_log("[stamina] Aborting food trip: %s", reason)
-    F2T_STAMINA_STATE.food_trip_failed = reason
-
-    if F2T_STAMINA_STATE.return_location then
-        f2t_debug_log("[stamina] Attempting to return to %s after abort", F2T_STAMINA_STATE.return_location)
-        f2t_stamina_transition("navigating_back")
-    else
-        f2t_stamina_resume_client()
-    end
-end
-
--- Phase transitions
-
-function f2t_stamina_transition(new_phase)
-    f2t_debug_log("[stamina] Transition: %s -> %s", F2T_STAMINA_STATE.current_phase, new_phase)
-    F2T_STAMINA_STATE.current_phase = new_phase
-
-    if new_phase == "waiting_for_client_pause" then
-        f2t_stamina_phase_wait_for_client_pause()
-    elseif new_phase == "navigating_to_food" then
-        f2t_stamina_phase_navigate_to_food()
-    elseif new_phase == "buying_food" then
-        f2t_stamina_phase_buy_food()
-    elseif new_phase == "navigating_back" then
-        f2t_stamina_phase_navigate_back()
-    end
-end
-
-function f2t_stamina_phase_navigate_to_food()
-    if not f2t_map_navigate then
-        cecho("\n<red>[stamina]<reset> Map component not loaded, cannot navigate to food source\n")
-        f2t_stamina_resume_client()
-        return
-    end
-
-    local food_source = f2t_settings_get("stamina", "food_source")
-
-    f2t_debug_log("[stamina] Navigating to food source: %s", food_source)
-    cecho(string.format("\n<cyan>[stamina]<reset> Navigating to food source: %s\n", food_source))
-
-    f2t_map_navigate(food_source, {
-        on_result = function(ok)
-            if F2T_STAMINA_STATE.current_phase ~= "navigating_to_food" then return end
+    setPhase("returning")
+    takeNavOwnership()
+    cecho("\n<cyan>[stamina]<reset> Returning to where you were\n")
+    f2t_map_navigate(tostring(state.returnRoom), {
+        suppress_hint = true,
+        on_result = function(ok, status)
+            if state.phase ~= "returning" then return end
             if not ok then
-                f2t_stamina_abort_food_trip("could not find path to food source")
+                cecho("\n<yellow>[stamina]<reset> No way back from here; carrying on from this room\n")
+                finishTrip()
+            elseif status == "arrived" then
+                finishTrip()
             end
-            -- ok: a real speedwalk is now in flight; completion is picked up by
-            -- the GMCP handler, same as any other in-flight speedwalk.
         end,
     })
-
-    -- Every outcome, sync or async, arrives through on_result above.
-    -- Completion is picked up by the GMCP handler, not here.
 end
 
--- Each attempt is 0.5s; normal 0->100% needs ~15 buys, so 25 gives comfortable margin.
-F2T_STAMINA_MAX_BUY_ATTEMPTS = 25
+local function abortTrip(failure)
+    f2t_debug_log("[stamina] Aborting food run: %s", failure)
+    killBuyTimer()
+    state.failure = failure
+    if state.phase ~= "returning" then
+        goBack()
+    else
+        finishTrip()
+    end
+end
 
-function f2t_stamina_phase_buy_food()
-    F2T_STAMINA_STATE.buy_attempts = (F2T_STAMINA_STATE.buy_attempts or 0) + 1
+local function eatStep()
+    killBuyTimer()
+    if state.phase ~= "eating" then return end
 
-    if F2T_STAMINA_STATE.buy_attempts > F2T_STAMINA_MAX_BUY_ATTEMPTS then
-        f2t_debug_log("[stamina] Max buy attempts (%d) exceeded, aborting", F2T_STAMINA_MAX_BUY_ATTEMPTS)
-        f2t_stamina_abort_food_trip("max buy attempts exceeded (not at a food vendor?)")
+    local current, maximum = readStamina()
+    if not current then
+        abortTrip("no stamina reading from the game")
+        return
+    end
+    if current >= maximum then
+        goBack()
         return
     end
 
-    local percent = math.floor((F2T_STAMINA_STATE.current_stamina / F2T_STAMINA_STATE.max_stamina) * 100)
-
-    if percent >= 100 then
-        f2t_debug_log("[stamina] Stamina full (%d%%)", percent)
-        F2T_STAMINA_STATE.buy_attempts = 0
-        f2t_stamina_finish_food_trip()
-        return
-    end
-
-    f2t_debug_log("[stamina] Buying food (stamina: %d%%, attempt %d/%d)",
-        percent, F2T_STAMINA_STATE.buy_attempts, F2T_STAMINA_MAX_BUY_ATTEMPTS)
-
-    send("buy food")   -- automatically consumed, +10 stamina
-
-    tempTimer(0.5, function()
-        if F2T_STAMINA_STATE.current_phase == "buying_food" then
-            f2t_stamina_phase_buy_food()
+    if state.buys > 0 then
+        if current > (state.lastStamina or current) then
+            state.buysWithoutGain = 0
+        else
+            state.buysWithoutGain = state.buysWithoutGain + 1
+            if state.buysWithoutGain >= MAX_BUYS_WITHOUT_GAIN then
+                abortTrip("buying isn't raising stamina (out of groats?)")
+                return
+            end
         end
+    end
+
+    local _, food = f2tStaminaFoodType()
+    state.lastStamina = current
+    state.buys = state.buys + 1
+    f2t_debug_log("[stamina] %s (%d/%d, buy %d)", food.command, current, maximum, state.buys)
+    send(food.command, false)
+    state.buyTimer = tempTimer(BUY_TIMEOUT, function()
+        state.buyTimer = nil
+        eatStep()
     end)
 end
 
-function f2t_stamina_phase_navigate_back()
+local function startEating()
+    if not atBar() then
+        abortTrip(string.format("%s is not a bar", state.destinationName or "this room"))
+        return
+    end
+    local key = f2tStaminaFoodType()
+    cecho(string.format("\n<cyan>[stamina]<reset> Eating (%s)\n", key))
+    state.buys, state.buysWithoutGain, state.lastStamina = 0, 0, nil
+    setPhase("eating")
+    eatStep()
+end
+
+local function travel()
+    if atBar() then
+        state.destinationName = getRoomName(F2T_MAP_CURRENT_ROOM_ID or -1) or "this bar"
+        startEating()
+        return
+    end
+
+    state.returnRoom = F2T_MAP_CURRENT_ROOM_ID
+    local destination, name = f2tStaminaResolveFoodSource()
+    state.destinationName = name
+    setPhase("toFood")
+    takeNavOwnership()
+    cecho(string.format("\n<cyan>[stamina]<reset> Heading to <white>%s<reset> to eat\n", name))
+    f2t_map_navigate(destination, {
+        suppress_hint = true,
+        on_result = function(ok, status)
+            if state.phase ~= "toFood" then return end
+            if not ok then
+                abortTrip(string.format("no route to %s", name))
+            elseif status == "arrived" then
+                startEating()
+            end
+        end,
+    })
+end
+
+local function waitForClient()
+    if state.phase ~= "waiting" then return end
+    if not state.client then
+        cecho("\n<yellow>[stamina]<reset> Activity stopped, cancelling food run\n")
+        state.clientPaused = false
+        resetTrip()
+        return
+    end
+    if not clientActive() then
+        travel()
+        return
+    end
+
+    state.waitPolls = state.waitPolls + 1
+    if state.waitPolls == WAIT_IMMEDIATE_POLLS then
+        cecho("\n<yellow>[stamina]<reset> Still waiting for activity to pause; pausing it now\n")
+        state.client.pause(true)
+    elseif state.waitPolls >= WAIT_GIVE_UP_POLLS then
+        endTrip("activity never paused")
+        return
+    end
+    tempTimer(0.5, waitForClient)
+end
+
+-- Starts a food run. manual is true for the Eat button and `stamina eat`.
+function f2tStaminaStartTrip(manual)
+    if state.phase ~= "idle" then return false end
     if not f2t_map_navigate then
-        cecho("\n<yellow>[stamina]<reset> Map component not loaded, resuming at current location\n")
-        f2t_stamina_resume_client()
-        return
+        cecho("\n<red>[stamina]<reset> The map component isn't loaded, so there's no way to walk to a bar\n")
+        return false
     end
+    f2t_stamina_cancel_standalone_prompt()
+    state.manual = manual == true
 
-    f2t_debug_log("[stamina] Navigating back to: %s", F2T_STAMINA_STATE.return_location)
-    cecho(string.format("\n<cyan>[stamina]<reset> Returning to original location\n"))
-
-    local success = f2t_map_navigate_ok(
-        f2t_map_navigate(F2T_STAMINA_STATE.return_location, {suppress_hint = true}))
-
-    if not success then
-        cecho("\n<yellow>[stamina]<reset> Failed to navigate back, resuming at current location\n")
-        f2t_stamina_resume_client()
-        return
+    if clientActive() then
+        state.clientPaused = true
+        state.waitPolls = 0
+        setPhase("waiting")
+        state.client.pause()
+        waitForClient()
+    else
+        travel()
     end
-
-    -- Completion is picked up by the GMCP handler, not here.
+    return true
 end
 
--- Standalone mode (y/n prompt)
-
-function f2t_stamina_show_standalone_prompt(percent, threshold)
-    if F2T_STAMINA_STATE.standalone_prompt_active then
-        f2t_debug_log("[stamina] Prompt already active, skipping")
-        return
+function f2tStaminaEat()
+    if state.phase ~= "idle" then
+        cecho(string.format("\n<yellow>[stamina]<reset> A food run is already under way (%s)\n", f2tStaminaPhaseText()))
+        return false
     end
+    local current, maximum = readStamina()
+    if current and current >= maximum then
+        cecho("\n<green>[stamina]<reset> Stamina is already full\n")
+        return false
+    end
+    return f2tStaminaStartTrip(true)
+end
 
-    if F2T_STAMINA_STATE.standalone_dismissed_at then
-        local elapsed = os.time() - F2T_STAMINA_STATE.standalone_dismissed_at
-        if elapsed < F2T_STAMINA_DISMISS_COOLDOWN then
-            f2t_debug_log("[stamina] In cooldown, %d seconds remaining", F2T_STAMINA_DISMISS_COOLDOWN - elapsed)
-            return
+-- Stops a food run where it stands. A paused client stays paused.
+function f2tStaminaCancelTrip(quiet)
+    if state.phase == "idle" then return false end
+    local walking = state.phase == "toFood" or state.phase == "returning"
+    if walking and F2T_SPEEDWALK_ACTIVE and f2t_map_speedwalk_stop then f2t_map_speedwalk_stop() end
+    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
+    local wasPaused = state.clientPaused
+    state.clientPaused = false
+    resetTrip()
+    if not quiet then
+        cecho("\n<yellow>[stamina]<reset> Food run cancelled\n")
+        if wasPaused then cecho("<dim_grey>  The paused activity stays paused; resume it when ready<reset>\n") end
+    end
+    return true
+end
+
+-- Low-stamina check, run on every vitals push and when a client registers.
+function f2tStaminaCheck()
+    if state.phase ~= "idle" then return end
+    local limit = threshold()
+    if limit <= 0 then return end
+    local current, _, percent = readStamina()
+    -- 0 or below is death or room damage; there's nothing to eat our way out of.
+    if not current or current <= 0 or percent > limit then return end
+
+    if clientActive() then
+        cecho(string.format("\n<yellow>[stamina]<reset> Low stamina: %d%% (threshold %d%%)\n", percent, limit))
+        f2tStaminaStartTrip(false)
+    elseif f2t_settings_get("stamina", "unattended") then
+        local dismissedAt = state.prompt.dismissedAt
+        if dismissedAt and os.time() - dismissedAt < F2T_STAMINA_DISMISS_COOLDOWN then return end
+        cecho(string.format("\n<yellow>[stamina]<reset> Low stamina: %d%% (threshold %d%%)\n", percent, limit))
+        f2tStaminaStartTrip(false)
+    else
+        showPrompt(percent)
+    end
+end
+
+-- Client registration
+
+-- config: {pause_callback(immediate), resume_callback(), check_active() -> boolean}
+function f2t_stamina_register_client(config)
+    if not config or not config.pause_callback or not config.resume_callback or not config.check_active then
+        cecho("\n<red>[stamina]<reset> Invalid client registration: missing required callbacks\n")
+        return false
+    end
+    state.client = {
+        pause    = config.pause_callback,
+        resume   = config.resume_callback,
+        isActive = config.check_active,
+    }
+    f2t_debug_log("[stamina] Client registered")
+    -- Stamina may already be low; don't wait for the next drop to notice.
+    tempTimer(0.5, f2tStaminaCheck)
+    return true
+end
+
+function f2t_stamina_unregister_client()
+    state.client = nil
+    f2t_debug_log("[stamina] Client unregistered")
+end
+
+-- Event handlers
+
+local function onVitals()
+    if state.phase == "eating" then
+        local current = readStamina()
+        if state.buyTimer and current and current ~= state.lastStamina then
+            killBuyTimer()
+            tempTimer(0.1, eatStep)
         end
-    end
-
-    F2T_STAMINA_STATE.standalone_prompt_active = true
-
-    cecho("\n")
-    cecho("<yellow>╔════════════════════════════════════════╗<reset>\n")
-    cecho(string.format(
-        "<yellow>║<reset>  <white>LOW STAMINA:<reset> <red>%d%%<reset> (threshold: %d%%)      <yellow>║<reset>\n",
-        percent, threshold))
-    cecho("<yellow>║<reset>                                        <yellow>║<reset>\n")
-    cecho("<yellow>║<reset>  Would you like to go refill?          <yellow>║<reset>\n")
-    cecho("<yellow>║<reset>  Type <green>yes<reset> or <red>no<reset>                       <yellow>║<reset>\n")
-    cecho("<yellow>╚════════════════════════════════════════╝<reset>\n")
-
-    -- Temp aliases capture the user's typed reply, not game output.
-    local yes_alias = tempAlias("^yes$", function()
-        f2t_stamina_prompt_accept()
-    end)
-    local no_alias = tempAlias("^no$", function()
-        f2t_stamina_prompt_dismiss()
-    end)
-
-    F2T_STAMINA_STATE.standalone_prompt_aliases = {yes_alias, no_alias}
-
-    F2T_STAMINA_STATE.standalone_prompt_timer = tempTimer(F2T_STAMINA_PROMPT_TIMEOUT, function()
-        f2t_stamina_prompt_timeout()
-    end)
-
-    f2t_debug_log(
-        "[stamina] Standalone prompt shown, waiting for 'yes' or 'no' (timeout: %ds)", F2T_STAMINA_PROMPT_TIMEOUT)
-end
-
-function f2t_stamina_prompt_accept()
-    f2t_debug_log("[stamina] User typed 'yes' - accepting prompt")
-    f2t_stamina_cleanup_prompt()
-    cecho("\n<green>[stamina]<reset> Starting food trip...\n")
-    f2t_stamina_start_food_trip()
-end
-
-function f2t_stamina_prompt_dismiss()
-    f2t_debug_log("[stamina] User typed 'no' - dismissing prompt")
-    f2t_stamina_cleanup_prompt()
-    F2T_STAMINA_STATE.standalone_dismissed_at = os.time()
-    cecho("\n<dim_grey>[stamina]<reset> Dismissed. Will remind again in 5 minutes.\n")
-    f2t_debug_log("[stamina] Prompt dismissed, cooldown started at %d", F2T_STAMINA_STATE.standalone_dismissed_at)
-end
-
-function f2t_stamina_prompt_timeout()
-    if not F2T_STAMINA_STATE.standalone_prompt_active then
-        return   -- already cleaned up
-    end
-    f2t_debug_log("[stamina] Prompt timed out after %d seconds", F2T_STAMINA_PROMPT_TIMEOUT)
-    f2t_stamina_cleanup_prompt()
-    F2T_STAMINA_STATE.standalone_dismissed_at = os.time()
-    cecho("\n<dim_grey>[stamina]<reset> Prompt timed out. Will remind again in 5 minutes.\n")
-end
-
-function f2t_stamina_cleanup_prompt()
-    local alias_count = #(F2T_STAMINA_STATE.standalone_prompt_aliases or {})
-    f2t_debug_log("[stamina] Cleaning up prompt: %d aliases to kill", alias_count)
-
-    F2T_STAMINA_STATE.standalone_prompt_active = false
-
-    for _, alias_id in ipairs(F2T_STAMINA_STATE.standalone_prompt_aliases or {}) do
-        killAlias(alias_id)
-    end
-    F2T_STAMINA_STATE.standalone_prompt_aliases = {}
-
-    if F2T_STAMINA_STATE.standalone_prompt_timer then
-        killTimer(F2T_STAMINA_STATE.standalone_prompt_timer)
-        F2T_STAMINA_STATE.standalone_prompt_timer = nil
-    end
-
-    f2t_debug_log("[stamina] Prompt cleanup complete")
-end
-
-function f2t_stamina_cancel_standalone_prompt()
-    if F2T_STAMINA_STATE.standalone_prompt_active then
-        f2t_stamina_cleanup_prompt()
-        cecho("\n<dim_grey>[stamina]<reset> Prompt cancelled (component now handling stamina)\n")
-        f2t_debug_log("[stamina] Prompt cancelled due to component activation")
-    end
-end
-
--- Navigation completion detection
-
-function f2t_stamina_check_nav_to_food_complete()
-    if F2T_STAMINA_STATE.current_phase ~= "navigating_to_food" then
         return
     end
+    tempTimer(0.1, f2tStaminaCheck)
+end
 
-    -- Treat a nil F2T_SPEEDWALK_ACTIVE as inactive.
-    local speedwalk_active = F2T_SPEEDWALK_ACTIVE or false
-    if not speedwalk_active and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
+-- A walk ended. A customs stop or a recompute leg is still under way when
+-- either flag below is set, and finishes with its own event.
+local function onWalkFinished(_, result)
+    if state.phase ~= "toFood" and state.phase ~= "returning" then return end
+    if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
+
+    if result == "stopped" then
+        f2tStaminaCancelTrip()
+    elseif state.phase == "toFood" then
         if result == "completed" then
-            f2t_debug_log("[stamina] Arrived at food source")
-            f2t_stamina_transition("buying_food")
+            startEating()
         else
-            f2t_debug_log("[stamina] Navigation to food failed: %s", result or "unknown")
-            f2t_stamina_abort_food_trip(string.format("could not reach food source (%s)", result or "unknown"))
+            abortTrip(string.format("couldn't reach %s (%s)", state.destinationName or "the bar", tostring(result)))
         end
+    else
+        finishTrip()
     end
 end
 
-function f2t_stamina_check_nav_back_complete()
-    if F2T_STAMINA_STATE.current_phase ~= "navigating_back" then
-        return
-    end
-
-    local speedwalk_active = F2T_SPEEDWALK_ACTIVE or false
-    if not speedwalk_active and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        if result == "completed" then
-            f2t_debug_log("[stamina] Arrived back at original location")
-        else
-            -- Best effort: resume at wherever we ended up.
-            f2t_debug_log("[stamina] Navigation back failed: %s - resuming at current location", result or "unknown")
-        end
-        f2t_stamina_resume_client()
-    end
-end
-
-function f2t_stamina_register_nav_handler()
-    -- Kill any existing handler first to avoid duplicates on package reload.
-    if F2T_STAMINA_STATE.nav_handler_id then
-        killAnonymousEventHandler(F2T_STAMINA_STATE.nav_handler_id)
-        F2T_STAMINA_STATE.nav_handler_id = nil
-    end
-
-    F2T_STAMINA_STATE.nav_handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        tempTimer(0.3, function()
-            f2t_stamina_check_nav_to_food_complete()
-            f2t_stamina_check_nav_back_complete()
-        end)
-    end)
-end
-
-f2t_stamina_register_nav_handler()
+state.vitalsHandlerId = registerAnonymousEventHandler("gmcp.char.vitals", onVitals)
+state.walkHandlerId   = registerAnonymousEventHandler("f2tSpeedwalkFinished", onWalkFinished)
 
 f2t_debug_log("[stamina] Stamina monitor initialized")

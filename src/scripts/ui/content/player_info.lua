@@ -1,10 +1,9 @@
--- Live stat labels (Rank, Fuel, Stamina, Groats, Slithies, Hold) plus a Buy Fuel
--- button, colored from gmcp.char.vitals and gmcp.char.ship.
+-- Live stat labels (Rank, Fuel, Stamina, Groats, Slithies, Hold) plus Buy Fuel
+-- and Eat buttons, colored from gmcp.char.vitals and gmcp.char.ship.
 --
 -- Registered as "fed2_player_info" content so it can be applied to any pane
--- or tab. The stat labels live in a Geyser.HBox spanning the content area, so
--- the row scales with placement automatically; Buy Fuel is anchored a fixed
--- width from the right edge.
+-- or tab. Fuel and Stamina are fixed-width cells holding their readout and
+-- button; the other cells share the remaining width.
 --
 -- Every widget lives inside target.content (the disposable slot), so
 -- teardown is automatic on content change/removal. Live updates use
@@ -78,6 +77,11 @@ local FUEL_READOUT_W = WEB and 112 or 136
 local FUEL_BTN_W     = WEB and 90 or 84
 local FUEL_RIGHT_PAD = 8
 
+-- Stamina cell: readout fits "Stamina: 150/150" (STM on web; 150 is the
+-- server's stat cap), button fits its longer "Stop" state.
+local STAM_READOUT_W = WEB and 104 or 160
+local STAM_BTN_W     = WEB and 66 or 60
+
 -- The cells, left to right. All but Fuel share the leftover width in proportion
 -- to how long their text actually gets, rather than splitting it evenly -- the
 -- even split this replaced clipped Rank and Groats while Slithies sat half empty.
@@ -102,8 +106,8 @@ local FUEL_RIGHT_PAD = 8
 -- a table constructor leaves a hole that stops ipairs dead at the gap.
 local CELLS = {
     { key = "rank", label = "Rank",                      tail = 15 },
-    { key = "fuel", label = "Fuel",                      fixed = true },
-    { key = "stam", label = WEB and "STM" or "Stamina",  tail =  9 },
+    { key = "fuel", label = "Fuel",                      readoutW = FUEL_READOUT_W, buttonW = FUEL_BTN_W },
+    { key = "stam", label = WEB and "STM" or "Stamina",  readoutW = STAM_READOUT_W, buttonW = STAM_BTN_W },
     { key = "cash", label = "Groats",                    tail = 15 },
 }
 -- Slithies: desktop only. Rarely changes, and the pane is too narrow on web to
@@ -143,16 +147,23 @@ local function stripLayout(target)
     for _, c in ipairs(CELLS) do
         if c.weight then maxW[c.key] = math.ceil(c.weight * charW) + CELL_PX end
     end
-    local readoutW = f2tScaled(target, FUEL_READOUT_W)
-    local buttonW  = f2tScaled(target, FUEL_BTN_W)
+    -- Per button cell: readout width, button x/width and the whole cell's width.
+    local fixed, fixedTotal = {}, 0
+    for _, c in ipairs(CELLS) do
+        if c.readoutW then
+            local readoutW = f2tScaled(target, c.readoutW)
+            local buttonW  = f2tScaled(target, c.buttonW)
+            local cellW    = readoutW + 2 + buttonW + FUEL_RIGHT_PAD
+            fixed[c.key] = { readoutW = readoutW, buttonX = readoutW + 2, buttonW = buttonW, cellW = cellW }
+            fixedTotal = fixedTotal + cellW
+        end
+    end
     return {
-        cellPt    = cellPt,
-        buttonPt  = f2tTextPt(target, BTN_PT),
-        maxW      = maxW,
-        readoutW  = readoutW,
-        buttonX   = readoutW + 2,
-        buttonW   = buttonW,
-        fuelCellW = readoutW + 2 + buttonW + FUEL_RIGHT_PAD,   -- 230 desktop, 212 web at 100%
+        cellPt     = cellPt,
+        buttonPt   = f2tTextPt(target, BTN_PT),
+        maxW       = maxW,
+        fixed      = fixed,
+        fixedTotal = fixedTotal,
     }
 end
 
@@ -270,20 +281,34 @@ local function refreshAll()
     for gid in pairs(instances) do pcall(refreshInstance, gid) end
 end
 
--- Position the six cells: fuel is a fixed width; the rest share what's left in
--- proportion to CELLS[].weight, and the last cell takes the rounding remainder so
--- there is never a gap on the right.
+-- Eat starts a food run; during one the same button stops it.
+local function refreshEatButton(inst)
+    local button = inst and inst.buttons and inst.buttons.stam
+    if not button then return end
+    if f2tStaminaTripActive and f2tStaminaTripActive() then
+        button:echo("<center>✕&nbsp;Stop</center>")
+        button:setToolTip("Stop the food run (" .. f2tStaminaPhaseText() .. ")")
+    else
+        button:echo("<center>🍕&nbsp;Eat</center>")
+        button:setToolTip("Walk to a bar, eat until stamina is full and walk back. "
+            .. "Hauling or exploring pauses meanwhile")
+    end
+end
+
+-- Position the cells: fuel and stamina are fixed widths; the rest share what's
+-- left in proportion to CELLS[].weight, and the last cell takes the rounding
+-- remainder so there is never a gap on the right.
 local function layoutCells(inst)
     if not inst or not inst.cells or not inst.host then return end
     local W = inst.host.get_width and inst.host:get_width() or 0
     if not W or W <= 0 then return end
     local layout = inst.layout
-    local flex = math.max(0, W - layout.fuelCellW)
+    local flex = math.max(0, W - layout.fixedTotal)
     local x, last = 0, #CELLS
     for i, spec in ipairs(CELLS) do
         local w
-        if spec.fixed then
-            w = layout.fuelCellW
+        if layout.fixed[spec.key] then
+            w = layout.fixed[spec.key].cellW
         elseif i == last then
             w = math.max(40, W - x)                     -- fill remainder
         else
@@ -324,48 +349,55 @@ local function buildContent(target)
         "background: transparent; border: none; color: #c8c8d0;" ..
         ' padding: ' .. CELL_PAD .. '; font-family: "Consolas","Monaco",monospace;'
 
-    -- Cells laid out manually (NOT an HBox): the fuel cell is a FIXED width sized
-    -- to its readout + button, and the rest share the remaining width by weight.
-    -- An HBox would size every cell proportionally, which forces the fuel cell to
-    -- either clip the fixed-size button or leave a growing empty gap to its right
-    -- as the bar widens.  layoutCells() (re)positions them.
+    -- Cells laid out manually (NOT an HBox): the button cells are a FIXED width
+    -- sized to their readout + button, and the rest share the remaining width by
+    -- weight. An HBox would size every cell proportionally, which forces a button
+    -- cell to either clip its fixed-size button or leave a growing empty gap to
+    -- its right as the bar widens.  layoutCells() (re)positions them.
     --
     -- `cells` is positional (layoutCells walks it alongside CELLS); `labels` is
     -- keyed, so refreshInstance never has to know which platform dropped what.
     local layout = stripLayout(target)
-    local cells, labels, fuelCell = {}, {}, nil
+    local cells, labels, buttons = {}, {}, {}
     for i, spec in ipairs(CELLS) do
         local cell = Geyser.Label:new({ name = wid(), x = 0, y = 0, width = 10, height = "100%" }, target.content)
         cell:setStyleSheet(H_LABEL_CSS)
         cells[i] = cell
-        if spec.key == "fuel" then
-            fuelCell = cell            -- gets inner widgets below, not text of its own
+        local fixed = layout.fixed[spec.key]
+        if fixed then
+            -- Inner readout (left) + small button right after it.
+            local text = Geyser.Label:new({
+                name = wid(), x = 0, y = 0, width = fixed.readoutW, height = "100%",
+            }, cell)
+            text:setStyleSheet(CELL_TEXT_CSS)
+            pcall(function() text:setFontSize(layout.cellPt) end)
+            labels[spec.key] = text
+
+            local button = Geyser.Label:new({
+                name = wid(), x = fixed.buttonX, y = "20%", width = fixed.buttonW, height = "60%",
+            }, cell)
+            button:setStyleSheet(BUTTON_CSS)
+            pcall(function() button:setFontSize(layout.buttonPt) end)
+            buttons[spec.key] = button
         else
             pcall(function() cell:setFontSize(layout.cellPt) end)
             labels[spec.key] = cell
         end
     end
 
-    -- Fuel cell: inner readout (left) + small Buy Fuel button right after it.
-    local fuelText = Geyser.Label:new({
-        name = wid(), x = 0, y = 0, width = layout.readoutW, height = "100%",
-    }, fuelCell)
-    fuelText:setStyleSheet(CELL_TEXT_CSS)
-    pcall(function() fuelText:setFontSize(layout.cellPt) end)
-    labels.fuel = fuelText
+    buttons.fuel:echo("<center>⛽&nbsp;Buy&nbsp;Fuel</center>")
+    buttons.fuel:setToolTip("Buy fuel at a shuttlepad")
+    buttons.fuel:setClickCallback(function() send("buy fuel") end)
 
-    local buyBtn = Geyser.Label:new({
-        name = wid(), x = layout.buttonX, y = "20%", width = layout.buttonW, height = "60%",
-    }, fuelCell)
-    buyBtn:setStyleSheet(BUTTON_CSS)
-    pcall(function() buyBtn:setFontSize(layout.buttonPt) end)
-    buyBtn:echo("<center>⛽&nbsp;Buy&nbsp;Fuel</center>")
-    buyBtn:setToolTip("Buy fuel at a shuttlepad")
-    buyBtn:setClickCallback(function() send("buy fuel") end)
+    buttons.stam:setClickCallback(function()
+        if not f2tStaminaEat then return end
+        if f2tStaminaTripActive() then f2tStaminaCancelTrip() else f2tStaminaEat() end
+    end)
 
     labels.hold:setToolTip("Cargo hold")   -- legacy inline cargo panel is now fed2_cargo
 
-    instances[gid] = { labels = labels, buyBtn = buyBtn, cells = cells, host = target.content, layout = layout }
+    instances[gid] = { labels = labels, buttons = buttons, cells = cells, host = target.content, layout = layout }
+    refreshEatButton(instances[gid])
     layoutCells(instances[gid])
     refreshInstance(gid)
 end
@@ -373,7 +405,7 @@ end
 local function buildPlayerInfoDef()
     return {
         name        = "Player Info",
-        description = "Live rank / fuel / stamina / groats / hold strip with Buy Fuel.",
+        description = "Live rank / fuel / stamina / groats / hold strip with Buy Fuel and Eat.",
         group       = "F2CE Tools",
         internal    = false,
         singleton   = false,
@@ -417,5 +449,8 @@ table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterPlayerInfo)
 -- placed and needs no per-instance teardown.
 registerAnonymousEventHandler("gmcp.char.vitals", refreshAll)
 registerAnonymousEventHandler("gmcp.char.ship",   refreshAll)
+registerAnonymousEventHandler("f2tStaminaChanged", function()
+    for _, inst in pairs(instances) do pcall(refreshEatButton, inst) end
+end)
 
 if f2t_debug_log then f2t_debug_log("[player_info] module loaded") end

@@ -50,8 +50,8 @@ Exchange economy breakdowns for your planets, filterable by commodity group, and
 **Commodities** (`bb`, `bs`, `price`)
 Bulk buy/sell at the exchange and cross-cartel price analysis to find the best deals.
 
-**Stamina & Refueling**
-Automatic stamina monitoring with food-run automation (or a yes/no prompt in standalone use), and GMCP-driven automatic ship refueling with an emergency out-of-fuel trigger.
+**Stamina & Refueling** (`stamina`)
+When stamina falls to your threshold, hauling or exploring pauses, you walk to the nearest mapped bar, eat until full, walk back and carry on. With nothing automated running it asks first, or just goes if you turn on `unattended`. Pick food, pizza or a round as your sustenance, and use `stamina eat` or the Eat button to top up any time. Ships refuel automatically from GMCP, with an emergency out-of-fuel trigger.
 
 **Death Protection**
 Tracks your last safe room and halts other automation (hauling, exploration) on death so you don't wake up mid-cycle.
@@ -76,7 +76,7 @@ With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 - **Commodities** — reference table of names, codes, and base prices
 - **Cargo** — live ship manifest
 - **Stockpiles** — preview and apply planned stock levels and spreads for your planets' exchanges (Founder+)
-- **Player Info** — rank, fuel, stamina, groats, slithies, and hold at a glance
+- **Player Info** — rank, fuel, stamina, groats, slithies, and hold at a glance, with Buy Fuel and Eat buttons
 - **Chat** — com/say/tell history with filters and timestamps
 - **Who** / **Local Players** — online and in-room player lists
 

@@ -93,6 +93,7 @@ f2t_register_help("f2t", {
         {cmd = "nav help", desc = "Navigation command formats"},
         {cmd = "factory help", desc = "Factory status display"},
         {cmd = "refuel help", desc = "Automatic ship refueling"},
+        {cmd = "stamina help", desc = "Automatic food runs and the Eat command"},
         {cmd = "bb help", desc = "Bulk buy commodities"},
         {cmd = "bs help", desc = "Bulk sell commodities"},
         {cmd = "price help", desc = "Commodity price analysis"},

@@ -1,6 +1,20 @@
 -- Hauling State Machine
 -- Manages the buy/sell cycle for automated commodity trading
 
+-- Hand the stamina monitor our pause/resume, when that module is installed.
+-- Called on resume too: a failed food run leaves hauling paused, and the
+-- monitor must be watching again once the player resumes.
+function f2t_hauling_register_stamina()
+    if not f2t_stamina_register_client then return end
+    f2t_stamina_register_client({
+        pause_callback = f2t_hauling_pause,
+        resume_callback = f2t_hauling_resume,
+        check_active = function()
+            return F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+        end
+    })
+end
+
 -- Start hauling automation
 --- @param requested_mode string|nil Strategy to run (see F2T_HAUL_STRATEGIES); nil uses hauling/mode
 function f2t_hauling_start(requested_mode)
@@ -65,19 +79,7 @@ function f2t_hauling_start(requested_mode)
         f2t_stamina_cancel_standalone_prompt()
     end
 
-    -- Register with stamina monitor for this session (if the stamina module is
-    -- installed). Stamina monitor uses deferred pause (waits for current
-    -- operation to complete). Guarded so hauling runs standalone — without the
-    -- stamina module, hauling simply will not auto-pause to refuel stamina.
-    if f2t_stamina_register_client then
-        f2t_stamina_register_client({
-            pause_callback = f2t_hauling_pause,
-            resume_callback = f2t_hauling_resume,
-            check_active = function()
-                return F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-            end
-        })
-    end
+    f2t_hauling_register_stamina()
 
     -- NOTE: Don't start completion timer yet - it will be started when entering buying/selling phase
 
@@ -587,6 +589,8 @@ function f2t_hauling_resume()
         F2T_HAULING_STATE.current_phase or "unknown"))
 
     f2t_debug_log("[hauling] Resumed from phase: %s", F2T_HAULING_STATE.current_phase or "unknown")
+
+    f2t_hauling_register_stamina()
 
     -- Re-establish navigation ownership (may have been cleared by stamina monitor)
     if f2t_map_set_nav_owner then
