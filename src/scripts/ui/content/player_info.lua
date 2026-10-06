@@ -289,8 +289,10 @@ local function refreshEatButton(inst)
         button:echo("<center>✕&nbsp;Stop</center>")
         button:setToolTip("Stop the food run (" .. f2tStaminaPhaseText() .. ")")
     else
-        button:echo("<center>🍕&nbsp;Eat</center>")
-        button:setToolTip("Walk to a bar, eat until stamina is full and walk back. "
+        local foodKey, food = "food", { icon = "🍴" }
+        if f2tStaminaFoodType then foodKey, food = f2tStaminaFoodType() end
+        button:echo("<center>" .. food.icon .. "&nbsp;Eat</center>")
+        button:setToolTip("Walk to a bar, eat (" .. foodKey .. ") until stamina is full and walk back. "
             .. "Hauling or exploring pauses meanwhile")
     end
 end
@@ -449,8 +451,17 @@ table.insert(F2T_CONTENT_REGISTRARS, f2tRegisterPlayerInfo)
 -- placed and needs no per-instance teardown.
 registerAnonymousEventHandler("gmcp.char.vitals", refreshAll)
 registerAnonymousEventHandler("gmcp.char.ship",   refreshAll)
-registerAnonymousEventHandler("f2tStaminaChanged", function()
+local function refreshEatButtons()
     for _, inst in pairs(instances) do pcall(refreshEatButton, inst) end
-end)
+end
+registerAnonymousEventHandler("f2tStaminaChanged", refreshEatButtons)
+
+-- Re-hooked on every muxletReady because a Muxlet reload clears its onChange listeners.
+local function hookSustenanceSetting()
+    if not (Mux and Mux.settings and Mux.settings.onChange) then return end
+    Mux.settings.onChange("stamina", "sustenance", refreshEatButtons)
+end
+registerAnonymousEventHandler("muxletReady", hookSustenanceSetting)
+hookSustenanceSetting()
 
 if f2t_debug_log then f2t_debug_log("[player_info] module loaded") end

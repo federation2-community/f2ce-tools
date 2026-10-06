@@ -230,22 +230,27 @@ local SCOPE_LABEL = { cartel = "Cartel", galaxy = "Galaxy" }
 local FORM_LABEL = {
     cartel        = "Cartel prices",
     system        = "System prices",
-    premiumCartel = "Cartel prices (Premium Ticker)",
+    premiumCartel = "Cartel (Premium)",
     premium       = "Galaxy prices",
     exchange      = "This exchange",
 }
 
-local function servicesHtml()
+local function servicesText()
     local services = f2tPriceServices()
-    local function mark(owned, name)
-        return string.format("<span style='color:%s;'>%s %s</span>", owned and "#3ecf5e" or "#5a6488",
-            owned and "✓" or "✗", name)
-    end
-    return mark(services.remote, "Remote") .. " · " .. mark(services.upgrade, "Upgrade") .. " · " ..
-        mark(services.premium, "Premium")
+    local function mark(owned, name) return (owned and "✓ " or "✗ ") .. name end
+    return "Price services: " .. mark(services.remote, "Remote Price Check") .. ", " ..
+        mark(services.upgrade, "Upgrade") .. ", " .. mark(services.premium, "Premium Ticker")
 end
 
-local function statusHtml()
+-- The status strip is one short line; anything longer goes in its tooltip.
+local function setError(short, detail)
+    F2T_PRICE_CHECKER.lastError = short
+    F2T_PRICE_CHECKER.lastErrorDetail = detail
+end
+
+--- @return string html Short status line
+--- @return string tooltip Fuller explanation
+local function statusHtml(checkable)
     local state = F2T_PRICE_CHECKER
     local function line(color, text)
         return string.format("<span style='color:%s;padding-left:6px;'>%s</span>", color, text)
@@ -253,27 +258,32 @@ local function statusHtml()
 
     local running = f2tPriceScanState()
     if running then
-        return line("#8896c0", string.format("Scanning %s %d/%d — %s", SCOPE_LABEL[running.scope] or "",
-            running.index, running.total, running.commodity or ""))
+        return line("#8896c0", string.format("Scanning %d/%d — %s", running.index, running.total,
+            running.commodity or "")), string.format("%s scan in progress", SCOPE_LABEL[running.scope] or "")
     end
-    if state.lastError then return line("#c09060", state.lastError) end
+    if state.lastError then
+        return line("#c09060", state.lastError), state.lastErrorDetail or state.lastError
+    end
 
     if state.view == "results" then
         local _, at = scanResults()
-        if not at then return line("#5a6488", "No scan yet — Scan prices every commodity") end
-        return line("#8896c0", string.format("%s scan from %s%s", SCOPE_LABEL[state.scope], ageText(at),
-            state.scope == "cartel" and " · ★ exchange hauling's picks" or ""))
+        if not at then return line("#5a6488", "No scan yet"), "Scan prices every commodity" end
+        return line("#8896c0", string.format("%s scan · %s", SCOPE_LABEL[state.scope], ageText(at))),
+            state.scope == "cartel" and "★ marks the commodities exchange hauling would trade" or ""
     end
 
+    if not checkable then
+        return line("#c09060", "Not at an exchange"), servicesText()
+    end
     local selected = state.selectedCommodity
-    if not selected then return line("#5a6488", "Pick a commodity, then Check · " .. servicesHtml()) end
-    if state.pendingFor == selected then return line("#8896c0", "Checking " .. selected .. "…") end
+    if not selected then return line("#5a6488", "Pick a commodity, then Check"), servicesText() end
+    if state.pendingFor == selected then return line("#8896c0", "Checking " .. selected .. "…"), "" end
     local cached = shownEntry()
     if cached then
         return line("#8896c0", string.format("%s: %s · %s", FORM_LABEL[cached.form] or "Prices", selected,
-            ageText(cached.at)))
+            ageText(cached.at))), servicesText()
     end
-    return line("#5a6488", "No prices for " .. selected .. " yet — Check")
+    return line("#5a6488", "No prices yet — Check"), servicesText()
 end
 
 -- ── Exchange hauling row ──────────────────────────────────────────────────────
@@ -331,9 +341,7 @@ local function layout(inst)
         view.scroll:move(nil, scrollTop)
         view.scroll:resize(nil, "100%-" .. scrollTop .. "px")
     end
-    local emptyTop = tableTop + inst.colH
-    inst.emptyLbl:move(nil, emptyTop)
-    inst.emptyLbl:resize(nil, "100%-" .. emptyTop .. "px")
+    inst.tableTop = tableTop
 end
 
 -- With no price service a check only works inside an exchange.
@@ -360,7 +368,9 @@ local function render(inst)
     end
     if inst.scopeBtn then inst.scopeBtn:echo("<center>◎ " .. SCOPE_LABEL[state.scope] .. "</center>") end
 
-    inst.status:echo(statusHtml())
+    local statusText, statusTip = statusHtml(checkable)
+    inst.status:echo(statusText)
+    inst.status:setToolTip(statusTip or "")
     if showResults and canHaulScan() then inst.haulBtn:show() else inst.haulBtn:hide() end
 
     local active, idle = inst.prices, inst.results
@@ -370,7 +380,13 @@ local function render(inst)
 
     local rows = showResults and resultRows() or priceRows()
     f2tTableSetData(active.tableId, rows)
-    if not checkable and #rows == 0 then
+    -- Nothing to check from here: the message takes the table's place, headers included.
+    local blank = not checkable and #rows == 0
+    if blank then active.colBar:hide() end
+    local emptyTop = inst.tableTop + (blank and 0 or inst.colH)
+    inst.emptyLbl:move(nil, emptyTop)
+    inst.emptyLbl:resize(nil, "100%-" .. emptyTop .. "px")
+    if blank then
         inst.emptyLbl:echo(emptyStateHtml("Go to an exchange to check its prices." ..
             "<br><br>For prices across the cartel without travelling, buy the Remote Price Check Service " ..
             "from the brokers on Earth (BUY REMOTE SERVICE)."))
@@ -443,7 +459,7 @@ function f2tPriceCheckerCheck()
     state.view = "prices"
     state.lastError = nil
     if not selected then
-        state.lastError = "Select a commodity first"
+        setError("Select a commodity first")
         renderAll()
         return
     end
@@ -453,18 +469,18 @@ function f2tPriceCheckerCheck()
         state.pendingFor = selected
         f2t_price_check_for("panel", selected, function(_name, _parsed, _analysis, err)
             if state.pendingFor == selected then state.pendingFor = nil end
-            if err then state.lastError = selected .. ": " .. err end
+            if err then setError(selected .. ": check failed", err) end
             renderAll()
         end, state.scope)
     elseif atExchange() then
         state.pendingFor = selected
         f2t_price_check_here("panel", selected, function(_name, _parsed, _analysis, err)
             if state.pendingFor == selected then state.pendingFor = nil end
-            if err then state.lastError = selected .. ": " .. err end
+            if err then setError(selected .. ": check failed", err) end
             renderAll()
         end)
     else
-        state.lastError = reason .. ". At an exchange, Check shows that exchange's prices."
+        setError("No price check here", reason .. ". At an exchange, Check shows that exchange's prices.")
     end
     renderAll()
 end
@@ -476,12 +492,12 @@ local function toggleScan()
         f2t_price_cancel_all("panel")
     else
         local started = f2t_price_get_all_data(function(_results, err)
-            if err then state.lastError = "Scan stopped: " .. err end
+            if err then setError("Scan stopped", err) end
             renderAll()
         end, { owner = "panel", scope = state.scope })
         if not started then
             local _, reason = f2tPriceRemoteForm(state.scope)
-            state.lastError = reason or "Scan couldn't start"
+            setError("Scan couldn't start", reason)
         end
     end
     state.view = "results"
@@ -531,7 +547,7 @@ local function toggleScope()
     elseif f2tPriceServices().premium then
         state.scope = "galaxy"
     else
-        state.lastError = "Galaxy-wide checks need the Premium Ticker (buy premium ticker)"
+        setError("Galaxy needs the Premium Ticker", "Galaxy-wide checks need the Premium Ticker (BUY PREMIUM TICKER)")
     end
     renderAll()
 end
@@ -883,9 +899,15 @@ local function buildContent(target)
         fontSize = f2tTextPt(target, STATUS_PT),
     }, target.content)
     status:setStyleSheet([[
-        background-color: rgba(12, 14, 24, 220);
-        border: none;
-        color: rgba(136, 150, 192, 255);
+        QLabel {
+            background-color: rgba(12, 14, 24, 220);
+            border: none;
+            color: rgba(136, 150, 192, 255);
+        }
+        QToolTip {
+            background-color: #1d2030; color: #e8ebf5;
+            border: 1px solid rgba(255,255,255,0.18); padding: 3px;
+        }
     ]])
 
     local haulBtn = Geyser.Label:new({
@@ -905,7 +927,8 @@ local function buildContent(target)
     local emptyLbl = Geyser.Label:new({
         name = wid(), x = 0, y = 0, width = "100%", height = "100%", fontSize = cellPt,
     }, target.content)
-    emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+    emptyLbl:setStyleSheet("QLabel{background-color: rgba(18, 18, 26, 255); border: none; " ..
+        "qproperty-wordWrap: true; qproperty-alignment: 'AlignLeft | AlignTop';}")
     emptyLbl:hide()
 
     local inst = {

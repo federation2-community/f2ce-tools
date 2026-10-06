@@ -6,9 +6,12 @@
 -- All three only work in a bar-flagged room. Pizza and round also feed
 -- everyone else in the room, at the same price per head.
 F2T_STAMINA_FOOD_TYPES = {
-    food  = { command = "buy food",  gain = 5, desc = "a slice of pizza for you: +5 stamina for 10ig" },
-    pizza = { command = "buy pizza", gain = 5, desc = "pizza for the whole room: +5 stamina each, 10ig a head" },
-    round = { command = "buy round", gain = 2, desc = "ale for the whole room: +2 stamina each, 5ig a head" },
+    food  = { command = "buy food",  gain = 5, icon = "🍴",
+              desc = "a slice of pizza for you: +5 stamina for 10ig" },
+    pizza = { command = "buy pizza", gain = 5, icon = "🍕",
+              desc = "pizza for the whole room: +5 stamina each, 10ig a head" },
+    round = { command = "buy round", gain = 2, icon = "🍺",
+              desc = "ale for the whole room: +2 stamina each, 5ig a head" },
 }
 F2T_STAMINA_FOOD_ORDER = { "food", "pizza", "round" }
 

@@ -4,7 +4,7 @@
 -- Planets in the queue navigate to their exchange on click. After hauling
 -- stops, the last session's queue stays visible, dimmed.
 
-local H_SUM  = 40    -- summary block height (px)
+local H_SUM  = 54    -- summary block height (px): two lines, room for one to wrap
 local H_COL  = 20
 local ROW_H  = 20
 local SB_W   = 17
@@ -97,9 +97,9 @@ local function summaryHtml()
         line2 = span("#888888", string.format("Last run: %d deficit and %d excess cycles",
             state.po_deficit_cycles or 0, state.po_excess_cycles or 0))
     else
-        line2 = span("#666666", "Haul ▾ scans your system for deficits and excesses and works through them.")
+        line2 = span("#666666", "Start planet hauling to scan your system")
     end
-    return "<div style='padding:3px 6px;'>" .. line1 .. "<br>" .. line2 .. "</div>"
+    return "<div style='padding:3px 6px;'>" .. line1 .. "<br>" .. line2 .. "</div>", planets
 end
 
 local function navigateExchange(planet)
@@ -150,7 +150,10 @@ local function buildCols()
 end
 
 local function refreshInstance(inst)
-    inst.summary:echo(summaryHtml())
+    local html, planets = summaryHtml()
+    inst.summary:echo(html)
+    -- A long planet list wraps within the block; the full list is in its tooltip.
+    inst.summary:setToolTip(#planets > 0 and ("Planets: " .. table.concat(planets, ", ")) or "")
     local rows, live = queueRows()
     f2tTableSetData(inst.tableId, rows)
     if #rows == 0 then
@@ -193,9 +196,17 @@ local function buildContent(target)
         name = gid .. "_ps_sum", x = 0, y = top, width = "100%", height = sumH, fontSize = cellPt,
     }, target.content)
     summary:setStyleSheet([[
-        background-color: rgba(16, 18, 28, 230);
-        border: none;
-        border-bottom: 1px solid rgba(60, 65, 100, 150);
+        QLabel {
+            background-color: rgba(16, 18, 28, 230);
+            border: none;
+            border-bottom: 1px solid rgba(60, 65, 100, 150);
+            qproperty-wordWrap: true;
+            qproperty-alignment: 'AlignLeft | AlignTop';
+        }
+        QToolTip {
+            background-color: #1d2030; color: #e8ebf5;
+            border: 1px solid rgba(255,255,255,0.18); padding: 3px;
+        }
     ]])
 
     local colY = top + sumH
@@ -223,7 +234,8 @@ local function buildContent(target)
         name = gid .. "_ps_empty", x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
         fontSize = cellPt,
     }, target.content)
-    emptyLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+    emptyLbl:setStyleSheet("QLabel{background-color: rgba(18, 18, 26, 255); border: none; " ..
+        "qproperty-wordWrap: true; qproperty-alignment: 'AlignLeft | AlignTop';}")
     emptyLbl:hide()
 
     local tableId = "planet_supply_" .. gid

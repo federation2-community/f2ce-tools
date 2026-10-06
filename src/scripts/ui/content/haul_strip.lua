@@ -161,18 +161,26 @@ local function openMenu(strip, x, items)
     strip.menu = menu
 end
 
+-- Why hauling can't start, as a short note for the strip and the full reason
+-- for its hover box; nil when it can (or is running).
+local function blocker(snap)
+    if snap.active then return nil end
+    if snap.strategy then
+        local ready, reason = f2t_hauling_strategy_ready(snap.strategy)
+        if not ready then return "needs a price service", reason end
+        return nil
+    end
+    local reason = f2t_hauling_unavailable_reason()
+    if reason then return "no hauling at this rank", reason end
+    return nil
+end
+
 local function statusHtml(snap)
     local style = STATE_STYLE[snap.runState] or STATE_STYLE.stopped
     local detail = ""
-    local ready, reason = true, nil
-    if not snap.active and snap.strategy then
-        ready, reason = f2t_hauling_strategy_ready(snap.strategy)
-    elseif not snap.active then
-        reason = f2t_hauling_unavailable_reason()
-        ready = reason == nil
-    end
-    if not ready then
-        detail = string.format(" <span style='%scolor:#c09060;'>%s</span>", CELL_FONT, reason)
+    local short = blocker(snap)
+    if short then
+        detail = string.format(" <span style='%scolor:#c09060;'>%s</span>", CELL_FONT, short)
     elseif snap.active and snap.phaseLabel then
         detail = string.format(" <span style='%scolor:#888888;'>%s</span>", CELL_FONT, snap.phaseLabel)
     elseif snap.totalCycles > 0 then
@@ -204,7 +212,8 @@ end
 local function render(strip)
     local snap = f2tHaulingSnapshot()
     strip.statusLbl:echo(statusHtml(snap))
-    strip.tooltipText = statusTooltip(snap) .. "  —  click for haul status"
+    local _, reason = blocker(snap)
+    strip.tooltipText = (reason or statusTooltip(snap)) .. ". Click for haul status."
 
     local x = 6
     if #haulMenuItems(snap) > 0 then
@@ -254,22 +263,31 @@ end)
 local function showHoverTip(strip, x, text)
     if not text or text == "" then return end
     local target = strip.target
+    -- Wrapped to fit the panel, and tall enough for the lines the text needs.
+    local width = math.min(f2tScaled(target, 300), math.max(120, target.content:get_width() - x - 6))
+    local charPx = f2tUiPt(target, CELL_PT) * 1.33 * 0.6
+    local perLine = math.max(10, math.floor((width - 14) / charPx))
+    local lines = math.ceil(#text / perLine)
+    local height = lines * math.ceil(f2tUiPt(target, CELL_PT) * 1.33 * 1.35) + 8
     if not strip.hoverTip then
         strip.hoverTip = Geyser.Label:new({
-            name = target._gid .. "_hstip", x = x, y = strip.height,
-            width = f2tScaled(target, 280), height = f2tScaled(target, 20),
+            name = target._gid .. "_hstip", x = x, y = strip.height, width = width, height = height,
             fontSize = f2tUiPt(target, CELL_PT),
         }, target.content)
         strip.hoverTip:setStyleSheet(string.format([[
-            background-color: rgba(29, 32, 48, 250);
-            border: 1px solid rgba(255,255,255,0.18);
-            border-radius: 3px;
-            color: #e8ebf5;
-            padding: 0 6px;
-            %s
+            QLabel {
+                background-color: rgba(29, 32, 48, 250);
+                border: 1px solid rgba(255,255,255,0.18);
+                border-radius: 3px;
+                color: #e8ebf5;
+                padding: 2px 6px;
+                qproperty-wordWrap: true;
+                %s
+            }
         ]], CELL_FONT))
     end
     strip.hoverTip:move(x, nil)
+    strip.hoverTip:resize(width, height)
     strip.hoverTip:echo(text)
     strip.hoverTip:show()
     strip.hoverTip:raise()
