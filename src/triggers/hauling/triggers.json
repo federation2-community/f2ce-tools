@@ -27,6 +27,15 @@
     ]
   },
   {
+    "name": "akaturi_delivery_start",
+    "patterns": [
+      {
+        "pattern": "^You need to take the .+ entrusted to you to ",
+        "type": "regex"
+      }
+    ]
+  },
+  {
     "name": "akaturi_job_end_marker",
     "patterns": [
       {

@@ -678,16 +678,9 @@ local function onGmcpJobsBoard()
     refreshAllDebounced()
 end
 
--- gmcp.char.job carries a stray {offer=<userdata>} placeholder when there's
--- no real contract; only source/destination being real strings means an
--- actual job is active.
-local function jobIsActive(job)
-    return type(job) == "table" and type(job.source) == "string" and type(job.destination) == "string"
-end
-
 local function onGmcpCharJob()
     local job = gmcp and gmcp.char and gmcp.char.job
-    if not jobIsActive(job) then
+    if not f2t_ac_job_is_active(job) then
         if currentJob then
             currentJob = nil
             refreshAll()
@@ -858,7 +851,8 @@ local function buildContent(target)
         name = wid(), x = 0, y = scrollTop, width = "100%", height = "100%-" .. scrollTop .. "px",
         fontSize = cellPt,
     }, target.content)
-    noJobsLbl:setStyleSheet("background-color: rgba(18, 18, 26, 255); border: none;")
+    noJobsLbl:setStyleSheet("QLabel{background-color: rgba(18, 18, 26, 255); border: none; " ..
+        "qproperty-wordWrap: true; qproperty-alignment: 'AlignLeft | AlignTop';}")
     noJobsLbl:echo(emptyStateHtml("No AC jobs currently listed."))
     noJobsLbl:hide()
 

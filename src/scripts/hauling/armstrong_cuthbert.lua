@@ -110,11 +110,13 @@ end
 
 --- gmcp.char.job carries a stray {offer=<userdata>} placeholder when there's
 --- no real contract; only source/destination being real strings means an
---- actual job is active. Mirrors hauling_jobs.lua's jobIsActive().
+--- actual job is active. An Adventurer's Akaturi contract arrives on the same
+--- key with type "akaturi" and is not an AC job.
 --- @param job table|nil
 --- @return boolean
 function f2t_ac_job_is_active(job)
-    return type(job) == "table" and type(job.source) == "string" and type(job.destination) == "string"
+    return type(job) == "table" and job.type ~= "akaturi"
+        and type(job.source) == "string" and type(job.destination) == "string"
 end
 
 --- Get the player's current AC contract from GMCP, or nil if none accepted

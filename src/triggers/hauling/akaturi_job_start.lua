@@ -2,6 +2,8 @@
 -- Detect start of Akaturi job assignment output
 -- Don't delete - user wants to see the job details
 
+f2t_akaturi_tracker_capture("pickup")
+
 if F2T_HAULING_STATE and F2T_HAULING_STATE.active and F2T_HAULING_STATE.current_phase == "akaturi_parsing_pickup" then
     if f2t_akaturi_is_capturing_job() then
         f2t_akaturi_add_job_line(line)

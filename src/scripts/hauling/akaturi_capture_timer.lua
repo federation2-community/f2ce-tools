@@ -51,6 +51,14 @@ function f2t_akaturi_process_pickup_capture()
 
     cecho(string.format("\n<green>[hauling]<reset> Deliver %s to '%s' on %s\n", item or "package", room, planet))
 
+    f2t_hauling_akaturi_search_delivery()
+end
+
+--- Find the delivery room in the map (exploring for it if needed) and head there
+function f2t_hauling_akaturi_search_delivery()
+    local planet = F2T_HAULING_STATE.akaturi_contract.delivery_planet
+    local room   = F2T_HAULING_STATE.akaturi_contract.delivery_room
+
     -- Reset for delivery search
     f2t_akaturi_reset_match_index()
 

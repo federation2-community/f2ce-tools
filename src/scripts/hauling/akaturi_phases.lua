@@ -32,6 +32,14 @@ function f2t_hauling_phase_akaturi_get_job()
         return true
     end
 
+    -- A contract already held (taken by hand, or left from a stopped run) is
+    -- worked from where it stands; ak would only be refused.
+    local held = f2t_akaturi_contract()
+    if held then
+        return f2t_hauling_akaturi_resume_held(held)
+    end
+    F2T_HAULING_STATE.akaturi_details_requested = false
+
     -- Must be at a known Sol AC room to issue 'ak' command
     -- Akaturi contracts only work at actual AC offices, not just any shuttlepad
     local current_hash = f2t_get_current_room_hash()
@@ -104,6 +112,79 @@ function f2t_hauling_phase_akaturi_get_job()
 
     -- Wait for output to complete (prompt will trigger parsing)
     return false
+end
+
+--- Pick up a contract the player already holds at its pickup or dropoff leg
+--- @param held table Contract from f2t_akaturi_contract()
+--- @return boolean True if phase complete, false if waiting
+function f2t_hauling_akaturi_resume_held(held)
+    local room = held.collected and held.deliveryRoom or held.pickupRoom
+    if not room then
+        if F2T_HAULING_STATE.akaturi_details_requested then
+            cecho("\n<red>[hauling]<reset> Couldn't read the contract's room from 'di ak'; stopping.\n")
+            f2t_hauling_stop()
+            return true
+        end
+        -- di ak prints the contract, and the tracker reads the room from it.
+        F2T_HAULING_STATE.akaturi_details_requested = true
+        send("di ak", false)
+        tempTimer(2, function()
+            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == "akaturi_getting_job" then
+                f2t_hauling_phase_akaturi_get_job()
+            end
+        end)
+        return false
+    end
+    F2T_HAULING_STATE.akaturi_details_requested = false
+
+    local contract = F2T_HAULING_STATE.akaturi_contract
+    contract.pickup_planet = held.pickupPlanet
+    contract.pickup_room   = held.pickupRoom or held.pickupPlanet
+    contract.item          = held.package
+
+    if held.collected then
+        contract.delivery_planet = held.deliveryPlanet
+        contract.delivery_room   = held.deliveryRoom
+        F2T_HAULING_STATE.akaturi_package_collected = true
+        F2T_HAULING_STATE.akaturi_pickup_sent = true
+        cecho(string.format("\n<green>[hauling]<reset> Continuing your contract: deliver to '%s' on %s\n",
+            held.deliveryRoom, held.deliveryPlanet))
+        f2t_hauling_akaturi_search_delivery()
+        return false
+    end
+
+    cecho(string.format("\n<green>[hauling]<reset> Continuing your contract: pick up from '%s' on %s\n",
+        held.pickupRoom, held.pickupPlanet))
+    F2T_HAULING_STATE.current_phase = "akaturi_searching_pickup"
+    return f2t_hauling_phase_akaturi_search_pickup()
+end
+
+--- When the game's contract no longer matches the leg hauling was on (a
+--- pickup, dropoff or new contract done by hand), restart from getting a job,
+--- which carries on from the contract as it now stands
+--- @return boolean True if the phase was reset
+function f2t_hauling_akaturi_reconcile()
+    if F2T_HAULING_STATE.current_phase == "akaturi_getting_job" then return false end
+    local held = f2t_akaturi_contract()
+    local working = F2T_HAULING_STATE.akaturi_contract or {}
+    if held and held.pickupPlanet == working.pickup_planet
+        and held.collected == (F2T_HAULING_STATE.akaturi_package_collected == true) then
+        return false
+    end
+
+    f2t_debug_log("[hauling/akaturi] Contract changed while paused, restarting from get job")
+    f2t_akaturi_reset_contract()
+    F2T_HAULING_STATE.akaturi_contract = {}
+    F2T_HAULING_STATE.akaturi_package_collected = false
+    F2T_HAULING_STATE.akaturi_package_delivered = false
+    F2T_HAULING_STATE.akaturi_pickup_error = false
+    F2T_HAULING_STATE.akaturi_delivery_error = false
+    F2T_HAULING_STATE.akaturi_pickup_sent = false
+    F2T_HAULING_STATE.akaturi_delivery_sent = false
+    F2T_HAULING_STATE.akaturi_payment_amount = nil
+    F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
+    return true
 end
 
 --- Phase: Parse pickup location from job output

@@ -600,6 +600,12 @@ function f2t_hauling_resume()
         end)
     end
 
+    -- Akaturi work done by hand while paused moves the contract past the
+    -- phase hauling paused in, so the old walk no longer applies.
+    if F2T_HAULING_STATE.mode == "akaturi" and f2t_hauling_akaturi_reconcile() then
+        F2T_HAULING_STATE.paused_speedwalk_destination = nil
+    end
+
     -- If we had a paused speedwalk, recompute path to the original destination
     local should_restart_phase = true
     if F2T_HAULING_STATE.paused_speedwalk_destination then
