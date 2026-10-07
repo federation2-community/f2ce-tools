@@ -148,7 +148,10 @@ end
 function f2t_akaturi_tracker_capture(kind)
     stopCapture()
     local inSection = false
-    captureTrigger = tempLineTrigger(1, 40, function()
+    -- From 0 so the first line offered is checked: Mudlet versions differ on
+    -- whether a trigger made mid-line also sees that line, and starting at 1
+    -- would then skip the opening "-----".
+    captureTrigger = tempLineTrigger(0, 40, function()
         local text = line or ""
         if text:match("^%s*%-%-%-%-%-%s*$") then
             if inSection then stopCapture() end

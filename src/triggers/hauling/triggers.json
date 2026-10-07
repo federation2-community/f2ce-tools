@@ -39,8 +39,8 @@
     "name": "akaturi_job_start",
     "patterns": [
       {
-        "pattern": "^Your task is to pick up a package on",
-        "type": "substring"
+        "pattern": "^Your task is to pick up a package on ",
+        "type": "regex"
       }
     ]
   },

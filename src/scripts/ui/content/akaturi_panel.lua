@@ -194,7 +194,7 @@ end
 
 local function placeHtml(planet, room, missing)
     return span(PLANET, escape(planet)) .. span(MUTED, " · ") ..
-        (room and span(TEXT, escape(room)) or span(MUTED, missing or "reading the room from the contract…"))
+        (room and span(TEXT, escape(room)) or span(MUTED, missing or "room not read yet · 🔎 Details reads it"))
 end
 
 local MARK = { done = { "✓", GREEN }, current = { "▸", "#7aa2ff" }, todo = { "○", DIM } }
