@@ -1165,7 +1165,11 @@ function f2t_map_explore_on_room_change()
 
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and F2T_MAP_EXPLORE_STATE.phase == "navigating" then
             f2t_map_explore_brief_check_room_flags(current_room)
-            if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0 then return end
+            -- A named-room search keeps walking once the flags are all found
+            if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0
+                and not F2T_MAP_EXPLORE_STATE.target_room_name then
+                return
+            end
         end
 
         if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and

@@ -123,10 +123,10 @@ step = function()
     local target = list[1]
     if target then
         current.stage = "walking"
+        current.index, current.total = total - #list + 1, total
         changed()
-        local triedCount = total - #list + 1
         cecho(string.format("\n<cyan>[akaturi]<reset> Heading to '%s' on %s%s\n", current.room, current.planet,
-            total > 1 and string.format(" (%d of %d rooms with that name)", triedCount, total) or ""))
+            total > 1 and string.format(" (%d of %d rooms with that name)", current.index, total) or ""))
         f2t_map_walk_to(target.roomId, function(_, result)
             if visit ~= current or current.stage ~= "walking" then return end
             if result == "stopped" then
@@ -239,12 +239,13 @@ registerAnonymousEventHandler("f2tDeathRecovered", function(_, insured)
 end)
 
 --- The visit in progress, or nil
---- @return table|nil { kind, owner, stage, planet, room }
+--- @return table|nil { kind, owner, stage, planet, room, index, total }; index/total
+--- count the mapped rooms with the title while walking to one
 function f2t_akaturi_visit_current()
     local current = visit
     if not current then return nil end
     return { kind = current.kind, owner = current.owner, stage = current.stage,
-        planet = current.planet, room = current.room }
+        planet = current.planet, room = current.room, index = current.index, total = current.total }
 end
 
 --- The game refused pickup/dropoff in this room (success arrives as GMCP).

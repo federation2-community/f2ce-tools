@@ -48,9 +48,7 @@ local function stepCss(state, accent)
             padding-left: 8px; padding-right: 8px;
             qproperty-wordWrap: true;
         }
-    ]], background, edge) .. (state == "current" and [[
-        QLabel::hover { background-color: rgba(42,48,72,240); }
-    ]] or "") .. _TOOLTIP_CSS
+    ]], background, edge) .. _TOOLTIP_CSS
 end
 
 local _ACT_BAR_CSS = [[
@@ -174,13 +172,19 @@ end
 
 -- ── Steps ────────────────────────────────────────────────────────────────────
 
-local VISIT_NOTE = { walking = "heading there", exploring = "exploring for it", trying = "trying this room" }
-
 -- Live progress of a room search on this leg, or "you're here".
 local function legNote(kind, planet, room)
     local visit = f2t_akaturi_visit_current()
-    if visit and visit.kind == kind and VISIT_NOTE[visit.stage] then
-        return span("#7aa2ff", "  ← " .. VISIT_NOTE[visit.stage])
+    if visit and visit.kind == kind then
+        if visit.stage == "walking" then
+            local which = (visit.total or 0) > 1
+                and string.format(" · %d of %d rooms with this name", visit.index, visit.total) or ""
+            return span("#7aa2ff", "  ← heading there" .. which)
+        elseif visit.stage == "exploring" then
+            return span("#7aa2ff", "  ← exploring " .. escape(planet) .. " for it")
+        elseif visit.stage == "trying" then
+            return span("#7aa2ff", "  ← trying this room")
+        end
     end
     if room and f2t_akaturi_at_room(planet, room) then
         return span(GREEN, "  ← you're here")
@@ -188,9 +192,9 @@ local function legNote(kind, planet, room)
     return ""
 end
 
-local function placeHtml(planet, room)
+local function placeHtml(planet, room, missing)
     return span(PLANET, escape(planet)) .. span(MUTED, " · ") ..
-        (room and span(TEXT, escape(room)) or span(MUTED, "reading the room from the contract…"))
+        (room and span(TEXT, escape(room)) or span(MUTED, missing or "reading the room from the contract…"))
 end
 
 local MARK = { done = { "✓", GREEN }, current = { "▸", "#7aa2ff" }, todo = { "○", DIM } }
@@ -202,33 +206,30 @@ local function stepHtml(state, title, detail)
         "<br>" .. span(MUTED, "&nbsp;&nbsp;") .. detail
 end
 
-local function setStep(lbl, state, accentKey, title, detail, tip, onClick)
+-- Rows show where the contract stands; the buttons above do the acting.
+local function setStep(lbl, state, accentKey, title, detail, tip)
     lbl:setStyleSheet(stepCss(state, ACCENT[accentKey][1]))
     lbl:echo(stepHtml(state, title, detail))
     lbl:setToolTip(tip or "")
-    lbl:setClickCallback(onClick or function() end)
 end
 
-local function renderSteps(inst, contract)
-    local canAct = not automationRunning()
-    local rankOk = f2t_akaturi_rank_ok()
+local SEARCH_TIP = "%s on %s. %s finds it: rooms sharing the name are tried nearest first, " ..
+    "then the planet is explored."
 
+local function renderSteps(inst, contract)
     if contract then
         setStep(inst.stepTake, "done", "take", "Take a contract", span(MUTED, "contract in hand"))
-    elseif not rankOk then
+    elseif not f2t_akaturi_rank_ok() then
         setStep(inst.stepTake, "todo", "take", "Take a contract",
             span(MUTED, "Akaturi contracts are for Adventurers"))
     elseif f2t_akaturi_at_office() then
         setStep(inst.stepTake, "current", "take", "Take a contract",
-            span(GREEN, "you can take one here (ak)"),
-            "Take a contract here (ak)", canAct and f2t_akaturi_take_contract or nil)
+            span(GREEN, "you're in an Armstrong Cuthbert office"))
     else
         local _, label = f2t_akaturi_office_target()
         setStep(inst.stepTake, "current", "take", "Take a contract",
-            span(MUTED, "nearest place to take one: ") .. span(PLANET, escape(label)),
-            "Akaturi work is all in Sol: contracts come from an Armstrong Cuthbert office there. " ..
-            "Click to walk to one (from outside Sol too) and take a contract.",
-            canAct and f2t_akaturi_take_contract or nil)
+            span(MUTED, "at an Armstrong Cuthbert office · nearest ") .. span(PLANET, escape(label)),
+            "Akaturi work is all in Sol: contracts come from an Armstrong Cuthbert office there.")
     end
 
     if not contract then
@@ -236,31 +237,28 @@ local function renderSteps(inst, contract)
             span(DIM, "a room on a Sol planet, named in the contract"))
     elseif contract.collected then
         setStep(inst.stepPickup, "done", "pickup", "Pick up the package",
-            span(MUTED, "collected on ") .. span(MUTED, escape(contract.pickupPlanet)))
+            span(MUTED, "collected on " .. escape(contract.pickupPlanet)))
     else
         setStep(inst.stepPickup, "current", "pickup", "Pick up the package",
             placeHtml(contract.pickupPlanet, contract.pickupRoom) ..
                 legNote("pickup", contract.pickupPlanet, contract.pickupRoom),
-            string.format("%s on %s. Click to find it and pick up; rooms sharing the name are tried " ..
-                "nearest first, then the planet is explored.", contract.pickupRoom or "The room",
-                contract.pickupPlanet),
-            canAct and f2t_akaturi_work_leg or nil)
+            string.format(SEARCH_TIP, contract.pickupRoom or "The room", contract.pickupPlanet,
+                "Find & pick up"))
     end
 
     if not contract then
         setStep(inst.stepDropoff, "todo", "delivery", "Drop it off",
             span(DIM, "a room on another Sol planet"))
     elseif not contract.collected then
+        -- The game names the dropoff planet up front; only the room waits for the pickup
         setStep(inst.stepDropoff, "todo", "delivery", "Drop it off",
-            span(DIM, "revealed when you pick up"))
+            placeHtml(contract.deliveryPlanet, nil, "room revealed at pickup"))
     else
         setStep(inst.stepDropoff, "current", "delivery", "Drop it off",
             placeHtml(contract.deliveryPlanet, contract.deliveryRoom) ..
                 legNote("delivery", contract.deliveryPlanet, contract.deliveryRoom),
-            string.format("%s on %s. Click to find it and drop off; rooms sharing the name are tried " ..
-                "nearest first, then the planet is explored.", contract.deliveryRoom or "The room",
-                contract.deliveryPlanet),
-            canAct and f2t_akaturi_work_leg or nil)
+            string.format(SEARCH_TIP, contract.deliveryRoom or "The room", contract.deliveryPlanet,
+                "Find & drop off"))
     end
 end
 
