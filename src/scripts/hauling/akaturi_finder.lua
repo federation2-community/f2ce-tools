@@ -108,6 +108,63 @@ local function explore(current)
     end
 end
 
+-- Exploring only walks ordinary exits. Past those, the game files know the
+-- special ones (teleport disks, elevator buttons, airlocks): take the next one
+-- the map hasn't been through, then explore whatever is on the other side.
+local function cross(current)
+    local option = f2t_map_sol_uncrossed(current.planet, current.crossed)[1]
+    if not option then return false end
+    current.crossed[option.key] = true
+    current.stage = "crossing"
+    current.crossing = option.command
+    changed()
+    cecho(string.format("\n<cyan>[akaturi]<reset> Your map hasn't been past '%s' on %s yet; taking it\n",
+        option.command, current.planet))
+    f2t_map_walk_to(option.from_id, function(arrived, result)
+        if visit ~= current or current.stage ~= "crossing" then return end
+        if result == "stopped" then finish("stopped") return end
+        if not arrived then step() return end
+        local handlerId, timerId
+        local function arrivedOrGaveUp()
+            if not handlerId then return end
+            killAnonymousEventHandler(handlerId)
+            killTimer(timerId)
+            handlerId = nil
+            -- Let the map record the new room before searching from it
+            tempTimer(0.5, function()
+                if visit ~= current then return end
+                current.exhausted = false
+                step()
+            end)
+        end
+        handlerId = registerAnonymousEventHandler("gmcp.room.info", function()
+            if tonumber(gmcp.room.info.num) == option.to_num then arrivedOrGaveUp() end
+        end)
+        timerId = tempTimer(15, arrivedOrGaveUp)
+        send(option.command)
+    end)
+    return true
+end
+
+-- Out of rooms, exploring and known crossings: say what the game files know
+-- about getting there, rather than just that it wasn't found.
+local function giveUp(current)
+    local what = current.kind == "pickup" and "package" or "dropoff"
+    local note = f2t_map_sol_route_note(current.planet, current.room)
+    if note and note.gate then
+        cecho(string.format("\n<yellow>[akaturi]<reset> Can't get to '%s' on %s: %s.\n",
+            current.room, current.planet, note.gate))
+    elseif note and note.via then
+        cecho(string.format("\n<yellow>[akaturi]<reset> Couldn't get to '%s' on %s. The way there is %s; " ..
+            "go that way by hand once and the map will know it.\n",
+            current.room, current.planet, table.concat(note.via, ", then ")))
+    else
+        cecho(string.format("\n<yellow>[akaturi]<reset> Tried every '%s' on %s and explored the planet; " ..
+            "the %s isn't in any of them.\n", current.room, current.planet, what))
+    end
+    finish("notFound")
+end
+
 step = function()
     local current = visit
     if not current then return end
@@ -119,6 +176,10 @@ step = function()
         return
     end
 
+    if not f2t_map_on_map() then
+        finish("failed")
+        return
+    end
     local list, total = candidates(current)
     local target = list[1]
     if target then
@@ -147,10 +208,9 @@ step = function()
         return
     end
 
-    cecho(string.format("\n<yellow>[akaturi]<reset> Tried every '%s' on %s and explored the planet; " ..
-        "the %s isn't in any of them.\n", current.room, current.planet,
-        current.kind == "pickup" and "package" or "dropoff"))
-    finish("notFound")
+    if cross(current) then return end
+
+    giveUp(current)
 end
 
 -- The contract moving on (GMCP) confirms the command even if its text was missed.
@@ -175,7 +235,7 @@ function f2t_akaturi_visit(kind, opts)
     visit = {
         token = nextToken, kind = kind, planet = opts.planet, room = opts.room,
         owner = opts.owner or "manual", onDone = opts.onDone,
-        tried = {}, explores = 0, exhausted = false, stage = "starting",
+        tried = {}, crossed = {}, explores = 0, exhausted = false, stage = "starting",
     }
     f2t_debug_log("[akaturi/finder] %s visit: '%s' on %s for %s", kind, opts.room, opts.planet, visit.owner)
     step()
@@ -194,7 +254,7 @@ function f2t_akaturi_visit_cancel(owner)
     if current.stage ~= "trying" and F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
         f2t_map_explore_stop("Akaturi room search stopped")
     end
-    if current.stage == "walking" and F2T_SPEEDWALK_ACTIVE then
+    if (current.stage == "walking" or current.stage == "crossing") and F2T_SPEEDWALK_ACTIVE then
         f2t_map_speedwalk_stop()
     end
     changed()
@@ -203,7 +263,7 @@ end
 -- A stopped exploration never reports back, so a search waiting on one ends here.
 registerAnonymousEventHandler("f2tExploreStopped", function()
     local current = visit
-    if current and (current.stage == "exploring" or current.stage == "walking") then
+    if current and (current.stage == "exploring" or current.stage == "walking" or current.stage == "crossing") then
         finish("stopped")
     end
 end)
@@ -245,7 +305,8 @@ function f2t_akaturi_visit_current()
     local current = visit
     if not current then return nil end
     return { kind = current.kind, owner = current.owner, stage = current.stage,
-        planet = current.planet, room = current.room, index = current.index, total = current.total }
+        planet = current.planet, room = current.room, index = current.index, total = current.total,
+        crossing = current.crossing }
 end
 
 --- The game refused pickup/dropoff in this room (success arrives as GMCP).

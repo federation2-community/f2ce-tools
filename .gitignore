@@ -15,3 +15,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+
+# Python bytecode (scripts/sol_map)
+__pycache__/

@@ -65,6 +65,8 @@ function f2t_map_explore_release_run()
     F2T_MAP_EXPLORE_STATE.active = false
     f2t_map_clear_nav_owner()
     if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    f2t_map_explore_unlock_temp_exits()
+    f2t_map_explore_brief_mode_restore()
 end
 
 -- Wrap a completion callback so it releases the run this call claimed.
@@ -138,8 +140,12 @@ function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_
     -- f2t_map_explore_init_area's own state reset on arrival instead of
     -- this also claiming the standalone slot.
     local guard_active = not F2T_MAP_EXPLORE_STATE.active and on_complete_callback ~= nil
+    -- Failing to get there ends the run without its callback, like a stop does
     local function cleanup()
-        if guard_active then f2t_map_explore_release_run() end
+        if guard_active then
+            f2t_map_explore_release_run()
+            raiseEvent("f2tExploreStopped")
+        end
     end
 
     local effective_callback = on_complete_callback

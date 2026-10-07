@@ -309,6 +309,16 @@ function f2t_map_speedwalk_on_room_change()
         f2t_debug_log("[map/walk]   '%s' arrived at %s (expected %s) - %s",
             tostring(F2T_SPEEDWALK_LAST_COMMAND), f2t_map_describe_room(current_room),
             f2t_map_describe_room(expected_room), movement_success and "as planned" or "MISMATCH")
+        -- A ride that holds the player in a room on the way (Sumatra's airlocks)
+        -- arrives later by itself: keep waiting rather than calling it a wrong turn.
+        if not movement_success and current_room and getRoomUserData(current_room, "fed2_transit") == "true" then
+            F2T_SPEEDWALK_WAITING_FOR_MOVE = true
+            local timeout_seconds = math.max(f2t_settings_get("map", "speedwalk_timeout"), 10)
+            F2T_SPEEDWALK_MOVE_TIMEOUT_ID = tempTimer(timeout_seconds, function()
+                f2t_map_speedwalk_on_move_timeout()
+            end)
+            return
+        end
         -- The map said this "jump X" led to one room and the game put us in
         -- another one in the same system. That is not a failed move: it is
         -- first-hand evidence that the exit's stored destination is stale,

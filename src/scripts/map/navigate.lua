@@ -154,7 +154,22 @@ end
 --- it went: result is "arrived", "completed", "stopped" or "failed"
 --- @param destination string|number
 --- @param on_settled function
+--- Whether the room the player stands in is on the map; says what to do when
+--- it isn't. Without it there is no route to plan, and navigate would keep
+--- sending look until there is one (an empty map, or the mapper off).
+--- @return boolean
+function f2t_map_on_map()
+    if F2T_MAP_CURRENT_ROOM_ID and roomExists(F2T_MAP_CURRENT_ROOM_ID) then return true end
+    cecho("\n<yellow>[map]<reset> You aren't on the map yet, so there's no route to plan. Import the bundled " ..
+        "map with <white>map import db<reset>, or look around so this room is mapped, then try again.\n")
+    return false
+end
+
 function f2t_map_walk_to(destination, on_settled)
+    if not f2t_map_on_map() then
+        tempTimer(0, function() on_settled(false, "failed") end)
+        return
+    end
     f2t_map_navigate(destination, {
         compensate_incomplete_map = true,
         on_result = function(ok, status)

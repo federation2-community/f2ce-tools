@@ -10,6 +10,8 @@
   {"name": "room"},
   {"name": "exit"},
   {"name": "special"},
+  {"name": "sol_mechanics"},
+  {"name": "mechanics"},
   {"name": "manual_confirm"},
   {"name": "manual_room"},
   {"name": "manual_exit"},

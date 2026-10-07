@@ -182,6 +182,8 @@ local function legNote(kind, planet, room)
             return span("#7aa2ff", "  ← heading there" .. which)
         elseif visit.stage == "exploring" then
             return span("#7aa2ff", "  ← exploring " .. escape(planet) .. " for it")
+        elseif visit.stage == "crossing" then
+            return span("#7aa2ff", "  ← taking '" .. escape(visit.crossing or "") .. "' to unmapped rooms")
         elseif visit.stage == "trying" then
             return span("#7aa2ff", "  ← trying this room")
         end

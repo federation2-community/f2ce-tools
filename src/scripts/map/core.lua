@@ -36,6 +36,7 @@ function f2t_map_handle_gmcp_room()
     f2t_map_process_exits(room_id, room_data.exits, room_data)
     if is_new_room then f2t_map_connect_incoming_stubs(room_id, room_data.num) end
     f2t_map_process_special_exits(room_id, room_data)
+    f2t_map_apply_known_mechanics(room_id, room_data)
 
     F2T_MAP_CURRENT_ROOM_ID = room_id
 
