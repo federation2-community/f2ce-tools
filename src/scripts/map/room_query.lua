@@ -30,20 +30,41 @@ function f2t_map_find_room_with_flag(area_id, flag)
 end
 
 -- The closest mapped room anywhere carrying `flag`, by walking steps, or nil
--- when none is reachable. Also returns the step count.
+-- when none is reachable. Also returns the step count. Breadth-first from
+-- from_room, stopping at the first match: a getPath per candidate stalls on
+-- flags found all over the galaxy.
 function f2t_map_nearest_room_with_flag(flag, from_room)
     from_room = from_room or F2T_MAP_CURRENT_ROOM_ID
     if not from_room or not roomExists(from_room) then return nil end
-    local best, best_steps = nil, nil
+    local targets = {}
     for _, room_id in ipairs(searchRoomUserData("fed2_flag_" .. flag, "true") or {}) do
-        room_id = tonumber(room_id)
-        if room_id == from_room then return room_id, 0 end
-        if room_id and getPath(from_room, room_id) then
-            local steps = #speedWalkDir
-            if not best_steps or steps < best_steps then best, best_steps = room_id, steps end
+        targets[tonumber(room_id)] = true
+    end
+    if next(targets) == nil then return nil end
+
+    local queue, depths, head = { from_room }, { [from_room] = 0 }, 1
+    while head <= #queue do
+        local room_id = queue[head]
+        head = head + 1
+        local depth = depths[room_id]
+        if targets[room_id] then return room_id, depth end
+        local function visit(dest_id)
+            if type(dest_id) == "number" and not depths[dest_id] and not roomLocked(dest_id) then
+                depths[dest_id] = depth + 1
+                queue[#queue + 1] = dest_id
+            end
+        end
+        for direction, dest_id in pairs(getRoomExits(room_id) or {}) do
+            if not hasExitLock(room_id, direction) then visit(dest_id) end
+        end
+        -- {[destRoomId] = {command = "1" when locked, "0" when not}}
+        for dest_id, commands in pairs(getSpecialExits(room_id) or {}) do
+            for _, locked in pairs(commands) do
+                if locked ~= "1" then visit(dest_id) break end
+            end
         end
     end
-    return best, best_steps
+    return nil
 end
 
 -- Unlike f2t_map_find_room_with_flag, never falls back to an unreachable room.

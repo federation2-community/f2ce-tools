@@ -50,13 +50,21 @@ local GAP           = 4
 local PAD           = 6
 
 -- Mudlet paints the info lines from y=10 down: each is one display-font line
--- plus 10px, starting at y=20. fed2_bc and fed2_rm make two lines.
+-- plus 10px, starting at y=20. fed2_bc and fed2_rm make two lines. Their
+-- emoji fall back to a colour emoji font with taller lines than the display
+-- font, so the tallest of those sets the line height.
 local INFO_LINE_COUNT = 2
+local EMOJI_FONTS = { "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji" }
 
 local function infoBarBottom()
+    local size = getFontSize()
     local lineHeight = 16
-    local ok, _, height = pcall(calcFontSize, getFontSize(), getFont())
-    if ok and tonumber(height) and height > 0 then lineHeight = height end
+    local fonts = { getFont() }
+    for _, font in ipairs(EMOJI_FONTS) do table.insert(fonts, font) end
+    for _, font in ipairs(fonts) do
+        local ok, _, height = pcall(calcFontSize, size, font)
+        if ok and tonumber(height) and height > lineHeight then lineHeight = height end
+    end
     return 20 + INFO_LINE_COUNT * (lineHeight + 10)
 end
 
