@@ -23,6 +23,13 @@ function f2t_hauling_start(requested_mode)
         return
     end
 
+    if not f2t_insurance_allows() then
+        f2t_insurance_check("hauling", function()
+            if not F2T_HAULING_STATE.active then f2t_hauling_start(requested_mode) end
+        end)
+        return
+    end
+
     local strategy, strategy_note = f2t_hauling_resolve_strategy(requested_mode)
     if not strategy then
         cecho(string.format("\n<red>[hauling]<reset> %s\n", strategy_note or "Cannot determine hauling mode"))
@@ -577,6 +584,13 @@ function f2t_hauling_resume()
 
     if not F2T_HAULING_STATE.paused then
         cecho("\n<yellow>[hauling]<reset> Not paused\n")
+        return
+    end
+
+    if not f2t_insurance_allows() then
+        f2t_insurance_check("hauling", function()
+            if F2T_HAULING_STATE.active and F2T_HAULING_STATE.paused then f2t_hauling_resume() end
+        end)
         return
     end
 

@@ -6,5 +6,21 @@
   {
     "name": "death",
     "patterns": [{"pattern": "Darkness closes in. Farewell!", "type": "substring"}]
+  },
+  {
+    "name": "insured",
+    "patterns": [
+      {"pattern": "You are now insured.", "type": "substring"},
+      {"pattern": "You are already insured!", "type": "substring"},
+      {"pattern": "Insured against one (1) death in Fed II DataSpace.", "type": "substring"}
+    ]
+  },
+  {
+    "name": "uninsured",
+    "patterns": [
+      {"pattern": "You are uninsured. (Cost to reinsure is", "type": "substring"},
+      {"pattern": "--- You aren't insured - maybe you should take out some insurance! ---", "type": "substring"},
+      {"pattern": "renew your insurance.", "type": "substring"}
+    ]
   }
 ]

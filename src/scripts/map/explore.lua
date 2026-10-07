@@ -1014,6 +1014,22 @@ function f2t_map_explore_next_step()
     if f2t_map_explore_check_deferred_pause() then return end
     if F2T_MAP_EXPLORE_STATE.phase == "paused_death" then return end
 
+    -- Every kind of exploration steps through here, so this is where an
+    -- uninsured player is stopped and asked before walking into the unknown.
+    if f2t_insurance_allows and not f2t_insurance_allows() then
+        F2T_MAP_EXPLORE_STATE.paused = true
+        F2T_MAP_EXPLORE_STATE.paused_reason = "uninsured"
+        cecho("\n<yellow>[map-explore]<reset> Paused: not insured\n")
+        f2t_insurance_check("exploring", function()
+            if F2T_MAP_EXPLORE_STATE.active and F2T_MAP_EXPLORE_STATE.paused_reason == "uninsured" then
+                f2t_map_explore_resume()
+            end
+        end, function()
+            if F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_stop("Exploration stopped: not insured") end
+        end)
+        return
+    end
+
     if f2t_map_explore_check_stop_condition() then return end
 
     -- Before committing to another move: if fuel has dropped to where refuel

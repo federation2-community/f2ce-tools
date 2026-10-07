@@ -54,7 +54,7 @@ Bulk buy/sell at the exchange and cross-cartel price analysis to find the best d
 When stamina falls to your threshold, hauling or exploring pauses, you walk to the nearest mapped bar, eat until full, walk back and carry on. With nothing automated running it asks first, or just goes if you turn on `unattended`. Pick food, pizza or a round as your sustenance, and use `stamina eat` or the Eat button to top up any time. Ships refuel automatically from GMCP, with an emergency out-of-fuel trigger.
 
 **Death Protection**
-Tracks your last safe room and halts other automation (hauling, exploration) on death so you don't wake up mid-cycle.
+Tracks your last safe room and halts other automation (hauling, exploration) on death so you don't wake up mid-cycle, re-insures you and locks the room that killed you. Knows whether you're insured: exploring of any kind, and starting or resuming hauling, warn first while you aren't, offering to walk you to the nearest insurance broker (or to go on anyway). Akaturi work survives a death and carries on once you're insured again.
 
 **Chat History** (`f2t chat`)
 Persistent, searchable com/tell/say history that survives reconnects.

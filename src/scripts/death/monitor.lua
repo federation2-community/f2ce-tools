@@ -117,6 +117,9 @@ function f2t_death_start_recovery()
     -- Capture location IMMEDIATELY (before teleport)
     f2t_death_capture_location()
 
+    -- Lets components note what they were doing before it is stopped
+    raiseEvent("f2tDeathDetected")
+
     -- Stop all active automation
     f2t_death_stop_all_components()
 
@@ -161,10 +164,13 @@ end
 -- ========================================
 
 function f2t_death_stop_all_components()
-    -- Stop hauling (highest priority - has cargo, cycles)
+    -- Stop hauling (highest priority - has cargo, cycles); a mode whose work
+    -- survives a death pauses instead, to resume on f2tDeathRecovered
     if F2T_HAULING_STATE and F2T_HAULING_STATE.active then
         f2t_debug_log("[death] Stopping active hauling")
-        if f2t_hauling_terminate then
+        if f2t_hauling_on_death then
+            f2t_hauling_on_death()
+        elseif f2t_hauling_terminate then
             f2t_hauling_terminate()
         elseif f2t_hauling_do_stop then
             f2t_hauling_do_stop()
@@ -392,6 +398,11 @@ function f2t_death_show_summary(room_locked, cause)
     end
 
     cecho("<red>|<reset>  Insurance: <green>Claimed<reset>\n")
+    if f2t_insurance_status() == true then
+        cecho("<red>|<reset>  Re-insured: <green>Yes<reset>\n")
+    else
+        cecho("<red>|<reset>  Re-insured: <red>Not yet<reset>\n")
+    end
 
     if cause == "suicide" then
         cecho("<red>|<reset>  Room Status: <dim_grey>Skipped (suicide)<reset>\n")
@@ -414,8 +425,27 @@ end
 -- Completion and Cleanup
 -- ========================================
 
+-- Tell components recovery is over and whether the player is insured again.
+-- Work only resumes on insured = true; uninsured, the player is asked to get
+-- insured, and getting insured from that prompt lets the work resume too.
+local function announceRecovery()
+    tempTimer(2, function()
+        if f2t_insurance_status() == true then
+            raiseEvent("f2tDeathRecovered", true)
+            return
+        end
+        cecho("\n<red>[death]<reset> You aren't insured again yet. Another death would be permanent.\n")
+        f2t_insurance_check("carrying on after this death", function()
+            raiseEvent("f2tDeathRecovered", f2t_insurance_status() == true)
+        end, function()
+            raiseEvent("f2tDeathRecovered", false)
+        end)
+    end)
+end
+
 function f2t_death_complete()
     f2t_debug_log("[death] Death recovery completed")
+    announceRecovery()
 
     -- Cleanup handlers and timers
     f2t_death_cleanup()
