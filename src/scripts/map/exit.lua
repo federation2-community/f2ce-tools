@@ -79,7 +79,10 @@ function f2t_map_process_exits(current_room_id, gmcp_exits, gmcp_room_data)
                 end
             end
         else
-            if not has_stub_in_direction(current_room_id, direction) then
+            -- A mapped exit can lead somewhere other than the room the game
+            -- names (a room that moves you on as you enter): leave it be
+            if not get_existing_exit(current_room_id, direction)
+                and not has_stub_in_direction(current_room_id, direction) then
                 setExitStub(current_room_id, f2t_map_direction_to_number(direction), true)
             end
         end

@@ -17,7 +17,11 @@ function f2t_map_explore_navigate_to_next()
         -- Exploration complete for this area
         -- Leaving "navigating" so a same-room gmcp.room.info re-fire (another
         -- player's ship arriving/leaving) can't walk this branch a second time.
-        if F2T_MAP_EXPLORE_STATE.phase ~= "navigating" then return end
+        if F2T_MAP_EXPLORE_STATE.phase ~= "navigating" then
+            f2t_debug_log("[map/explore] nothing left to explore, but phase is %s",
+                tostring(F2T_MAP_EXPLORE_STATE.phase))
+            return
+        end
         F2T_MAP_EXPLORE_STATE.phase = "area_complete"
 
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and

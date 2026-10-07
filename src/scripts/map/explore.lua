@@ -56,6 +56,9 @@ F2T_MAP_EXPLORE_STATE = F2T_MAP_EXPLORE_STATE or blankState()
 -- its completion is what releases them again. A call nested under a parent
 -- sweep finds .active already true and leaves all of that to the parent.
 function f2t_map_explore_claim_run(mode)
+    -- A finished run only goes inactive; start clean so nothing it left behind
+    -- (a pause, a stop condition, a detour) holds up this one.
+    F2T_MAP_EXPLORE_STATE = blankState()
     F2T_MAP_EXPLORE_STATE.active = true
     if mode then F2T_MAP_EXPLORE_STATE.mode = mode end
     f2t_map_explore_register_safety_hooks()
@@ -162,7 +165,7 @@ function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_
     local function await_arrival()
         local handler_id
         handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-            if F2T_SPEEDWALK_ACTIVE then return end
+            if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
             killAnonymousEventHandler(handler_id)
             local area = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
             local arrived_planet = area and getRoomAreaName(area)
@@ -494,11 +497,10 @@ end
 -- entry point (system/cartel/galaxy/syndicate all register the same pair;
 -- nested layers skip this since the parent that started the sweep already holds it).
 function f2t_map_explore_register_safety_hooks()
-    f2t_map_set_nav_owner("map-explore", function(reason)
-        if reason == "customs" then
-            F2T_MAP_EXPLORE_STATE.paused = true
-            F2T_MAP_EXPLORE_STATE.paused_reason = reason
-        end
+    -- Customs: the walk resumes by itself afterwards, and the explorer waits it
+    -- out (F2T_SPEEDWALK_CUSTOMS_PENDING) rather than pausing, which nothing
+    -- would ever lift.
+    f2t_map_set_nav_owner("map-explore", function()
         return {auto_resume = true}
     end)
 
@@ -905,12 +907,25 @@ function f2t_map_explore_status()
         cecho("\n<yellow>[map-explore]<reset> No exploration in progress\n"); return
     end
     cecho("\n<green>[map]<reset> Exploration Status\n\n")
+    local state = F2T_MAP_EXPLORE_STATE
     local state_str = "ACTIVE"
-    if F2T_MAP_EXPLORE_STATE.paused then
-        state_str = F2T_MAP_EXPLORE_STATE.paused_reason == "stranded" and "PAUSED (stranded)" or "PAUSED"
+    if state.paused then
+        state_str = string.format("PAUSED (%s)", state.paused_reason or "no reason recorded")
+    elseif state.pause_requested then
+        state_str = "PAUSING after this step"
     end
     cecho(string.format("  State: <white>%s<reset>\n", state_str))
-    cecho(string.format("  Phase: <white>%s<reset>\n", F2T_MAP_EXPLORE_STATE.phase or "unknown"))
+    cecho(string.format("  Phase: <white>%s<reset>  Mode: <white>%s<reset>\n", state.phase or "unknown",
+        state.mode or "planet"))
+    if state.stop_when then cecho("  Ends early once its route is found\n") end
+    if state.refuel_state then cecho(string.format("  Refuel detour: <white>%s<reset>\n", state.refuel_state.phase)) end
+    if state.planned_exit then
+        cecho(string.format("  Heading for: room %s, then %s\n", tostring(state.planned_exit.room_id),
+            tostring(state.planned_exit.direction)))
+    end
+    if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then
+        cecho(string.format("  Walk in progress%s\n", F2T_SPEEDWALK_CUSTOMS_PENDING and " (customs recovery)" or ""))
+    end
     f2t_map_explore_show_statistics()
     cecho(string.format("  Unexplored exits: <white>%d<reset>\n", #F2T_MAP_EXPLORE_STATE.frontier_stack))
     local current_room = F2T_MAP_CURRENT_ROOM_ID
@@ -1019,11 +1034,46 @@ function f2t_map_explore_check_stop_condition()
     return true
 end
 
+-- Watchdog: a run navigating with nothing in flight (no walk, customs, refuel
+-- or escape) should always be on its way somewhere. One that has gone quiet
+-- takes its next step rather than sitting there; the message marks where.
+local STALL_SECONDS = 10
+local lastActivity = os.time()
+
+local function noteActivity() lastActivity = os.time() end
+
+local function checkForStall()
+    local state = F2T_MAP_EXPLORE_STATE
+    if not state.active or state.paused or state.pause_requested or state.phase ~= "navigating"
+        or state.refuel_state or state.escape_state
+        or F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then
+        noteActivity()
+        return
+    end
+    if os.time() - lastActivity < STALL_SECONDS then return end
+    cecho("\n<yellow>[map-explore]<reset> Exploring had stalled; taking the next step\n")
+    noteActivity()
+    f2t_map_explore_next_step()
+end
+
+if F2T_EXPLORE_WATCHDOG_ID then killTimer(F2T_EXPLORE_WATCHDOG_ID) end
+F2T_EXPLORE_WATCHDOG_ID = tempTimer(5, checkForStall, true)
+
 function f2t_map_explore_next_step()
-    if not F2T_MAP_EXPLORE_STATE.active then return end
-    if F2T_MAP_EXPLORE_STATE.paused then return end
+    noteActivity()
+    if not F2T_MAP_EXPLORE_STATE.active then
+        f2t_debug_log("[map/explore] next step: no run active")
+        return
+    end
+    if F2T_MAP_EXPLORE_STATE.paused then
+        f2t_debug_log("[map/explore] next step: paused (%s)", tostring(F2T_MAP_EXPLORE_STATE.paused_reason))
+        return
+    end
     if f2t_map_explore_check_deferred_pause() then return end
-    if F2T_MAP_EXPLORE_STATE.phase == "paused_death" then return end
+    if F2T_MAP_EXPLORE_STATE.phase == "paused_death" then
+        f2t_debug_log("[map/explore] next step: paused for a death")
+        return
+    end
 
     -- Every kind of exploration steps through here, so this is where an
     -- uninsured player is stopped and asked before walking into the unknown.
@@ -1053,6 +1103,8 @@ function f2t_map_explore_next_step()
     end
 
     local phase = F2T_MAP_EXPLORE_STATE.phase
+    f2t_debug_log("[map/explore] next step: phase %s, mode %s, %d unexplored exits", tostring(phase),
+        tostring(F2T_MAP_EXPLORE_STATE.mode), #F2T_MAP_EXPLORE_STATE.frontier_stack)
 
     -- Travel phases are driven by arrivals, not by this loop. Reaching here
     -- in one means the arrival that was supposed to drive it never came - a
@@ -1083,8 +1135,9 @@ end
 
 function f2t_map_explore_on_room_change()
     if not F2T_MAP_EXPLORE_STATE.active then return end
+    noteActivity()
     if F2T_MAP_EXPLORE_STATE.paused then return end
-    if F2T_SPEEDWALK_ACTIVE then return end
+    if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
 
     -- Before any layer acts on this arrival: it may have been the one that
     -- made the destination reachable, and everything below here is the sweep
