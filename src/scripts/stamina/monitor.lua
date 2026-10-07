@@ -124,18 +124,7 @@ end
 
 -- The closest mapped bar by walking steps, or nil when none is reachable.
 function f2tStaminaNearestBar(fromRoom)
-    fromRoom = fromRoom or F2T_MAP_CURRENT_ROOM_ID
-    if not fromRoom or not roomExists(fromRoom) then return nil end
-    local best, bestSteps = nil, nil
-    for _, roomId in ipairs(searchRoomUserData("fed2_flag_bar", "true") or {}) do
-        roomId = tonumber(roomId)
-        if roomId == fromRoom then return roomId, 0 end
-        if roomId and getPath(fromRoom, roomId) then
-            local steps = #speedWalkDir
-            if not bestSteps or steps < bestSteps then best, bestSteps = roomId, steps end
-        end
-    end
-    return best, bestSteps
+    return f2t_map_nearest_room_with_flag("bar", fromRoom)
 end
 
 -- Destination string for f2t_map_navigate plus a name to show the player.

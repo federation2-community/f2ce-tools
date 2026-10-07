@@ -150,6 +150,26 @@ function f2t_map_navigate(destination, opts)
     return settle("walking")
 end
 
+--- Navigate and run on_settled(arrived, result) once the walk is over, however
+--- it went: result is "arrived", "completed", "stopped" or "failed"
+--- @param destination string|number
+--- @param on_settled function
+function f2t_map_walk_to(destination, on_settled)
+    f2t_map_navigate(destination, {
+        compensate_incomplete_map = true,
+        on_result = function(ok, status)
+            if status == "arrived" then on_settled(true, "arrived") return end
+            if not ok then on_settled(false, "failed") return end
+            local handler_id
+            handler_id = registerAnonymousEventHandler("f2tSpeedwalkFinished", function(_, result, _, settled)
+                if not settled then return end
+                killAnonymousEventHandler(handler_id)
+                on_settled(result == "completed", result)
+            end)
+        end,
+    })
+end
+
 -- ── Hint handling ────────────────────────────────────────────────────────────
 -- resolve_location couldn't find the destination outright, but returned a hint
 -- worth acting on: a locally-known-but-incomplete planet/system, or a bare

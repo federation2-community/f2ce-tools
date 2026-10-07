@@ -247,6 +247,12 @@ local function buildContentDef()
                         if mvShell then mvShell:raise() end
                     end
 
+                    -- "Nearest ▾" room-type dropdown, top-left under the info lines.
+                    if f2tBuildMapNearest then
+                        local nearShell = f2tBuildMapNearest(slotContent, gid)
+                        if nearShell then nearShell:raise() end
+                    end
+
                     -- Settings gear (manual import/export) — top of the stack.
                     if f2tBuildMapSettings then
                         local setShell = f2tBuildMapSettings(slotContent, gid)

@@ -29,6 +29,23 @@ function f2t_map_find_room_with_flag(area_id, flag)
     return preferReachable(candidates)
 end
 
+-- The closest mapped room anywhere carrying `flag`, by walking steps, or nil
+-- when none is reachable. Also returns the step count.
+function f2t_map_nearest_room_with_flag(flag, from_room)
+    from_room = from_room or F2T_MAP_CURRENT_ROOM_ID
+    if not from_room or not roomExists(from_room) then return nil end
+    local best, best_steps = nil, nil
+    for _, room_id in ipairs(searchRoomUserData("fed2_flag_" .. flag, "true") or {}) do
+        room_id = tonumber(room_id)
+        if room_id == from_room then return room_id, 0 end
+        if room_id and getPath(from_room, room_id) then
+            local steps = #speedWalkDir
+            if not best_steps or steps < best_steps then best, best_steps = room_id, steps end
+        end
+    end
+    return best, best_steps
+end
+
 -- Unlike f2t_map_find_room_with_flag, never falls back to an unreachable room.
 function f2t_map_find_reachable_room_with_flag(area_id, flag, from_room)
     if not area_id or not from_room or not roomExists(from_room) then return nil end

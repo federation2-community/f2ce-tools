@@ -190,6 +190,8 @@ local function env_hex(env_id)
     return string.format("#%02x%02x%02x", c[1], c[2], c[3])
 end
 
+-- Entries with `flag` are room types the map's Nearest menu can walk to;
+-- menu_label/menu_symbol override label/symbol there.
 function f2t_map_get_legend_data()
     return {
         {label="Death Room",              symbol=SYM_DEATH,      html_color=env_hex(ENV_DEATH),
@@ -199,23 +201,25 @@ function f2t_map_get_legend_data()
         {label="Cartel Link",             symbol=SYM_LINK,       html_color=env_hex(ENV_LINK_CARTEL),
             note="Hub system jump gate"},
         {label="System Link",             symbol=SYM_LINK,       html_color=env_hex(ENV_LINK_SYSTEM),
-            text_color="#141400", note="Jump gate"},
+            text_color="#141400", note="Jump gate", flag="link", menu_label="Link"},
         {label="Orbit",                   symbol="E / O",        html_color=env_hex(ENV_ORBIT),
-            text_color="#001a00", note="Above planet (first letter = planet name)"},
+            text_color="#001a00", note="Above planet (first letter = planet name)",
+            flag="orbit", menu_symbol="O"},
         {label="Multi-service",           symbol="🚀 / $ …",     html_color=env_hex(ENV_MULTI_FLAG),
             note="2+ services — top priority shown"},
         {label="Shuttlepad",              symbol=SYM_SHUTTLEPAD, html_color=env_hex(ENV_SHUTTLEPAD),
-            text_color="#001a1a", note="Dock / launch pad"},
+            text_color="#001a1a", note="Dock / launch pad", flag="shuttlepad"},
         {label="Exchange",                symbol=SYM_EXCHANGE,   html_color=env_hex(ENV_EXCHANGE),
-            note="Commodity market"},
+            note="Commodity market", flag="exchange"},
         {label="Shipyard",                symbol=SYM_SHIPYARD,   html_color=env_hex(ENV_SHIPYARD),
-            text_color="#ffd090", note="Repairs & upgrades"},
+            text_color="#ffd090", note="Repairs & upgrades", flag="shipyard"},
         {label="Hospital",                symbol=SYM_HOSPITAL,   html_color=env_hex(ENV_HOSPITAL),
-            text_color="#88dd88", note="Medical"},
+            text_color="#88dd88", note="Medical", flag="hospital"},
         {label="Bar",                     symbol=SYM_BAR,        html_color=env_hex(ENV_BAR),
-            text_color="#1a0800", note="Food & drink"},
+            text_color="#1a0800", note="Food & drink", flag="bar"},
         {label="Armstrong Cuthbert (AC)", symbol=SYM_COURIER,    html_color=env_hex(ENV_COURIER),
-            text_color="#141400", note="AC offices — courier jobs"},
+            text_color="#141400", note="AC offices — courier jobs",
+            flag="courier", menu_label="AC Office"},
     }
 end
 

@@ -2,5 +2,6 @@
   {"name": "table_system"},
   {"name": "map_movement"},
   {"name": "map_settings"},
+  {"name": "map_nearest"},
   {"name": "workspace"}
 ]
