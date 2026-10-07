@@ -70,7 +70,7 @@ With Muxlet installed, F2CE-Tools adds these panels to the Content Library:
 - **Futures Market** — contracts on offer and your open positions, with profit scoring
 - **Commerce** — hauling for every rank, each with the Haul start/pause/stop strip and mode picker:
   - **Jobs** — Armstrong Cuthbert workboard with route distance and effective pay; Commanders and Captains accept, collect and deliver, Industrialists and up post and offer jobs
-  - **Akaturi** — the current courier contract and points toward promotion
+  - **Akaturi** — a courier contract's three steps (take it at an AC office, pick up, drop off) with one button for the next, and credits toward Merchant
   - **Trading** — price checks and full price scans across the cartel or, with the Premium Ticker, the galaxy (using whichever of the Remote Price Check Service, its Upgrade and the Premium Ticker you own; with none, the exchange you're in), scored for hauling, plus exchange hauling's live cycle
   - **Planets** — your planets' deficits, excesses, and the planet-supply job queue (Founder+)
 - **Commodities** — reference table of names, codes, and base prices

@@ -14,6 +14,15 @@ function f2t_format_compact(num)
     end
 end
 
+-- Whole number with thousands separators: 55000 -> "55,000"
+function f2t_format_number(num)
+    if not num or type(num) ~= "number" then return tostring(num or "") end
+    local sign = num < 0 and "-" or ""
+    local digits = tostring(math.floor(math.abs(num)))
+    local grouped = digits:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+    return sign .. grouped
+end
+
 function f2t_format_percent(num)
     if not num or type(num) ~= "number" then return "0%" end
     return string.format("%d%%", math.floor(num * 100))

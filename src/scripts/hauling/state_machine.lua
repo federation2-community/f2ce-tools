@@ -232,29 +232,20 @@ function f2t_hauling_stop()
         -- Otherwise (fetching/selecting phase), we can stop immediately below
     end
 
-    -- For Akaturi contracts, check if we've picked up a package
-    if F2T_HAULING_STATE.mode == "akaturi" and F2T_HAULING_STATE.akaturi_contract then
-        local phase = F2T_HAULING_STATE.current_phase
-        -- If we're in a phase where we've committed to a contract, finish it
-        if phase == "akaturi_collecting" or phase == "akaturi_navigating_delivery" or phase == "akaturi_delivering" then
+    -- Akaturi: a package in hand is delivered first; otherwise stop now
+    if F2T_HAULING_STATE.mode == "akaturi" then
+        local contract = f2t_akaturi_contract()
+        if F2T_HAULING_STATE.current_phase == "akaturi_working_dropoff" and contract then
             F2T_HAULING_STATE.stopping = true
-            local contract = F2T_HAULING_STATE.akaturi_contract
-
-            -- Different message depending on whether we have package
-            if F2T_HAULING_STATE.akaturi_package_collected then
-                cecho(string.format("\n<green>[hauling]<reset> Stopping after delivering %s to %s...\n",
-                    contract.item or "package", contract.delivery_planet or "destination"))
-            else
-                cecho(string.format(
-                    "\n<green>[hauling]<reset> Stopping after completing contract (pickup from %s)...\n",
-                    contract.pickup_planet or "unknown"))
-            end
-
+            cecho(string.format("\n<green>[hauling]<reset> Stopping after delivering the %s to %s...\n",
+                contract.package or "package", contract.deliveryPlanet))
             cecho("\n<dim_grey>Use 'haul terminate' to stop immediately<reset>\n")
-            f2t_debug_log("[hauling/akaturi] Graceful stop requested, will finish contract (phase: %s)", phase)
             return
         end
-        -- Otherwise (getting job/searching/navigating to pickup), we can stop immediately below
+        f2t_akaturi_visit_cancel("hauling")
+        if F2T_SPEEDWALK_ACTIVE then f2t_map_speedwalk_stop() end
+        f2t_hauling_do_stop()
+        return
     end
 
     -- For PO hauling, check if we have cargo in hold
@@ -295,6 +286,20 @@ function f2t_hauling_stop()
         end
         f2t_hauling_do_stop()
     end
+end
+
+-- Called by death recovery. A death loses cargo and AC jobs, so those runs end;
+-- an Akaturi contract survives an insured death, so that run pauses and
+-- resumes on f2tDeathRecovered (see akaturi_phases.lua).
+function f2t_hauling_on_death()
+    if not F2T_HAULING_STATE.active then return end
+    if F2T_HAULING_STATE.mode ~= "akaturi" then
+        f2t_hauling_terminate()
+        return
+    end
+    if not F2T_HAULING_STATE.paused then f2t_hauling_pause(true) end
+    F2T_HAULING_STATE.paused_for_death = true
+    raiseEvent("f2tHaulingStatusChanged")
 end
 
 -- Terminate hauling automation immediately
@@ -444,32 +449,12 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.ac_completing = false
     F2T_HAULING_STATE.ac_50_milestone_shown = false
 
-    -- Clear Akaturi contract state
-    F2T_HAULING_STATE.akaturi_contract = {
-        pickup_planet = nil,
-        pickup_room = nil,
-        delivery_planet = nil,
-        delivery_room = nil,
-        item = nil
-    }
-    F2T_HAULING_STATE.akaturi_package_collected = false
-    F2T_HAULING_STATE.akaturi_package_delivered = false
-    F2T_HAULING_STATE.akaturi_pickup_error = false
-    F2T_HAULING_STATE.akaturi_delivery_error = false
-    F2T_HAULING_STATE.akaturi_pickup_sent = false
-    F2T_HAULING_STATE.akaturi_delivery_sent = false
-    F2T_HAULING_STATE.akaturi_payment_amount = nil
-
-    -- Clear Akaturi capture state
-    if F2T_AKATURI_STATE then
-        F2T_AKATURI_STATE.capturing_job = false
-        F2T_AKATURI_STATE.capturing_pickup = false
-        F2T_AKATURI_STATE.job_buffer = {}
-        F2T_AKATURI_STATE.pickup_buffer = {}
-        F2T_AKATURI_STATE.pickup_matches = {}
-        F2T_AKATURI_STATE.delivery_matches = {}
-        F2T_AKATURI_STATE.current_match_index = 0
-    end
+    -- Clear Akaturi state; the contract itself stays with the game
+    F2T_HAULING_STATE.akaturi_take_attempts = 0
+    F2T_HAULING_STATE.akaturi_room_waits = 0
+    F2T_HAULING_STATE.akaturi_promotion_noted = false
+    F2T_HAULING_STATE.akaturi_start_points = 0
+    F2T_HAULING_STATE.paused_for_death = false
 
     -- Clear PO state, keeping what the last session worked on for display
     if #F2T_HAULING_STATE.po_job_queue > 0 then
@@ -539,6 +524,12 @@ function f2t_hauling_pause(immediate)
             f2t_debug_log("[hauling] Killed cycle pause timer (will recreate on resume)")
         end
 
+        -- An Akaturi room search starts over on resume
+        if F2T_HAULING_STATE.mode == "akaturi" then
+            f2t_akaturi_visit_cancel("hauling")
+            F2T_HAULING_STATE.paused_speedwalk_destination = nil
+        end
+
         -- Stop any active speedwalk (will recompute on resume)
         if F2T_SPEEDWALK_ACTIVE then
             f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
@@ -595,6 +586,7 @@ function f2t_hauling_resume()
     end
 
     F2T_HAULING_STATE.paused = false
+    F2T_HAULING_STATE.paused_for_death = false
     F2T_HAULING_STATE.pause_requested = false
     f2t_map_brief_hold_acquire("hauling")
     raiseEvent("f2tHaulingStatusChanged")
@@ -614,9 +606,9 @@ function f2t_hauling_resume()
         end)
     end
 
-    -- Akaturi work done by hand while paused moves the contract past the
-    -- phase hauling paused in, so the old walk no longer applies.
-    if F2T_HAULING_STATE.mode == "akaturi" and f2t_hauling_akaturi_reconcile() then
+    -- Akaturi phases restart from the contract as it now stands, which also
+    -- covers work done by hand while paused.
+    if F2T_HAULING_STATE.mode == "akaturi" then
         F2T_HAULING_STATE.paused_speedwalk_destination = nil
     end
 
@@ -870,43 +862,10 @@ function f2t_hauling_transition(new_phase)
     elseif new_phase == "ac_delivering" then
         f2t_hauling_phase_ac_deliver()
     -- Akaturi phases
-    elseif new_phase == "akaturi_getting_job" then
+    -- Akaturi phases all resume from the contract as it stands
+    elseif new_phase == "akaturi_getting_job" or new_phase == "akaturi_reading_contract"
+        or new_phase == "akaturi_working_pickup" or new_phase == "akaturi_working_dropoff" then
         f2t_hauling_phase_akaturi_get_job()
-    elseif new_phase == "akaturi_parsing_pickup" then
-        f2t_hauling_phase_akaturi_parse_pickup()
-    elseif new_phase == "akaturi_searching_pickup" then
-        f2t_hauling_phase_akaturi_search_pickup()
-    elseif new_phase == "akaturi_navigating_pickup" then
-        f2t_hauling_phase_akaturi_navigate_pickup()
-    elseif new_phase == "akaturi_collecting" then
-        f2t_hauling_phase_akaturi_collect()
-    elseif new_phase == "akaturi_searching_delivery" then
-        -- This phase is handled inline in collect phase
-        f2t_debug_log("[hauling] Akaturi delivery search handled in collect phase")
-    elseif new_phase == "akaturi_navigating_delivery" then
-        f2t_hauling_phase_akaturi_navigate_delivery()
-    elseif new_phase == "akaturi_delivering" then
-        f2t_hauling_phase_akaturi_deliver()
-    elseif new_phase == "akaturi_navigating_to_planet_for_pickup" then
-        -- Special phase: user is navigating to planet for manual room finding
-        -- This should only be called after user manually found room and resumed
-        -- If speedwalk is still active, event handler will handle it
-        if not F2T_SPEEDWALK_ACTIVE then
-            f2t_debug_log("[hauling/akaturi] User manually found pickup room, transitioning to collecting")
-            f2t_hauling_transition("akaturi_collecting")
-        else
-            f2t_debug_log("[hauling/akaturi] Still navigating to planet, waiting for completion")
-        end
-    elseif new_phase == "akaturi_navigating_to_planet_for_delivery" then
-        -- Special phase: user is navigating to planet for manual room finding
-        -- This should only be called after user manually found room and resumed
-        -- If speedwalk is still active, event handler will handle it
-        if not F2T_SPEEDWALK_ACTIVE then
-            f2t_debug_log("[hauling/akaturi] User manually found delivery room, transitioning to delivering")
-            f2t_hauling_transition("akaturi_delivering")
-        else
-            f2t_debug_log("[hauling/akaturi] Still navigating to planet, waiting for completion")
-        end
     -- Planet Owner phases
     elseif new_phase == "po_scanning_system" then
         f2t_hauling_phase_po_scan_system()
@@ -997,15 +956,9 @@ local PHASE_LABELS = {
     ac_navigating_to_dest        = "heading to dropoff",
     ac_delivering                = "delivering cargo",
     akaturi_getting_job          = "getting contract",
-    akaturi_parsing_pickup       = "reading contract",
-    akaturi_searching_pickup     = "finding pickup",
-    akaturi_navigating_pickup    = "heading to pickup",
-    akaturi_collecting           = "collecting package",
-    akaturi_searching_delivery   = "finding dropoff",
-    akaturi_navigating_delivery  = "heading to dropoff",
-    akaturi_delivering           = "delivering package",
-    akaturi_navigating_to_planet_for_pickup   = "finding pickup",
-    akaturi_navigating_to_planet_for_delivery = "finding dropoff",
+    akaturi_reading_contract     = "reading contract",
+    akaturi_working_pickup       = "finding pickup",
+    akaturi_working_dropoff      = "finding dropoff",
     po_scanning_system           = "scanning system",
     po_scanning_exchanges        = "scanning exchanges",
     po_building_queue            = "planning jobs",

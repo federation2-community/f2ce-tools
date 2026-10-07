@@ -72,21 +72,12 @@ F2T_HAULING_STATE = {
     ac_completing = false,          -- Job-complete accounting is running (guards against double-counting)
     ac_50_milestone_shown = false,  -- Whether 50 credit message shown
 
-    -- Akaturi contract tracking (Adventurer rank)
-    akaturi_contract = {
-        pickup_planet = nil,
-        pickup_room = nil,
-        delivery_planet = nil,
-        delivery_room = nil,
-        item = nil
-    },
-    akaturi_package_collected = false,
-    akaturi_package_delivered = false,
-    akaturi_pickup_error = false,
-    akaturi_delivery_error = false,
-    akaturi_pickup_sent = false,
-    akaturi_delivery_sent = false,
-    akaturi_payment_amount = nil,
+    -- Akaturi (Adventurer rank); the contract itself is F2T_AKATURI_CONTRACT
+    akaturi_take_attempts = 0,       -- ak sent without a contract arriving
+    akaturi_room_waits = 0,          -- Waits for the contract's room text
+    akaturi_promotion_noted = false, -- Promotion-ready message shown this session
+    akaturi_start_points = 0,        -- Credits at haul start; below 25 means stop at 25
+    paused_for_death = false,        -- Paused by death recovery; resumes on f2tDeathRecovered
 
     -- Planet Owner mode state (Founder+ rank)
     po_owned_planets = {},           -- Array of owned planet names (discovered during scan)

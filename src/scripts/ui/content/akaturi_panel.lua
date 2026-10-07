@@ -1,15 +1,17 @@
 -- Commerce > Akaturi: the Adventurer's courier work, by hand or automated.
--- Shows Akaturi points toward promotion and the contract the player holds
--- (from the game itself, akaturi_tracker.lua, so a contract taken by hand
--- shows the same as one hauling took). The AC office, pickup and dropoff
--- rows walk there on click; the action row offers the next step (take a
--- contract, go to the pickup and pick up, go to the dropoff and drop off).
--- Haul ▸ Start in the strip above runs the whole loop instead.
+-- A contract runs in three steps: take it at an Armstrong Cuthbert office (ak),
+-- pick the package up in a room named by the contract (pickup), then drop it
+-- off in a room on another Sol planet revealed at pickup (dropoff). The panel
+-- shows credits toward promotion, the three steps with the current one lit,
+-- and one button for the next step. Rooms are found by the shared finder
+-- (akaturi_finder.lua), which hauling uses too.
 
 local CELL_PT  = 10
 local LABEL_PT = 8
 local ROW_H    = 24
+local STEP_H   = 42
 local H_ACT    = 26
+local BAR_H    = 5
 
 local CELL_FONT = "font-family:Consolas,Monaco,monospace;"
 
@@ -25,17 +27,31 @@ local _TOOLTIP_CSS = [[
     }
 ]]
 
-local _ROW_CSS = [[
+local _PLAIN_CSS = [[
     QLabel {
-        background-color: transparent;
-        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        padding-left: 8px;
+        background-color: transparent; border: none;
+        padding-left: 8px; padding-right: 8px;
+        qproperty-wordWrap: true;
     }
 ]] .. _TOOLTIP_CSS
 
-local _LINK_ROW_CSS = _ROW_CSS .. [[
-    QLabel::hover { background-color: rgba(38,44,66,235); }
-]]
+local function stepCss(state, accent)
+    local background, edge = "transparent", "rgba(0,0,0,0)"
+    if state == "current" then
+        background, edge = "rgba(30,34,52,235)", accent
+    end
+    return string.format([[
+        QLabel {
+            background-color: %s;
+            border: none; border-left: 3px solid %s;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-left: 8px; padding-right: 8px;
+            qproperty-wordWrap: true;
+        }
+    ]], background, edge) .. (state == "current" and [[
+        QLabel::hover { background-color: rgba(42,48,72,240); }
+    ]] or "") .. _TOOLTIP_CSS
+end
 
 local _ACT_BAR_CSS = [[
     background-color: rgba(16, 18, 28, 230);
@@ -75,16 +91,19 @@ local _BTN_IDLE_CSS = [[
     }
 ]] .. _TOOLTIP_CSS
 
-local _BTN_CSS = {
-    take    = actionBtnCss("#3aa0ff", "#5cb8ff"),
-    go      = actionBtnCss("#00b8b8", "#33d6d6"),
-    pickup  = actionBtnCss("#3ecf5e", "#5ce87c"),
-    dropoff = actionBtnCss("#e0b84d", "#f0cc66"),
-    details = actionBtnCss("#8a7ae0", "#a596f0"),
+local ACCENT = {
+    take     = { "#3aa0ff", "#5cb8ff" },
+    find     = { "#00b8b8", "#33d6d6" },
+    pickup   = { "#3ecf5e", "#5ce87c" },
+    delivery = { "#e0b84d", "#f0cc66" },
+    stop     = { "#e05d5d", "#f07a7a" },
+    details  = { "#8a7ae0", "#a596f0" },
 }
 
-local BUTTON_SLOTS = 3
-local AKATURI_GOAL = 25
+local _BTN_CSS = {}
+for key, colors in pairs(ACCENT) do _BTN_CSS[key] = actionBtnCss(colors[1], colors[2]) end
+
+local GREEN, DIM, MUTED, TEXT, PLANET = "#3ecf5e", "#666666", "#8a8fa3", "#e8ebf5", "#00cccc"
 
 -- Per-pane state, keyed by target._gid
 local instances = {}
@@ -94,11 +113,9 @@ local function span(color, text, bold)
         CELL_FONT, color, bold and "font-weight:bold;" or "", text)
 end
 
-local function field(label, value)
-    return span("#888888", (string.format("%-9s", label):gsub(" ", "&nbsp;"))) .. value
+local function escape(text)
+    return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
 end
-
-local function dash() return span("#666666", "—") end
 
 -- Hauling is driving Akaturi contracts right now (not paused or stopped).
 local function automationRunning()
@@ -106,56 +123,192 @@ local function automationRunning()
     return state and state.active and state.mode == "akaturi" and not state.paused
 end
 
-local function pointsHtml()
-    local points = f2t_akaturi_get_points and f2t_akaturi_get_points()
+-- ── Credits ──────────────────────────────────────────────────────────────────
+
+local function promotionTip()
+    return string.format(
+        "Promotion to Merchant needs %d Akaturi credits and %s ig in the bank; apply at the " ..
+        "Trading Guild HQ on Earth.\nContracts keep paying and earning credits after %d. " ..
+        "An Adventurer's cash over %s ig is taxed at the next login.",
+        F2T_AKATURI_PROMOTE_AT, f2t_format_number(F2T_AKATURI_PROMOTE_CASH), F2T_AKATURI_PROMOTE_AT,
+        f2t_format_number(F2T_AKATURI_CASH_CAP))
+end
+
+local function renderCredits(inst)
+    local points = f2t_akaturi_get_points()
+    local goal = F2T_AKATURI_PROMOTE_AT
+    inst.credits:setToolTip(promotionTip())
     if not points then
-        return field("Points", span("#666666", "shown at Adventurer rank"))
+        inst.credits:echo(span(MUTED, "Akaturi credits show at Adventurer rank"))
+        inst.bar:hide()
+        return
     end
-    local color = points >= AKATURI_GOAL and "#3ecf5e" or "#e8ebf5"
-    local note = points >= AKATURI_GOAL and span("#3ecf5e", "  ready to promote")
-        or span("#888888", string.format("  %d more to promote", AKATURI_GOAL - points))
-    return field("Points", span(color, tostring(points), true) .. span("#888888", "/" .. AKATURI_GOAL) .. note)
+
+    local note
+    if points < goal then
+        note = span(MUTED, string.format("%d to Merchant", goal - points))
+    else
+        local short = F2T_AKATURI_PROMOTE_CASH - (f2t_ac_get_cash() or 0)
+        note = short > 0 and span("#e0b84d", string.format("%s ig short", f2t_format_number(short)))
+            or span(GREEN, "ready to promote", true)
+    end
+    inst.credits:echo(span(points >= goal and GREEN or TEXT, tostring(points), true) ..
+        span(MUTED, string.format("/%d credits · ", goal)) .. note)
+
+    local fill = math.min(points / goal, 1)
+    local fillColor = points >= goal and "#3ecf5e" or "#3aa0ff"
+    local track = "rgba(60,65,90,180)"
+    local css
+    if fill <= 0 then
+        css = string.format("background-color: %s;", track)
+    elseif fill >= 1 then
+        css = string.format("background-color: %s;", fillColor)
+    else
+        css = string.format("background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, " ..
+            "stop:0 %s, stop:%.3f %s, stop:%.3f %s, stop:1 %s);",
+            fillColor, fill, fillColor, fill + 0.001, track, track)
+    end
+    inst.bar:setStyleSheet(css .. " border: none; border-radius: 2px;")
+    inst.bar:show()
+end
+
+-- ── Steps ────────────────────────────────────────────────────────────────────
+
+local VISIT_NOTE = { walking = "heading there", exploring = "exploring for it", trying = "trying this room" }
+
+-- Live progress of a room search on this leg, or "you're here".
+local function legNote(kind, planet, room)
+    local visit = f2t_akaturi_visit_current()
+    if visit and visit.kind == kind and VISIT_NOTE[visit.stage] then
+        return span("#7aa2ff", "  ← " .. VISIT_NOTE[visit.stage])
+    end
+    if room and f2t_akaturi_at_room(planet, room) then
+        return span(GREEN, "  ← you're here")
+    end
+    return ""
 end
 
 local function placeHtml(planet, room)
-    return span("#00cccc", planet) .. span("#888888", "  " .. (room or "room not read yet"))
+    return span(PLANET, escape(planet)) .. span(MUTED, " · ") ..
+        (room and span(TEXT, escape(room)) or span(MUTED, "reading the room from the contract…"))
 end
 
--- What the action row offers for where the contract stands.
-local function stageButtons(contract)
-    if not contract then
-        return {
-            { key = "take", label = "📋 Take", tip = "Go to an Armstrong Cuthbert office and take a contract (ak)",
-              run = f2t_akaturi_take_contract },
-        }
-    end
-    local buttons
-    if not contract.collected then
-        buttons = {
-            { key = "go", label = "🧭 Go", tip = "Walk to the pickup room",
-              run = function() f2t_akaturi_go_to_room("pickup") end },
-            { key = "pickup", label = "📦 Pickup", tip = "Pick up the package here (pickup)",
-              run = function() send("pickup") end },
-        }
+local MARK = { done = { "✓", GREEN }, current = { "▸", "#7aa2ff" }, todo = { "○", DIM } }
+
+local function stepHtml(state, title, detail)
+    local mark = MARK[state]
+    local titleColor = state == "todo" and DIM or (state == "done" and MUTED or TEXT)
+    return span(mark[2], mark[1] .. " ", true) .. span(titleColor, title, state == "current") ..
+        "<br>" .. span(MUTED, "&nbsp;&nbsp;") .. detail
+end
+
+local function setStep(lbl, state, accentKey, title, detail, tip, onClick)
+    lbl:setStyleSheet(stepCss(state, ACCENT[accentKey][1]))
+    lbl:echo(stepHtml(state, title, detail))
+    lbl:setToolTip(tip or "")
+    lbl:setClickCallback(onClick or function() end)
+end
+
+local function renderSteps(inst, contract)
+    local canAct = not automationRunning()
+    local rankOk = f2t_akaturi_rank_ok()
+
+    if contract then
+        setStep(inst.stepTake, "done", "take", "Take a contract", span(MUTED, "contract in hand"))
+    elseif not rankOk then
+        setStep(inst.stepTake, "todo", "take", "Take a contract",
+            span(MUTED, "Akaturi contracts are for Adventurers"))
+    elseif f2t_akaturi_at_office() then
+        setStep(inst.stepTake, "current", "take", "Take a contract",
+            span(GREEN, "you can take one here (ak)"),
+            "Take a contract here (ak)", canAct and f2t_akaturi_take_contract or nil)
     else
-        buttons = {
-            { key = "go", label = "🧭 Go", tip = "Walk to the dropoff room",
-              run = function() f2t_akaturi_go_to_room("delivery") end },
-            { key = "dropoff", label = "✅ Drop off", tip = "Hand over the package here (dropoff)",
-              run = function() send("dropoff") end },
+        local _, label = f2t_akaturi_office_target()
+        setStep(inst.stepTake, "current", "take", "Take a contract",
+            span(MUTED, "nearest place to take one: ") .. span(PLANET, escape(label)),
+            "Akaturi work is all in Sol: contracts come from an Armstrong Cuthbert office there. " ..
+            "Click to walk to one (from outside Sol too) and take a contract.",
+            canAct and f2t_akaturi_take_contract or nil)
+    end
+
+    if not contract then
+        setStep(inst.stepPickup, "todo", "pickup", "Pick up the package",
+            span(DIM, "a room on a Sol planet, named in the contract"))
+    elseif contract.collected then
+        setStep(inst.stepPickup, "done", "pickup", "Pick up the package",
+            span(MUTED, "collected on ") .. span(MUTED, escape(contract.pickupPlanet)))
+    else
+        setStep(inst.stepPickup, "current", "pickup", "Pick up the package",
+            placeHtml(contract.pickupPlanet, contract.pickupRoom) ..
+                legNote("pickup", contract.pickupPlanet, contract.pickupRoom),
+            string.format("%s on %s. Click to find it and pick up; rooms sharing the name are tried " ..
+                "nearest first, then the planet is explored.", contract.pickupRoom or "The room",
+                contract.pickupPlanet),
+            canAct and f2t_akaturi_work_leg or nil)
+    end
+
+    if not contract then
+        setStep(inst.stepDropoff, "todo", "delivery", "Drop it off",
+            span(DIM, "a room on another Sol planet"))
+    elseif not contract.collected then
+        setStep(inst.stepDropoff, "todo", "delivery", "Drop it off",
+            span(DIM, "revealed when you pick up"))
+    else
+        setStep(inst.stepDropoff, "current", "delivery", "Drop it off",
+            placeHtml(contract.deliveryPlanet, contract.deliveryRoom) ..
+                legNote("delivery", contract.deliveryPlanet, contract.deliveryRoom),
+            string.format("%s on %s. Click to find it and drop off; rooms sharing the name are tried " ..
+                "nearest first, then the planet is explored.", contract.deliveryRoom or "The room",
+                contract.deliveryPlanet),
+            canAct and f2t_akaturi_work_leg or nil)
+    end
+end
+
+-- ── Action row ───────────────────────────────────────────────────────────────
+
+-- The one next step, plus Details while a contract is held.
+local function actionSpecs(contract)
+    local visit = f2t_akaturi_visit_current()
+    if visit and visit.owner == "manual" then
+        return {
+            { key = "stop", label = "■ Stop", tip = "Stop looking for the room",
+              run = function() f2t_akaturi_visit_cancel() end },
         }
     end
-    buttons[#buttons + 1] = { key = "details", label = "🔎 Details",
-        tip = "Show the contract in the game (di ak); also reads the room if it isn't known",
+
+    local specs = {}
+    if not contract then
+        if f2t_akaturi_rank_ok() then
+            specs[1] = { key = "take", label = "📋 Take contract",
+                tip = "Walk to an Armstrong Cuthbert office and take a contract (ak)",
+                run = f2t_akaturi_take_contract }
+        end
+        return specs
+    end
+
+    -- Find walks there itself (searching and exploring as needed); the second
+    -- button only acts in the current room, for hunting it down by hand.
+    local kind, planet = f2t_akaturi_leg(contract)
+    local verb = kind == "pickup" and "pick up" or "drop off"
+    specs[1] = { key = "find", label = kind == "pickup" and "🧭 Find & pick up" or "🧭 Find & drop off",
+        tip = string.format("Walk to the room on %s and %s, trying rooms that share its name nearest " ..
+            "first and exploring the planet if needed", planet, verb),
+        run = f2t_akaturi_work_leg }
+    specs[2] = { key = kind, label = kind == "pickup" and "📦 Pick up" or "✅ Drop off",
+        tip = string.format("%s here (%s), for when you find the room yourself",
+            kind == "pickup" and "Pick up the package" or "Hand over the package",
+            kind == "pickup" and "pickup" or "dropoff"),
+        run = f2t_akaturi_act_here }
+    specs[3] = { key = "details", label = "🔎 Details", tip = "Show the contract in the game (di ak)",
         run = function() send("di ak") end }
-    return buttons
+    return specs
 end
 
 local function renderButtons(inst, contract)
-    local buttons = stageButtons(contract)
+    local specs = actionSpecs(contract)
     local busy = automationRunning()
-    for i = 1, BUTTON_SLOTS do
-        local btn, spec = inst.buttons[i], buttons[i]
+    for i, btn in ipairs(inst.buttons) do
+        local spec = specs[i]
         if spec then
             btn:echo("<center>" .. spec.label .. "</center>")
             if busy then
@@ -174,71 +327,52 @@ local function renderButtons(inst, contract)
     end
 end
 
-local function statusHtml(contract)
-    if automationRunning() then
-        local snap = f2tHaulingSnapshot()
-        return field("Status", span("#3ecf5e", "hauling", true) ..
-            span("#888888", "  " .. (snap.phaseLabel or "")))
+-- ── Footer ───────────────────────────────────────────────────────────────────
+
+local VOID_TIP = "void cancels a contract: a 10,000 ig fine and 5 credits lost."
+
+local function renderFooter(inst, contract)
+    if contract then
+        inst.footer:echo(span(MUTED, "Package ") ..
+            span("#e6d28c", escape(contract.package or "valuable")) ..
+            span(MUTED, " · pays ") .. span(GREEN, f2t_format_number(contract.payment) .. " ig") ..
+            span(MUTED, " + 1 credit"))
+    else
+        inst.footer:echo(span(MUTED, "Pays 1,501–2,300 ig + 1 credit · no time limit"))
     end
-    if not contract then
-        return field("Status", span("#888888", "no contract. Take one at an AC office"))
+    inst.footer:setToolTip(VOID_TIP)
+
+    local state = F2T_HAULING_STATE
+    local cycles = state and state.total_cycles or 0
+    if state and state.strategy == "akaturi" and cycles > 0 then
+        inst.session:echo(span(MUTED, state.active and "This session " or "Last run ") ..
+            span(TEXT, string.format("%d contract%s", cycles, cycles == 1 and "" or "s")) ..
+            span(MUTED, " · ") .. span(GREEN, f2t_format_number(state.session_profit or 0) .. " ig"))
+        inst.session:show()
+    else
+        inst.session:hide()
     end
-    if contract.collected then
-        return field("Status", span("#e0b84d", "carry the package to the dropoff", true))
+end
+
+-- Only when the game says uninsured: a death would then be permanent.
+local function renderInsurance(inst)
+    if f2t_insurance_status() ~= false then
+        inst.insurance:hide()
+        return
     end
-    return field("Status", span("#7aa2ff", "go to the pickup", true))
+    inst.insurance:echo(span("#ff6b6b", "⚠ Not insured: a death now is permanent", true) ..
+        span(MUTED, " · click to go and insure"))
+    inst.insurance:setToolTip("Walk to the nearest insurance broker and buy a policy")
+    inst.insurance:show()
 end
 
 local function render(inst)
     local contract = f2t_akaturi_contract()
-
-    inst.info:echo(pointsHtml())
-    inst.status:echo(statusHtml(contract))
+    renderInsurance(inst)
+    renderCredits(inst)
+    renderSteps(inst, contract)
     renderButtons(inst, contract)
-
-    local office = f2t_akaturi_office_planet()
-    if f2t_akaturi_at_office() then
-        inst.office:echo(field("AC office", span("#3ecf5e", "you're here")))
-        inst.office:setToolTip("ak takes a contract here")
-    else
-        inst.office:echo(field("AC office", span("#00cccc", office)))
-        inst.office:setToolTip("Go to the Armstrong Cuthbert office on " .. office)
-    end
-
-    if contract then
-        if contract.collected then
-            inst.pickup:echo(field("Pickup", span("#3ecf5e", "collected ✓ ") ..
-                span("#888888", contract.pickupPlanet)))
-            inst.pickup:setToolTip("Go to " .. contract.pickupPlanet .. " — " .. (contract.pickupRoom or "?"))
-            inst.dropoff:echo(field("Dropoff", placeHtml(contract.deliveryPlanet, contract.deliveryRoom)))
-            inst.dropoff:setToolTip("Go to " .. contract.deliveryPlanet .. " — " .. (contract.deliveryRoom or "?"))
-        else
-            inst.pickup:echo(field("Pickup", placeHtml(contract.pickupPlanet, contract.pickupRoom)))
-            inst.pickup:setToolTip("Go to " .. contract.pickupPlanet .. " — " .. (contract.pickupRoom or "?"))
-            inst.dropoff:echo(field("Dropoff", span("#666666", "revealed at pickup")))
-            inst.dropoff:setToolTip("Revealed when the package is collected")
-        end
-        inst.package:echo(field("Package", contract.package and span("#e6d28c", contract.package) or dash()))
-        inst.payment:echo(field("Payment", span("#3ecf5e", string.format("%d ig", contract.payment))))
-    else
-        inst.pickup:echo(field("Pickup", dash()))
-        inst.pickup:setToolTip("")
-        inst.dropoff:echo(field("Dropoff", dash()))
-        inst.dropoff:setToolTip("")
-        inst.package:echo(field("Package", dash()))
-        inst.payment:echo(field("Payment", dash()))
-    end
-
-    local state = F2T_HAULING_STATE
-    local cycles = state and state.total_cycles or 0
-    local earned = state and state.session_profit or 0
-    if state and state.strategy == "akaturi" and cycles > 0 then
-        inst.session:echo(field(state.active and "Session" or "Last run",
-            span("#e8ebf5", string.format("%d contract%s", cycles, cycles == 1 and "" or "s")) ..
-            span("#888888", " · ") .. span("#3ecf5e", string.format("%d ig", earned))))
-    else
-        inst.session:echo(field("Session", dash()))
-    end
+    renderFooter(inst, contract)
 end
 
 local function renderAll()
@@ -246,9 +380,11 @@ local function renderAll()
 end
 
 registerAnonymousEventHandler("f2tAkaturiContractChanged", renderAll)
+registerAnonymousEventHandler("f2tAkaturiVisitChanged", renderAll)
 registerAnonymousEventHandler("f2tHaulingStatusChanged", renderAll)
 registerAnonymousEventHandler("gmcp.char.vitals", renderAll)
 registerAnonymousEventHandler("gmcp.room.info", renderAll)
+registerAnonymousEventHandler("f2tInsuranceChanged", renderAll)
 
 local function buildContent(target)
     local gid = target._gid
@@ -266,56 +402,58 @@ local function buildContent(target)
 
     local strip   = f2tHaulStripCreate(target)
     local rowH    = f2tScaled(target, ROW_H)
+    local stepH   = f2tScaled(target, STEP_H)
     local actH    = f2tScaled(target, H_ACT)
+    local barH    = math.max(3, f2tScaled(target, BAR_H))
     local cellPt  = f2tUiPt(target, CELL_PT)
     local labelPt = f2tTextPt(target, LABEL_PT)
 
-    -- ── Action row: next-step buttons, points on the right ───────────────────
+    -- ── Action row ───────────────────────────────────────────────────────────
     local actBar = Geyser.Label:new({
         name = gid .. "_ak_act", x = 0, y = strip.height, width = "100%", height = actH,
     }, target.content)
     actBar:setStyleSheet(_ACT_BAR_CSS)
 
-    local btnW = f2tScaled(target, 92)
-    local buttons = {}
-    for i = 1, BUTTON_SLOTS do
+    local widths = { f2tScaled(target, 140), f2tScaled(target, 96), f2tScaled(target, 88) }
+    local buttons, x = {}, 6
+    for i, width in ipairs(widths) do
         buttons[i] = Geyser.Label:new({
-            name = gid .. "_ak_btn" .. i, x = 6 + (i - 1) * (btnW + 8), y = 4,
-            width = btnW, height = actH - 8, fontSize = labelPt,
+            name = gid .. "_ak_btn" .. i, x = x, y = 4, width = width, height = actH - 8, fontSize = labelPt,
         }, actBar)
+        x = x + width + 6
     end
 
-    local infoX = 6 + BUTTON_SLOTS * (btnW + 8)
-    local info = Geyser.Label:new({
-        name = gid .. "_ak_info", x = infoX, y = 0, width = "100%-" .. (infoX + 6) .. "px", height = "100%",
-        fontSize = cellPt,
-    }, actBar)
-    info:setStyleSheet("background-color: transparent; border: none; qproperty-alignment: AlignRight|AlignVCenter;")
-
-    -- ── Contract card ─────────────────────────────────────────────────────────
+    -- ── Card ─────────────────────────────────────────────────────────────────
     local top = strip.height + actH
     local card = Geyser.Label:new({
         name = gid .. "_ak_card", x = 0, y = top, width = "100%", height = "100%-" .. top .. "px",
     }, target.content)
     card:setStyleSheet(_CARD_CSS)
 
-    local inst = { buttons = buttons, info = info }
-    local order = { "status", "office", "pickup", "dropoff", "package", "payment", "session" }
-    for i, key in ipairs(order) do
+    local y = 6
+    local function add(key, height)
         local lbl = Geyser.Label:new({
-            name = gid .. "_ak_" .. key, x = 0, y = 4 + (i - 1) * rowH, width = "100%", height = rowH,
-            fontSize = cellPt,
+            name = gid .. "_ak_" .. key, x = 0, y = y, width = "100%", height = height, fontSize = cellPt,
         }, card)
-        lbl:setStyleSheet(_ROW_CSS)
-        inst[key] = lbl
+        lbl:setStyleSheet(_PLAIN_CSS)
+        y = y + height
+        return lbl
     end
 
-    inst.office:setStyleSheet(_LINK_ROW_CSS)
-    inst.office:setClickCallback(function() f2t_akaturi_go_to_office() end)
-    inst.pickup:setStyleSheet(_LINK_ROW_CSS)
-    inst.pickup:setClickCallback(function() f2t_akaturi_go_to_room("pickup") end)
-    inst.dropoff:setStyleSheet(_LINK_ROW_CSS)
-    inst.dropoff:setClickCallback(function() f2t_akaturi_go_to_room("delivery") end)
+    local inst = { buttons = buttons }
+    inst.credits = add("credits", rowH)
+    inst.bar = Geyser.Label:new({
+        name = gid .. "_ak_bar", x = 8, y = y, width = "100%-16px", height = barH,
+    }, card)
+    y = y + barH + 8
+    inst.stepTake    = add("take", stepH)
+    inst.stepPickup  = add("pickup", stepH)
+    inst.stepDropoff = add("dropoff", stepH)
+    y = y + 4
+    inst.footer  = add("footer", stepH)
+    inst.session = add("session", rowH)
+    inst.insurance = add("insurance", stepH)
+    inst.insurance:setClickCallback(function() f2t_insurance_get_insured() end)
 
     instances[gid] = inst
     render(inst)
@@ -324,7 +462,7 @@ end
 local function buildAkaturiDef()
     return {
         name        = "Akaturi",
-        description = "Akaturi courier contract by hand or automated: points, pickup and dropoff, next step.",
+        description = "Akaturi courier contracts: credits toward Merchant, take, pick up and drop off.",
         group       = "F2CE Tools",
         internal    = false,
         singleton   = false,

@@ -795,7 +795,7 @@ local function buildContent(target)
             fontSize = cellPt,
         }, actBar)
         actInfo:setStyleSheet(
-            "background-color: transparent; border: none; qproperty-alignment: AlignRight|AlignVCenter;")
+            "background-color: transparent; border: none; qproperty-alignment: 'AlignRight | AlignVCenter';")
     end
     local topH = barH + actH
 

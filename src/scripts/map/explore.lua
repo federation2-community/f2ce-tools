@@ -25,7 +25,7 @@ local function layerFields()
         mode = nil, on_complete_callback = nil,
         brief_flags = nil, brief_flags_set = nil, brief_flags_found = nil,
         brief_flags_remaining_count = nil, brief_planet_name = nil, brief_target_planet = nil,
-        target_room_name = nil, target_room_exact = nil, target_room_found_id = nil,
+        target_room_name = nil, target_room_exact = nil, target_room_found_id = nil, target_room_skip = nil,
         system_name = nil, system_mode = nil, system_phase = nil,
         space_area_id = nil, space_area_name = nil, system_complete_callback = nil,
         planet_list = {}, current_planet_index = 0,
@@ -123,7 +123,7 @@ end
 -- single named planet can't be (f2t_map_lookup_planet already requires the
 -- planet's area to exist).
 function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
-                                           target_room_name, target_room_exact)
+                                           target_room_name, target_room_exact, target_room_skip)
     -- Mark the sweep active (for a standalone, callback-driven caller) before
     -- navigating. f2t_map_navigate()'s hint guard only refuses to launch a
     -- second hint-driven explore while F2T_MAP_EXPLORE_STATE.active is
@@ -150,7 +150,7 @@ function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_
 
     local function start_here()
         return f2t_map_explore_planet_start(planet_mode, planet_name, effective_callback,
-            override_flags, target_room_name, target_room_exact)
+            override_flags, target_room_name, target_room_exact, target_room_skip)
     end
 
     local function await_arrival()
@@ -230,7 +230,7 @@ function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_
 end
 
 function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback, override_flags,
-                                       target_room_name, target_room_exact)
+                                       target_room_name, target_room_exact, target_room_skip)
     if not planet_mode or (planet_mode ~= "full" and planet_mode ~= "brief") then
         cecho(string.format("\n<red>[map-explore]<reset> Error: Invalid planet mode '%s'\n", tostring(planet_mode)))
         return false
@@ -244,7 +244,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         local current_planet = area and getRoomAreaName(area)
         if not current_planet or current_planet:lower() ~= planet_name:lower() then
             return f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
-                target_room_name, target_room_exact)
+                target_room_name, target_room_exact, target_room_skip)
         end
     end
 
@@ -291,6 +291,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
             brief_fields.target_room_name = target_room_name
             brief_fields.target_room_exact = target_room_exact and true or false
             brief_fields.target_room_found_id = nil
+            brief_fields.target_room_skip = target_room_skip
         end
     end
 
@@ -435,6 +436,8 @@ function f2t_map_explore_brief_check_target_room(room_id)
     if not F2T_MAP_EXPLORE_STATE.active then return end
     local target_name = F2T_MAP_EXPLORE_STATE.target_room_name
     if not target_name or F2T_MAP_EXPLORE_STATE.target_room_found_id then return end
+    local skip = F2T_MAP_EXPLORE_STATE.target_room_skip
+    if skip and skip[room_id] then return end
     local room_name = getRoomName(room_id)
     if not room_name then return end
 
@@ -760,6 +763,8 @@ function f2t_map_explore_stop(reason)
     end
     f2t_map_explore_brief_mode_restore()
     F2T_MAP_EXPLORE_STATE = blankState()
+    -- A stopped run never calls its completion callback; callers waiting on one listen for this.
+    raiseEvent("f2tExploreStopped")
 end
 
 -- Deletes every room in an area and reports how many. Shared by the manual

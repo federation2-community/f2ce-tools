@@ -12,17 +12,8 @@
     "name": "akaturi_dropoff_error",
     "patterns": [
       {
-        "pattern": "There's no one here expecting anything from you\\.",
+        "pattern": "There's no one here expecting anything from you.",
         "type": "substring"
-      }
-    ]
-  },
-  {
-    "name": "akaturi_dropoff_success",
-    "patterns": [
-      {
-        "pattern": "^You hand over the package and receive a receipt for it\\.$",
-        "type": "regex"
       }
     ]
   },
@@ -31,15 +22,6 @@
     "patterns": [
       {
         "pattern": "^You need to take the .+ entrusted to you to ",
-        "type": "regex"
-      }
-    ]
-  },
-  {
-    "name": "akaturi_job_end_marker",
-    "patterns": [
-      {
-        "pattern": "^Delivery details will be provided when you collect the package\\.$",
         "type": "regex"
       }
     ]
@@ -54,15 +36,6 @@
     ]
   },
   {
-    "name": "akaturi_job_line",
-    "patterns": [
-      {
-        "pattern": "^.+",
-        "type": "regex"
-      }
-    ]
-  },
-  {
     "name": "akaturi_job_start",
     "patterns": [
       {
@@ -72,38 +45,11 @@
     ]
   },
   {
-    "name": "akaturi_payment",
-    "patterns": [
-      {
-        "pattern": "payment of ([\\d,]+)ig has been credited to your account",
-        "type": "regex"
-      }
-    ]
-  },
-  {
     "name": "akaturi_pickup_error",
     "patterns": [
       {
-        "pattern": "There's nothing here for you to pick up\\.",
+        "pattern": "There's nothing here for you to pick up.",
         "type": "substring"
-      }
-    ]
-  },
-  {
-    "name": "akaturi_pickup_line",
-    "patterns": [
-      {
-        "pattern": "^.+",
-        "type": "regex"
-      }
-    ]
-  },
-  {
-    "name": "akaturi_pickup_success",
-    "patterns": [
-      {
-        "pattern": "^You pickup the valuable package and sign for it\\.$",
-        "type": "regex"
       }
     ]
   },

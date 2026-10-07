@@ -1,571 +1,195 @@
--- Akaturi contract hauling phases
--- Implements the Akaturi workflow: get job -> find pickup room -> navigate -> pickup ->
--- find delivery room -> navigate -> deliver
+-- Akaturi hauling: take a contract at an AC office, then work its pickup and
+-- dropoff through the shared room finder (akaturi_finder.lua). The game's own
+-- contract (akaturi_tracker.lua) says where each leg is, so every phase starts
+-- from the contract as it stands: one taken, picked up or dropped off by hand
+-- carries on from there. Needs no UI.
+--
+-- Phases: akaturi_getting_job -> akaturi_reading_contract -> akaturi_working_pickup
+-- -> akaturi_working_dropoff -> akaturi_getting_job. All of them resume through
+-- f2t_hauling_phase_akaturi_get_job.
 
---- Phase: Get Akaturi job from AC room
---- @return boolean True if phase complete, false if waiting
-function f2t_hauling_phase_akaturi_get_job()
-    if F2T_HAULING_STATE.paused then
-        return false
+local CONTRACT_WAIT = 6
+local MAX_TAKE_ATTEMPTS = 3
+
+local function running(phase)
+    local state = F2T_HAULING_STATE
+    return state.active and not state.paused and (phase == nil or state.current_phase == phase)
+end
+
+local function setPhase(phase)
+    F2T_HAULING_STATE.current_phase = phase
+    raiseEvent("f2tHaulingStatusChanged")
+end
+
+-- Re-enter the loop after a wait, if nothing moved it on meanwhile.
+local function retryAfter(seconds, phase)
+    tempTimer(seconds, function()
+        if running(phase) then
+            setPhase("akaturi_getting_job")
+            f2t_hauling_phase_akaturi_get_job()
+        end
+    end)
+end
+
+local function promotionAdvice(cash)
+    local short = F2T_AKATURI_PROMOTE_CASH - cash
+    if short > 0 then
+        return string.format("Promote to Merchant once you have %s ig more in the bank", f2t_format_number(short))
     end
+    return "Promote to Merchant at the Trading Guild on Earth"
+end
 
-    -- Deferred pause: pause between Akaturi contracts
-    if F2T_HAULING_STATE.pause_requested then
-        F2T_HAULING_STATE.pause_requested = false
-        F2T_HAULING_STATE.paused = true
-        F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
-        cecho("\n<green>[hauling]<reset> Paused between Akaturi contracts\n")
-        f2t_debug_log("[hauling/akaturi] Deferred pause activated between contracts")
-        return false
-    end
+-- A run started below the promotion mark stops on reaching it. Started at or
+-- past it, the player wants more contracts (they keep paying and earning
+-- credits), so it carries on until more pay would only be taxed.
+local function checkPromotion()
+    local state = F2T_HAULING_STATE
+    local points = f2t_akaturi_get_points()
+    if not points or points < F2T_AKATURI_PROMOTE_AT then return false end
+    local cash = f2t_ac_get_cash() or 0
 
-    f2t_debug_log("[hauling/akaturi] Starting get job phase")
-
-    -- Check if we've completed all 25 jobs
-    if f2t_akaturi_is_complete() then
-        local points = f2t_akaturi_get_points()
-        cecho(string.format(
-            "\n<green>[hauling]<reset> Congratulations! You've completed all 25 Akaturi contracts (%d points)!\n",
-            points))
-        cecho("\n<green>[hauling]<reset> Stopping hauling automation.\n")
-        f2t_hauling_stop()
+    if (state.akaturi_start_points or 0) < F2T_AKATURI_PROMOTE_AT then
+        cecho(string.format("\n<green>[hauling]<reset> %d Akaturi credits reached; stopping. %s. " ..
+            "'haul start' again keeps doing contracts.\n", points, promotionAdvice(cash)))
         return true
     end
-
-    -- A contract already held (taken by hand, or left from a stopped run) is
-    -- worked from where it stands; ak would only be refused.
-    local held = f2t_akaturi_contract()
-    if held then
-        return f2t_hauling_akaturi_resume_held(held)
+    if cash >= F2T_AKATURI_CASH_CAP then
+        cecho(string.format("\n<green>[hauling]<reset> %s ig: an Adventurer's cash over %s ig is taxed at " ..
+            "the next login, so stopping here. %s.\n",
+            f2t_format_number(cash), f2t_format_number(F2T_AKATURI_CASH_CAP), promotionAdvice(cash)))
+        return true
     end
-    F2T_HAULING_STATE.akaturi_details_requested = false
-
-    -- Must be at a known Sol AC room to issue 'ak' command
-    -- Akaturi contracts only work at actual AC offices, not just any shuttlepad
-    local current_hash = f2t_get_current_room_hash()
-    local at_known_ac_room = false
-
-    if current_hash then
-        for planet, hash in pairs(F2T_AC_ROOMS) do
-            if hash == current_hash then
-                at_known_ac_room = true
-                f2t_debug_log("[hauling/akaturi] At known AC room: %s", planet)
-                break
-            end
-        end
+    if not state.akaturi_promotion_noted then
+        state.akaturi_promotion_noted = true
+        cecho(string.format("\n<green>[hauling]<reset> Already at %d Akaturi credits; doing more contracts " ..
+            "until 'haul stop'. %s.\n", points, promotionAdvice(cash)))
     end
-
-    if not at_known_ac_room then
-        -- Determine which AC room to navigate to
-        local target_planet = "Earth"  -- Default fallback
-        local current_planet = f2t_get_current_planet()
-
-        -- Prefer AC room on current planet if it exists
-        if current_planet and F2T_AC_ROOMS[current_planet] then
-            target_planet = current_planet
-            f2t_debug_log("[hauling/akaturi] Using AC room on current planet: %s", target_planet)
-        else
-            f2t_debug_log("[hauling/akaturi] Current planet has no AC room, navigating to Earth")
-        end
-
-        -- Navigate to chosen AC room
-        local ac_hash = f2t_ac_get_room_hash(target_planet)
-        if not ac_hash then
-            cecho(string.format("\n<red>[hauling]<reset> Cannot determine AC room location for %s\n", target_planet))
-            f2t_hauling_stop()
-            return true
-        end
-
-        cecho(string.format("\n<cyan>[hauling]<reset> Navigating to Armstrong Cuthbert on %s...\n", target_planet))
-        local result = f2t_map_navigate(ac_hash)
-
-        if f2t_map_navigate_ok(result) then
-            -- Verify we're actually at a known AC room
-            local arrived_hash = f2t_get_current_room_hash()
-            if arrived_hash == ac_hash then
-                f2t_debug_log("[hauling/akaturi] Verified at AC room")
-                -- Continue to get job
-            else
-                f2t_debug_log("[hauling/akaturi] Map returned true but not at expected AC room, waiting")
-                return false
-            end
-        else
-            -- Wait for navigation to complete
-            f2t_debug_log("[hauling/akaturi] Waiting for navigation to AC room")
-            return false
-        end
-    end
-
-    -- Reset contract state for new job
-    f2t_akaturi_reset_contract()
-
-    -- Start capturing job output
-    f2t_akaturi_start_job_capture()
-    f2t_debug_log("[hauling/akaturi] Started job capture, sending ak command")
-
-    -- Send ak command
-    send("ak")
-    cecho("\n<cyan>[hauling]<reset> Requesting Akaturi contract...\n")
-
-    -- Transition to parsing phase - triggers will handle capture
-    F2T_HAULING_STATE.current_phase = "akaturi_parsing_pickup"
-
-    -- Wait for output to complete (prompt will trigger parsing)
     return false
 end
 
---- Pick up a contract the player already holds at its pickup or dropoff leg
+local function onLegDone(phase, kind, payment, outcome)
+    if not running(phase) then return end
+    local state = F2T_HAULING_STATE
+
+    if outcome == "done" then
+        if kind == "pickup" then
+            f2t_hauling_transition("akaturi_getting_job")
+            return
+        end
+        state.total_cycles = (state.total_cycles or 0) + 1
+        state.session_profit = (state.session_profit or 0) + payment
+        table.insert(state.commodity_history, { commodity = "Akaturi contract", cycles = 1, profit = payment })
+        cecho(string.format("\n<green>[hauling]<reset> Contract complete: %s ig (%d Akaturi credits)\n",
+            f2t_format_number(payment), f2t_akaturi_get_points() or 0))
+        if state.stopping or checkPromotion() then
+            f2t_hauling_do_stop()
+            return
+        end
+        f2t_hauling_transition("akaturi_getting_job")
+    elseif outcome == "stopped" then
+        cecho("\n<yellow>[hauling]<reset> The room search was stopped, so hauling stops too\n")
+        f2t_hauling_stop()
+    else
+        if outcome == "notFound" then
+            cecho("\n<yellow>[hauling]<reset> Find the room by hand, then 'haul resume' there " ..
+                "(or pickup/dropoff yourself and resume).\n")
+        end
+        f2t_hauling_pause(true)
+    end
+end
+
+--- Work the contract the player holds from the leg it is on
 --- @param held table Contract from f2t_akaturi_contract()
 --- @return boolean True if phase complete, false if waiting
-function f2t_hauling_akaturi_resume_held(held)
-    local room = held.collected and held.deliveryRoom or held.pickupRoom
+function f2t_hauling_akaturi_work_held(held)
+    local state = F2T_HAULING_STATE
+    local kind, planet, room = f2t_akaturi_leg(held)
+
     if not room then
-        if F2T_HAULING_STATE.akaturi_details_requested then
+        -- The room text follows the GMCP update, so wait for it before asking.
+        state.akaturi_room_waits = (state.akaturi_room_waits or 0) + 1
+        if state.akaturi_room_waits > 2 then
             cecho("\n<red>[hauling]<reset> Couldn't read the contract's room from 'di ak'; stopping.\n")
             f2t_hauling_stop()
             return true
         end
-        -- di ak prints the contract, and the tracker reads the room from it.
-        F2T_HAULING_STATE.akaturi_details_requested = true
-        send("di ak", false)
-        tempTimer(2, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                and F2T_HAULING_STATE.current_phase == "akaturi_getting_job" then
-                f2t_hauling_phase_akaturi_get_job()
-            end
-        end)
+        if state.akaturi_room_waits == 2 then send("di ak", false) end
+        setPhase("akaturi_reading_contract")
+        retryAfter(CONTRACT_WAIT, "akaturi_reading_contract")
         return false
     end
-    F2T_HAULING_STATE.akaturi_details_requested = false
+    state.akaturi_room_waits = 0
 
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    contract.pickup_planet = held.pickupPlanet
-    contract.pickup_room   = held.pickupRoom or held.pickupPlanet
-    contract.item          = held.package
-
-    if held.collected then
-        contract.delivery_planet = held.deliveryPlanet
-        contract.delivery_room   = held.deliveryRoom
-        F2T_HAULING_STATE.akaturi_package_collected = true
-        F2T_HAULING_STATE.akaturi_pickup_sent = true
-        cecho(string.format("\n<green>[hauling]<reset> Continuing your contract: deliver to '%s' on %s\n",
-            held.deliveryRoom, held.deliveryPlanet))
-        f2t_hauling_akaturi_search_delivery()
-        return false
-    end
-
-    cecho(string.format("\n<green>[hauling]<reset> Continuing your contract: pick up from '%s' on %s\n",
-        held.pickupRoom, held.pickupPlanet))
-    F2T_HAULING_STATE.current_phase = "akaturi_searching_pickup"
-    return f2t_hauling_phase_akaturi_search_pickup()
-end
-
---- When the game's contract no longer matches the leg hauling was on (a
---- pickup, dropoff or new contract done by hand), restart from getting a job,
---- which carries on from the contract as it now stands
---- @return boolean True if the phase was reset
-function f2t_hauling_akaturi_reconcile()
-    if F2T_HAULING_STATE.current_phase == "akaturi_getting_job" then return false end
-    local held = f2t_akaturi_contract()
-    local working = F2T_HAULING_STATE.akaturi_contract or {}
-    if held and held.pickupPlanet == working.pickup_planet
-        and held.collected == (F2T_HAULING_STATE.akaturi_package_collected == true) then
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Contract changed while paused, restarting from get job")
-    f2t_akaturi_reset_contract()
-    F2T_HAULING_STATE.akaturi_contract = {}
-    F2T_HAULING_STATE.akaturi_package_collected = false
-    F2T_HAULING_STATE.akaturi_package_delivered = false
-    F2T_HAULING_STATE.akaturi_pickup_error = false
-    F2T_HAULING_STATE.akaturi_delivery_error = false
-    F2T_HAULING_STATE.akaturi_pickup_sent = false
-    F2T_HAULING_STATE.akaturi_delivery_sent = false
-    F2T_HAULING_STATE.akaturi_payment_amount = nil
-    F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
-    return true
-end
-
---- Phase: Parse pickup location from job output
---- @return boolean True if phase complete, false if waiting
-function f2t_hauling_phase_akaturi_parse_pickup()
-    if F2T_HAULING_STATE.paused then
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Starting parse pickup phase")
-
-    -- Get captured job lines
-    local lines = f2t_akaturi_stop_job_capture()
-
-    if not lines or #lines == 0 then
-        cecho("\n<red>[hauling]<reset> No job output captured, retrying...\n")
-        tempTimer(2, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                and F2T_HAULING_STATE.current_phase == "akaturi_parsing_pickup" then
-                F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
-                f2t_hauling_phase_akaturi_get_job()
-            end
-        end)
-        return false
-    end
-
-    -- Parse pickup location
-    local planet, room = f2t_akaturi_parse_job(lines)
-
-    if not planet or not room then
-        cecho("\n<red>[hauling]<reset> Failed to parse pickup location from job output\n")
-        cecho("\n<red>[hauling]<reset> Retrying...\n")
-        tempTimer(2, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                and F2T_HAULING_STATE.current_phase == "akaturi_parsing_pickup" then
-                F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
-                f2t_hauling_phase_akaturi_get_job()
-            end
-        end)
-        return false
-    end
-
-    -- Store pickup location
-    F2T_HAULING_STATE.akaturi_contract.pickup_planet = planet
-    F2T_HAULING_STATE.akaturi_contract.pickup_room = room
-
-    cecho(string.format("\n<green>[hauling]<reset> Contract assigned: Pick up package from '%s' on %s\n", room, planet))
-
-    -- Transition to searching phase
-    F2T_HAULING_STATE.current_phase = "akaturi_searching_pickup"
-    return f2t_hauling_phase_akaturi_search_pickup()
-end
-
---- Phase: Search map for pickup room
---- @return boolean True if phase complete, false if waiting
-function f2t_hauling_phase_akaturi_search_pickup()
-    if F2T_HAULING_STATE.paused then
-        return false
-    end
-
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    if not contract.pickup_planet or not contract.pickup_room then
-        cecho("\n<red>[hauling]<reset> Missing pickup location data\n")
-        f2t_hauling_stop()
-        return true
-    end
-
-    f2t_debug_log("[hauling/akaturi] Searching for pickup room: %s on %s", contract.pickup_room, contract.pickup_planet)
-    cecho(string.format(
-        "\n<cyan>[hauling]<reset> Searching map for '%s' on %s...\n", contract.pickup_room, contract.pickup_planet))
-
-    -- Search map for room (synchronous)
-    local matches = f2t_akaturi_search_room(contract.pickup_planet, contract.pickup_room)
-
-    -- Known planet but the room genuinely isn't in the map database yet (or
-    -- the planet itself isn't mapped at all) - explore for the exact room
-    -- name instead of giving up immediately. f2t_map_explore_planet_start's
-    -- own travel step self-heals an unmapped planet via f2t_map_navigate's
-    -- whereis support.
-    if matches == nil or #matches == 0 then
-        cecho(string.format(
-            "\n<yellow>[hauling]<reset> '%s' not found on %s, exploring to look for it...\n",
-            contract.pickup_room, contract.pickup_planet))
-        F2T_HAULING_STATE.current_phase = "akaturi_searching_pickup"
-        f2t_map_explore_planet_start("brief", contract.pickup_planet, function(found_room_id)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if found_room_id then
-                cecho(string.format("\n<green>[hauling]<reset> Found room: %s (ID: %s)\n",
-                    contract.pickup_room, found_room_id))
-                F2T_AKATURI_STATE.pickup_matches = {{name = contract.pickup_room, room_id = found_room_id}}
-                f2t_akaturi_reset_match_index()
-                F2T_HAULING_STATE.current_phase = "akaturi_navigating_pickup"
-                f2t_hauling_phase_akaturi_navigate_pickup()
-            else
-                cecho(string.format("\n<yellow>[hauling]<reset> Still could not find '%s' on %s\n",
-                    contract.pickup_room, contract.pickup_planet))
-                cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Navigating to %s. Please find the room manually and resume hauling.\n",
-                    contract.pickup_planet))
-                F2T_HAULING_STATE.current_phase = "akaturi_navigating_to_planet_for_pickup"
-                f2t_map_navigate(contract.pickup_planet)
-            end
-        end, nil, contract.pickup_room, true)
-        return false
-    end
-
-    if #matches == 1 then
-        cecho(string.format("\n<green>[hauling]<reset> Found room: %s (ID: %s)\n", matches[1].name, matches[1].room_id))
+    local phase = kind == "pickup" and "akaturi_working_pickup" or "akaturi_working_dropoff"
+    setPhase(phase)
+    if kind == "pickup" then
+        cecho(string.format("\n<green>[hauling]<reset> Pick up the package from '%s' on %s\n", room, planet))
     else
-        cecho(string.format(
-            "\n<yellow>[hauling]<reset> Found %d rooms matching '%s', will try each one\n",
-            #matches, contract.pickup_room))
+        cecho(string.format("\n<green>[hauling]<reset> Deliver the %s to '%s' on %s\n",
+            held.package or "package", room, planet))
     end
-
-    -- Store matches and reset index
-    F2T_AKATURI_STATE.pickup_matches = matches
-    f2t_akaturi_reset_match_index()
-
-    -- Transition to navigating phase
-    F2T_HAULING_STATE.current_phase = "akaturi_navigating_pickup"
-    return f2t_hauling_phase_akaturi_navigate_pickup()
-end
-
---- Phase: Navigate to pickup room
---- @return boolean True if already there, false if navigating
-function f2t_hauling_phase_akaturi_navigate_pickup()
-    if F2T_HAULING_STATE.paused then
-        return false
-    end
-
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    if not contract.pickup_planet or not contract.pickup_room then
-        cecho("\n<red>[hauling]<reset> Missing pickup location data\n")
-        f2t_hauling_stop()
-        return true
-    end
-
-    -- Get next match to try
-    local room_id = f2t_akaturi_get_next_match(F2T_AKATURI_STATE.pickup_matches)
-
-    if not room_id then
-        -- No more matches to try - navigate to planet and pause
-        cecho(string.format(
-            "\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.pickup_planet))
-        cecho("\n<yellow>[hauling]<reset> Please find the pickup room manually and resume hauling.\n")
-
-        -- Navigate to planet
-        f2t_map_navigate(contract.pickup_planet)
-
-        -- Pause hauling
-        f2t_hauling_pause(true)
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Navigating to pickup room: %s", room_id)
-    cecho(string.format("\n<cyan>[hauling]<reset> Navigating to pickup location (%d/%d)...\n",
-        F2T_AKATURI_STATE.current_match_index, #F2T_AKATURI_STATE.pickup_matches))
-
-    -- Navigate to room
-    local result = f2t_map_navigate(room_id)
-
-    if f2t_map_navigate_ok(result) then
-        -- Already at destination
-        f2t_debug_log("[hauling/akaturi] Already at pickup location")
-        F2T_HAULING_STATE.current_phase = "akaturi_collecting"
-        return f2t_hauling_phase_akaturi_collect()
-    end
-
-    -- Wait for navigation to complete
-    f2t_debug_log("[hauling/akaturi] Waiting for navigation to pickup location")
+    local payment = held.payment or 0
+    f2t_akaturi_visit(kind, {
+        planet = planet, room = room, owner = "hauling",
+        onDone = function(outcome) onLegDone(phase, kind, payment, outcome) end,
+    })
     return false
 end
 
---- Phase: Collect package and parse delivery location
+--- Phase: hold a contract, taking one at an AC office when there isn't one
 --- @return boolean True if phase complete, false if waiting
-function f2t_hauling_phase_akaturi_collect()
-    if F2T_HAULING_STATE.paused then
+function f2t_hauling_phase_akaturi_get_job()
+    local state = F2T_HAULING_STATE
+    if not state.active or state.paused then return false end
+
+    -- Deferred pause lands between contracts
+    if state.pause_requested then
+        state.pause_requested = false
+        state.paused = true
+        setPhase("akaturi_getting_job")
+        cecho("\n<green>[hauling]<reset> Paused between Akaturi contracts\n")
         return false
     end
 
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    if not contract.pickup_planet or not contract.pickup_room then
-        cecho("\n<red>[hauling]<reset> Missing pickup location data\n")
+    local held = f2t_akaturi_contract()
+    if held then
+        state.akaturi_take_attempts = 0
+        return f2t_hauling_akaturi_work_held(held)
+    end
+
+    if not f2t_akaturi_rank_ok() then
+        cecho("\n<red>[hauling]<reset> Akaturi contracts are only for Adventurers; stopping.\n")
+        f2t_hauling_stop()
+        return true
+    end
+    if checkPromotion() then
         f2t_hauling_stop()
         return true
     end
 
-    -- Check if we got an error (wrong room)
-    if F2T_HAULING_STATE.akaturi_pickup_error then
-        f2t_debug_log("[hauling/akaturi] Pickup failed, trying next match")
-        F2T_HAULING_STATE.akaturi_pickup_error = false
-
-        -- Try next match
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_pickup"
-        return f2t_hauling_phase_akaturi_navigate_pickup()
-    end
-
-    -- Check if already collected
-    if F2T_HAULING_STATE.akaturi_package_collected then
-        -- Timer-based capture is now handling the delivery location parsing
-        -- See: f2t_akaturi_reset_pickup_timer() and f2t_akaturi_process_pickup_capture()
-        -- Just wait for timer to process the capture
-        f2t_debug_log("[hauling/akaturi] Package collected, waiting for delivery info capture to complete")
-        return false
-    end
-
-    -- Wait for navigation to complete before sending pickup
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling/akaturi] Waiting for navigation to complete before pickup")
-        tempTimer(0.5, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-               F2T_HAULING_STATE.current_phase == "akaturi_collecting" then
-                f2t_hauling_phase_akaturi_collect()
+    if not f2t_akaturi_at_office() then
+        f2t_akaturi_go_to_office(function(ok)
+            if not running("akaturi_getting_job") then return end
+            if ok then
+                f2t_hauling_phase_akaturi_get_job()
+            else
+                cecho("\n<red>[hauling]<reset> Couldn't reach an Armstrong Cuthbert office; stopping.\n")
+                f2t_hauling_stop()
             end
         end)
         return false
     end
 
-    -- Check if we've already sent pickup command
-    if F2T_HAULING_STATE.akaturi_pickup_sent then
-        f2t_debug_log("[hauling/akaturi] Already sent pickup command, waiting for response")
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Collecting package")
-
-    -- Send pickup command
-    -- Note: Capture will be started by hauling_akaturi_pickup_success.lua trigger
-    send("pickup")
-    cecho("\n<cyan>[hauling]<reset> Picking up package...\n")
-    F2T_HAULING_STATE.akaturi_pickup_sent = true
-
-    -- Wait for pickup success trigger to fire
-    -- Timer-based capture will handle delivery location parsing
-    return false
-end
-
---- Phase: Navigate to delivery room
---- @return boolean True if already there, false if navigating
-function f2t_hauling_phase_akaturi_navigate_delivery()
-    if F2T_HAULING_STATE.paused then
-        return false
-    end
-
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    if not contract.delivery_planet or not contract.delivery_room then
-        cecho("\n<red>[hauling]<reset> Missing delivery location data\n")
+    state.akaturi_take_attempts = (state.akaturi_take_attempts or 0) + 1
+    if state.akaturi_take_attempts > MAX_TAKE_ATTEMPTS then
+        cecho("\n<red>[hauling]<reset> The office isn't handing out contracts; stopping.\n")
         f2t_hauling_stop()
         return true
     end
-
-    -- Get next match to try
-    local room_id = f2t_akaturi_get_next_match(F2T_AKATURI_STATE.delivery_matches)
-
-    if not room_id then
-        -- No more matches to try
-        cecho(string.format(
-            "\n<yellow>[hauling]<reset> All room matches failed. Navigating to %s.\n", contract.delivery_planet))
-        cecho("\n<yellow>[hauling]<reset> Please find the delivery room manually and resume hauling.\n")
-
-        f2t_map_navigate(contract.delivery_planet)
-        f2t_hauling_pause(true)
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Navigating to delivery room: %s", room_id)
-    cecho(string.format("\n<cyan>[hauling]<reset> Navigating to delivery location (%d/%d)...\n",
-        F2T_AKATURI_STATE.current_match_index, #F2T_AKATURI_STATE.delivery_matches))
-
-    -- Navigate to room
-    local result = f2t_map_navigate(room_id)
-
-    if f2t_map_navigate_ok(result) then
-        -- Already at destination
-        f2t_debug_log("[hauling/akaturi] Already at delivery location")
-        F2T_HAULING_STATE.current_phase = "akaturi_delivering"
-        return f2t_hauling_phase_akaturi_deliver()
-    end
-
-    -- Wait for navigation to complete
-    f2t_debug_log("[hauling/akaturi] Waiting for navigation to delivery location")
-    return false
-end
-
---- Phase: Deliver package and complete contract
---- @return boolean True if phase complete, false if waiting
-function f2t_hauling_phase_akaturi_deliver()
-    if F2T_HAULING_STATE.paused then
-        return false
-    end
-
-    local contract = F2T_HAULING_STATE.akaturi_contract
-    if not contract.delivery_planet or not contract.delivery_room then
-        cecho("\n<red>[hauling]<reset> Missing delivery location data\n")
-        f2t_hauling_stop()
-        return true
-    end
-
-    -- Check if we got an error (wrong room)
-    if F2T_HAULING_STATE.akaturi_delivery_error then
-        f2t_debug_log("[hauling/akaturi] Delivery failed, trying next match")
-        F2T_HAULING_STATE.akaturi_delivery_error = false
-
-        -- Try next match
-        F2T_HAULING_STATE.current_phase = "akaturi_navigating_delivery"
-        return f2t_hauling_phase_akaturi_navigate_delivery()
-    end
-
-    -- Check if already delivered
-    if F2T_HAULING_STATE.akaturi_package_delivered then
-        local points = f2t_akaturi_get_points() or 0
-        local payment = F2T_HAULING_STATE.akaturi_payment_amount or 0
-
-        cecho(string.format(
-            "\n<green>[hauling]<reset> Contract complete! Earned %dig (Total points: %d/25)\n", payment, points))
-
-        -- Update statistics
-        F2T_HAULING_STATE.total_cycles = (F2T_HAULING_STATE.total_cycles or 0) + 1
-        F2T_HAULING_STATE.session_profit = (F2T_HAULING_STATE.session_profit or 0) + payment
-
-        -- Add to history
-        table.insert(F2T_HAULING_STATE.commodity_history or {}, {
-            commodity = contract.item or "package",
-            cycles = 1,
-            profit = payment
-        })
-
-        -- Reset contract state
-        f2t_akaturi_reset_contract()
-        F2T_HAULING_STATE.akaturi_package_collected = false
-        F2T_HAULING_STATE.akaturi_package_delivered = false
-        F2T_HAULING_STATE.akaturi_payment_amount = nil
-        F2T_HAULING_STATE.akaturi_pickup_sent = false
-        F2T_HAULING_STATE.akaturi_delivery_sent = false
-
-        -- Check if graceful stop was requested
-        if F2T_HAULING_STATE.stopping then
-            f2t_debug_log("[hauling/akaturi] Contract complete, stopping as requested")
-            f2t_hauling_do_stop()
-            return true
-        end
-
-        -- Start next contract
-        F2T_HAULING_STATE.current_phase = "akaturi_getting_job"
-        return f2t_hauling_phase_akaturi_get_job()
-    end
-
-    -- Wait for navigation to complete before sending dropoff
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling/akaturi] Waiting for navigation to complete before dropoff")
-        tempTimer(0.5, function()
-            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-               F2T_HAULING_STATE.current_phase == "akaturi_delivering" then
-                f2t_hauling_phase_akaturi_deliver()
-            end
-        end)
-        return false
-    end
-
-    -- Check if we've already sent dropoff command
-    if F2T_HAULING_STATE.akaturi_delivery_sent then
-        f2t_debug_log("[hauling/akaturi] Already sent dropoff command, waiting for response")
-        return false
-    end
-
-    f2t_debug_log("[hauling/akaturi] Delivering package")
-
-    -- Send dropoff command
-    send("dropoff")
-    cecho("\n<cyan>[hauling]<reset> Delivering package...\n")
-    F2T_HAULING_STATE.akaturi_delivery_sent = true
-
-    -- Wait for trigger to set flag
-    tempTimer(1.0, function()
-        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-           F2T_HAULING_STATE.current_phase == "akaturi_delivering" then
-            f2t_hauling_phase_akaturi_deliver()
-        end
-    end)
+    send("ak")
+    cecho("\n<cyan>[hauling]<reset> Requesting an Akaturi contract...\n")
+    setPhase("akaturi_reading_contract")
+    retryAfter(CONTRACT_WAIT, "akaturi_reading_contract")
     return false
 end
 
@@ -573,243 +197,45 @@ end
 -- Akaturi Event Handlers
 -- ========================================
 
---- Check if navigation to pickup room is complete
-function f2t_hauling_check_nav_to_akaturi_pickup_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "akaturi_navigating_pickup" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/akaturi] Speedwalk stopped with result: %s", result or "unknown")
-
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "akaturi_navigating_pickup") then
-                return
-            end
-
-            if result == "completed" then
-                f2t_debug_log("[hauling/akaturi] Arrived at pickup location")
-                f2t_hauling_transition("akaturi_collecting")
-
-            elseif result == "stopped" then
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                cecho("\n<red>[hauling]<reset> Cannot reach pickup location, trying next match or pausing\n")
-                f2t_hauling_phase_akaturi_navigate_pickup()
-
-            else
-                f2t_debug_log("[hauling/akaturi] Unknown speedwalk result, transitioning to collect phase")
-                f2t_hauling_transition("akaturi_collecting")
-            end
-        end)
-    end
-end
-
---- Check if navigation to delivery room is complete
-function f2t_hauling_check_nav_to_akaturi_delivery_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "akaturi_navigating_delivery" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/akaturi] Speedwalk stopped with result: %s", result or "unknown")
-
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "akaturi_navigating_delivery") then
-                return
-            end
-
-            if result == "completed" then
-                f2t_debug_log("[hauling/akaturi] Arrived at delivery location")
-                f2t_hauling_transition("akaturi_delivering")
-
-            elseif result == "stopped" then
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                cecho("\n<red>[hauling]<reset> Cannot reach delivery location, trying next match or pausing\n")
-                f2t_hauling_phase_akaturi_navigate_delivery()
-
-            else
-                f2t_debug_log("[hauling/akaturi] Unknown speedwalk result, transitioning to deliver phase")
-                f2t_hauling_transition("akaturi_delivering")
-            end
-        end)
-    end
-end
-
---- Check if navigation to AC room is complete (for getting job)
-function f2t_hauling_check_nav_to_ac_for_akaturi_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "akaturi_getting_job" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/akaturi] Speedwalk to AC room stopped with result: %s", result or "unknown")
-
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "akaturi_getting_job") then
-                return
-            end
-
-            if result == "completed" then
-                -- Verify we're at AC room
-                if f2t_ac_at_room() then
-                    f2t_debug_log("[hauling/akaturi] Arrived at AC room, retrying get job")
-                    f2t_hauling_phase_akaturi_get_job()
-                else
-                    cecho("\n<red>[hauling]<reset> Navigation complete but not at AC room\n")
-                    f2t_hauling_stop()
-                end
-
-            elseif result == "stopped" then
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                cecho("\n<red>[hauling]<reset> Cannot reach AC room, stopping hauling\n")
-                f2t_hauling_stop()
-
-            else
-                f2t_debug_log("[hauling/akaturi] Unknown speedwalk result")
-                if f2t_ac_at_room() then
-                    f2t_hauling_phase_akaturi_get_job()
-                end
-            end
-        end)
-    end
-end
-
---- Check if navigation to planet for manual pickup is complete
-function f2t_hauling_check_nav_to_planet_for_pickup_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "akaturi_navigating_to_planet_for_pickup" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/akaturi] Speedwalk to planet stopped with result: %s", result or "unknown")
-
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "akaturi_navigating_to_planet_for_pickup") then
-                return
-            end
-
-            if result == "completed" or result == nil then
-                -- Navigation complete - pause for manual room finding
-                local room_name = F2T_HAULING_STATE.akaturi_contract.pickup_room or "the pickup room"
-                cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
-                cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
-                f2t_hauling_pause(true)
-
-            elseif result == "stopped" then
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                cecho("\n<red>[hauling]<reset> Cannot reach planet, stopping hauling\n")
-                f2t_hauling_stop()
-            end
-        end)
-    end
-end
-
---- Check if navigation to planet for manual delivery is complete
-function f2t_hauling_check_nav_to_planet_for_delivery_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "akaturi_navigating_to_planet_for_delivery" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/akaturi] Speedwalk to planet stopped with result: %s", result or "unknown")
-
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "akaturi_navigating_to_planet_for_delivery") then
-                return
-            end
-
-            if result == "completed" or result == nil then
-                -- Navigation complete - pause for manual room finding
-                local room_name = F2T_HAULING_STATE.akaturi_contract.delivery_room or "the delivery room"
-                cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Arrived at planet. Please find '%s' manually.\n", room_name))
-                cecho("\n<dim_grey>Run 'haul resume' when you're at the correct room<reset>\n")
-                f2t_hauling_pause(true)
-
-            elseif result == "stopped" then
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                cecho("\n<red>[hauling]<reset> Cannot reach planet, stopping hauling\n")
-                f2t_hauling_stop()
-            end
-        end)
-    end
-end
-
---- Register Akaturi-specific GMCP event handlers
---- @return string Event handler ID
+--- Move on as soon as the contract (or its room) is known
+--- @return number Event handler ID
 function f2t_akaturi_register_handlers()
-    local handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        tempTimer(0.5, function()
-            f2t_hauling_check_nav_to_ac_for_akaturi_complete()
-            f2t_hauling_check_nav_to_akaturi_pickup_complete()
-            f2t_hauling_check_nav_to_akaturi_delivery_complete()
-            f2t_hauling_check_nav_to_planet_for_pickup_complete()
-            f2t_hauling_check_nav_to_planet_for_delivery_complete()
-        end)
+    F2T_HAULING_STATE.akaturi_promotion_noted = false
+    F2T_HAULING_STATE.akaturi_start_points = f2t_akaturi_get_points() or 0
+    F2T_HAULING_STATE.akaturi_take_attempts = 0
+    F2T_HAULING_STATE.akaturi_room_waits = 0
+    return registerAnonymousEventHandler("f2tAkaturiContractChanged", function()
+        if not running("akaturi_reading_contract") then return end
+        local held = f2t_akaturi_contract()
+        if not held then return end
+        local _, _, room = f2t_akaturi_leg(held)
+        if room then
+            setPhase("akaturi_getting_job")
+            f2t_hauling_phase_akaturi_get_job()
+        end
     end)
-
-    f2t_debug_log("[hauling/akaturi] Registered Akaturi event handlers")
-    return handler_id
 end
+
+-- Death recovery paused the run (f2t_hauling_on_death); carry on once it
+-- reports the player insured again, from the hospital, contract in hand.
+registerAnonymousEventHandler("f2tDeathRecovered", function(_, insured)
+    local state = F2T_HAULING_STATE
+    if not (state.active and state.paused and state.paused_for_death and state.mode == "akaturi") then return end
+    local reason = f2t_akaturi_death_hold_reason(insured)
+    if reason then
+        cecho(string.format("\n<yellow>[hauling]<reset> Staying paused after the death: %s. " ..
+            "'haul resume' carries on.\n", reason))
+        return
+    end
+    cecho("\n<green>[hauling]<reset> Insured again; carrying on with the contract\n")
+    f2t_hauling_resume()
+end)
 
 --- Cleanup Akaturi event handlers
---- @param handler_id string Event handler ID to kill
-function f2t_akaturi_cleanup_handlers(handler_id)
-    if handler_id then
-        killAnonymousEventHandler(handler_id)
-        f2t_debug_log("[hauling/akaturi] Cleaned up Akaturi event handlers")
-    end
+--- @param handlerId number Event handler ID to kill
+function f2t_akaturi_cleanup_handlers(handlerId)
+    if handlerId then killAnonymousEventHandler(handlerId) end
+    if f2t_akaturi_visit_cancel then f2t_akaturi_visit_cancel("hauling") end
 end
 
 f2t_debug_log("[hauling/akaturi] Akaturi phases module loaded")
