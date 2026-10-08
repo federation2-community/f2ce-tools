@@ -381,8 +381,10 @@ local function areaIdFor(ctx, name)
 end
 
 -- Per-area digest of what coverage needs: lowercased fed2_planet names (for
--- orbit rooms in a space area) and the first room holding each flag. Rescanned
--- only when the area's room count changes, and at most once per populate pass.
+-- orbit rooms in a space area), the first room holding each flag, how many
+-- unexplored exits remain, and the area's explored mark. Rescanned only when
+-- the area's room count changes or an explore records a mark, and at most once
+-- per populate pass.
 local areaDigests = {}
 
 local function areaDigest(ctx, areaId)
@@ -392,17 +394,12 @@ local function areaDigest(ctx, areaId)
     local count = #rooms + (rooms[0] and 1 or 0)
     local digest = areaDigests[areaId]
     local epoch = F2T_MAP_EXPLORED_EPOCH or 0
-    if digest and digest.count == count then
-        if digest.epoch ~= epoch then
-            digest.explored = getAreaUserData(areaId, "fed2_explored")
-            digest.epoch = epoch
-        end
-        return digest
-    end
+    if digest and digest.count == count and digest.epoch == epoch then return digest end
 
-    digest = { count = count, planets = {}, flagRoom = {}, epoch = epoch,
+    digest = { count = count, planets = {}, flagRoom = {}, stubs = 0, epoch = epoch,
         explored = getAreaUserData(areaId, "fed2_explored") }
     for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
+        for _ in pairs(getExitStubs(roomId) or {}) do digest.stubs = digest.stubs + 1 end
         local data = getAllRoomUserData(roomId) or {}
         if data.fed2_planet and data.fed2_planet ~= "" then
             digest.planets[data.fed2_planet:lower()] = true
@@ -441,14 +438,15 @@ local function requiredFlags(ctx, system_name)
 end
 
 -- Explored once an explore has said so, or (for planets explored before that
--- was recorded) once every room a brief explore looks for is mapped. Reaching
--- the orbit only maps the landing pad.
+-- was recorded) once every room a brief explore looks for is mapped or nothing
+-- on the planet is left unexplored. Reaching the orbit only maps a single
+-- landing pad room.
 local function planetExplored(ctx, system_name, planet_name)
     if not planetMapped(ctx, system_name, planet_name) then return false end
     local area_id = areaIdFor(ctx, planet_name)
     if not area_id then return false end
     local digest = areaDigest(ctx, area_id)
-    if digest.explored then return true end
+    if digest.explored or (digest.count > 1 and digest.stubs == 0) then return true end
     for _, flag in ipairs(requiredFlags(ctx, system_name)) do
         if not digest.flagRoom[flag] then return false end
     end
