@@ -29,17 +29,45 @@ function f2t_map_explore_escape_start(destination_room_id, on_success, on_failur
         cecho("\n<red>[map-explore]<reset> No exits available from current room\n")
         if on_failure then on_failure("No exits available") end; return false
     end
-    local exits_to_try = {}
-    for dir, _ in pairs(gmcp_exits) do table.insert(exits_to_try, dir) end
     F2T_MAP_EXPLORE_STATE.escape_state = {
         destination_room_id = destination_room_id,
         on_success = on_success, on_failure = on_failure,
-        exits_to_try = exits_to_try, attempts = 0, max_attempts = 10,
-        starting_room_id = current_room, phase = "walking_exits",
+        tried = {}, attempts = 0, max_attempts = 20,
+        phase = "walking_exits",
     }
     F2T_MAP_EXPLORE_STATE.phase = "brief_escaping"
     f2t_map_explore_escape_try_next_exit()
     return true
+end
+
+-- The current room's exits not yet tried from it, unexplored ones first: a
+-- mapped exit only leads somewhere the map already knows has no way out.
+local function untried_exits(escape, room_id)
+    local gmcp_exits = gmcp.room and gmcp.room.info and gmcp.room.info.exits
+    local stub_dirs = {}
+    for _, dir_num in pairs(getExitStubs(room_id) or {}) do stub_dirs[dir_num] = true end
+    local unexplored, mapped = {}, {}
+    for dir in pairs(gmcp_exits or {}) do
+        if not escape.tried[room_id .. "|" .. dir] then
+            if stub_dirs[f2t_map_direction_to_number(dir)] then
+                table.insert(unexplored, dir)
+            else
+                table.insert(mapped, dir)
+            end
+        end
+    end
+    for _, dir in ipairs(mapped) do table.insert(unexplored, dir) end
+    return unexplored
+end
+
+-- Maps the exit just walked, as exploring would, so each try can open a route
+local function record_move(escape)
+    local from_room, direction = escape.pending_from, escape.pending_direction
+    escape.pending_from, escape.pending_direction = nil, nil
+    local current_room = F2T_MAP_CURRENT_ROOM_ID
+    if from_room and direction and current_room and current_room ~= from_room then
+        f2t_map_resolve_stub_exit(from_room, current_room, direction)
+    end
 end
 
 function f2t_map_explore_escape_try_next_exit()
@@ -49,16 +77,13 @@ function f2t_map_explore_escape_try_next_exit()
     if escape.attempts > escape.max_attempts then
         f2t_map_explore_escape_fail("Max escape attempts exceeded"); return
     end
-    if #escape.exits_to_try == 0 then
-        local gmcp_exits = gmcp.room and gmcp.room.info and gmcp.room.info.exits
-        if gmcp_exits then
-            for dir, _ in pairs(gmcp_exits) do table.insert(escape.exits_to_try, dir) end
-        end
-        if #escape.exits_to_try == 0 then
-            f2t_map_explore_escape_fail("No exits available"); return
-        end
+    local current_room = F2T_MAP_CURRENT_ROOM_ID
+    local direction = current_room and untried_exits(escape, current_room)[1]
+    if not direction then
+        f2t_map_explore_escape_fail("No untried exits from this room"); return
     end
-    local direction = table.remove(escape.exits_to_try, 1)
+    escape.tried[current_room .. "|" .. direction] = true
+    escape.pending_from, escape.pending_direction = current_room, direction
     cecho(string.format("  <dim_grey>Trying exit: %s<reset>\n", direction))
     f2t_map_speedwalk_send_blind({direction})
 end
@@ -66,6 +91,7 @@ end
 function f2t_map_explore_escape_on_room_change()
     local escape = F2T_MAP_EXPLORE_STATE.escape_state
     if not escape then return false end
+    record_move(escape)
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     if current_room == escape.destination_room_id then
         f2t_map_explore_escape_success(); return true
@@ -87,6 +113,7 @@ function f2t_map_explore_escape_on_speedwalk_complete(result)
     local escape = F2T_MAP_EXPLORE_STATE.escape_state
     if not escape then return false end
     if result == "completed" then
+        record_move(escape)
         local current_room = F2T_MAP_CURRENT_ROOM_ID
         if current_room == escape.destination_room_id then
             f2t_map_explore_escape_success(); return true
@@ -100,6 +127,7 @@ function f2t_map_explore_escape_on_speedwalk_complete(result)
             end
         end)
     elseif result == "failed" then
+        escape.pending_from, escape.pending_direction = nil, nil
         tempTimer(0.3, function()
             if F2T_MAP_EXPLORE_STATE.active and F2T_MAP_EXPLORE_STATE.escape_state then
                 f2t_map_explore_escape_try_next_exit()
