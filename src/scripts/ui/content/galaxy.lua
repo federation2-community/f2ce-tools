@@ -110,20 +110,25 @@ local function parseSystemLine(line)
     return system_name, syndicate_name, cartel_name, planets, is_closed
 end
 
--- No-op until cartels is populated; f2t_galaxy_finish_capture re-calls this
--- once loading completes.
-local function autoExpandCurrentLocation()
+-- Cartel:system last auto-expanded, so a room move only re-expands on arrival
+-- somewhere new and a manual collapse of the current location sticks.
+local autoExpandedLocation = nil
+
+-- No-op until both cartels and gmcp room info exist; the location is only
+-- recorded once it actually expands, so whichever arrives last does the work.
+local function autoExpandCurrentLocation(force)
     local ri = gmcp and gmcp.room and gmcp.room.info
     if not (ri and ri.cartel and ri.cartel ~= "") then return end
-    local cd  = F2T_GALAXY.cartels[ri.cartel]
-    local syn = cd and cd.syndicate
-    if syn then
-        F2T_GALAXY.expanded["syn:" .. syn] = true
-        F2T_GALAXY.expanded["cartel:" .. syn .. ":" .. ri.cartel] = true
-    end
+    local location = ri.cartel .. ":" .. (ri.system or "")
+    if not force and location == autoExpandedLocation then return end
+    local cd = F2T_GALAXY.cartels[ri.cartel]
+    if not (cd and cd.syndicate) then return end
+    F2T_GALAXY.expanded["syn:" .. cd.syndicate] = true
+    F2T_GALAXY.expanded["cartel:" .. cd.syndicate .. ":" .. ri.cartel] = true
     if ri.system and ri.system ~= "" then
         F2T_GALAXY.expanded["system:" .. ri.cartel .. ":" .. ri.system] = true
     end
+    autoExpandedLocation = location
 end
 
 function f2t_galaxy_finish_capture()
@@ -174,7 +179,7 @@ function f2t_galaxy_finish_capture()
     local nc = 0; for _ in pairs(cartels) do nc = nc + 1 end
     f2t_debug_log("[galaxy] di systems → %d cartels", nc)
     raiseEvent("f2tGalaxyIndexed", nc)
-    autoExpandCurrentLocation()
+    autoExpandCurrentLocation(true)
     f2t_galaxy_refresh_open()
 end
 
@@ -1239,9 +1244,7 @@ local function buildPanel(target)
     -- icon/dot's own tooltip instead (see icon:setToolTip/dot:setToolTip in
     -- createRow), so there's nothing left for a legend strip to explain.
 
-    -- No-op until the scrape lands; f2t_galaxy_finish_capture re-runs this
-    -- once data is ready, so an early-opened navigator still catches up.
-    autoExpandCurrentLocation()
+    autoExpandCurrentLocation(true)
 
     relayoutTopbar(inst)
 
@@ -1410,6 +1413,7 @@ function f2t_galaxy_show_nav()
     end
     if t._conditionShow and t._conditionHidden then t:_conditionShow() end
     if Mux.raisePane then Mux.raisePane(rootPaneOf(t)) end
+    autoExpandCurrentLocation(true)
     f2t_galaxy_refresh_open()
 end
 
@@ -1450,9 +1454,45 @@ end)
 -- only refreshing on scrape/settings/search interactions. This also keeps
 -- coverage/POI state live as you explore, since populate() recomputes both
 -- fresh off the room DB every time - no separate cache to go stale.
+-- Auto-expand only happens once movement settles, so a walk or a run of quick
+-- moves expands where it ends instead of every cartel and system passed
+-- through. While a speedwalk, customs stop or exploration is in progress no
+-- countdown runs at all, however long a ride or airlock holds the player;
+-- the countdown starts when that activity finishes. Otherwise it is
+-- LOCATION_SETTLE_SECONDS of standing still after the last manual move.
+local LOCATION_SETTLE_SECONDS = 2
+local locationSettleTimer = nil
+
+local function navigationBusy()
+    return F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING
+        or (F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active)
+end
+
+local function settleLocation()
+    locationSettleTimer = nil
+    if navigationBusy() then return end
+    local before = autoExpandedLocation
+    autoExpandCurrentLocation()
+    if autoExpandedLocation ~= before then f2t_galaxy_refresh_open() end
+end
+
+local function restartLocationSettle()
+    if locationSettleTimer then killTimer(locationSettleTimer); locationSettleTimer = nil end
+    if navigationBusy() then return end
+    locationSettleTimer = tempTimer(LOCATION_SETTLE_SECONDS, settleLocation)
+end
+
 registerAnonymousEventHandler("gmcp.room.info", function()
+    restartLocationSettle()
     f2t_galaxy_refresh_open()
 end)
+
+-- settled is false when navigation is still working toward its destination.
+registerAnonymousEventHandler("f2tSpeedwalkFinished", function(_, _result, _roomId, settled)
+    if settled then restartLocationSettle() end
+end)
+
+registerAnonymousEventHandler("f2tExploreStopped", restartLocationSettle)
 
 -- Bulk map changes (delete/clear, import) don't necessarily move the player,
 -- so they can't rely on gmcp.room.info to trigger a repaint.
