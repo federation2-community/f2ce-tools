@@ -454,6 +454,19 @@ function f2t_map_resolve_location(location)
         return nil, err_msg, {kind = "system", name = canonical, link_only = true}
     end
 
+    -- System the topology model knows of but the map has never visited. whereis
+    -- only answers planet names, so it can't vouch for these.
+    if not KNOWN_FLAGS[single_arg] and f2t_map_topology_canonical_system then
+        if f2t_map_topology_ensure_loaded then f2t_map_topology_ensure_loaded() end
+        local known_system = f2t_map_topology_canonical_system(original_arg)
+        if known_system then
+            local err_msg = string.format(
+                "System '%s' is not in your map yet - try 'map explore %s' to discover it",
+                known_system, known_system)
+            return nil, err_msg, {kind = "system", name = known_system, link_only = true, unmapped = true}
+        end
+    end
+
     -- Flag in current area
     if not F2T_MAP_CURRENT_ROOM_ID then return nil, "Current location unknown" end
     local current_area_id = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)

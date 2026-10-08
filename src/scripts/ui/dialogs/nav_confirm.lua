@@ -20,6 +20,11 @@ local function navConfirmBodyText(destination, hint)
             "%s<br><br>Explore <font color='#7ab4ff'>%s</font> to look for its %s?",
             problem, hint.name, hint.flag)
     end
+    if hint.link_only then
+        return string.format(
+            "%s<br><br>Jump to the <font color='#7ab4ff'>%s</font> system to add it to your map?",
+            problem, hint.name)
+    end
     return string.format(
         "%s<br><br>Travel to the <font color='#7ab4ff'>%s</font> system and explore for it?",
         problem, hint.name)

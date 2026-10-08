@@ -221,7 +221,10 @@ function f2t_map_navigate_handle_hint(destination, hint, error_msg, opts)
         f2t_map_whereis_lookup(hint.name, function(system_name)
             if system_name then
                 local system_hint = {kind = "system", name = system_name}
-                f2t_map_navigate_handle_hint(destination, system_hint, error_msg, opts)
+                local found_msg = string.format(
+                    "'%s' is in the %s system, which is not in your map yet - " ..
+                    "try 'map explore %s' to discover it", hint.name, system_name, system_name)
+                f2t_map_navigate_handle_hint(destination, system_hint, found_msg, opts)
             else
                 cecho(string.format("\n<red>[map]<reset> %s\n", error_msg))
                 if opts.on_result then opts.on_result(false, "failed") end
@@ -232,8 +235,9 @@ function f2t_map_navigate_handle_hint(destination, hint, error_msg, opts)
 
     -- A link target has nothing to discover at the far end, so the only
     -- thing worth asking about is whether we must explore *this* system first
-    -- to find the link we jump from. Explore neither end, ask nothing.
-    if hint.link_only then
+    -- to find the link we jump from. Explore neither end, ask nothing. A system
+    -- never visited is still asked about: the jump is into the unknown.
+    if hint.link_only and not hint.unmapped then
         local hereSystem = f2t_get_current_system()
         local haveLocalLink = hereSystem and hereSystem ~= ""
             and f2t_map_find_link_room_in_system(hereSystem) ~= nil
