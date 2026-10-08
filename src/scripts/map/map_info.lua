@@ -50,6 +50,20 @@ pcall(function() disableMapInfo("fed2_info") end)
 pcall(function() disableMapInfo("fed2_bc") end)
 pcall(function() disableMapInfo("fed2_rm") end)
 
+-- Force the info box background opaque so rooms never show through it. A
+-- customised colour keeps its RGB; Mudlet's stock translucent grey becomes the
+-- dark grey it looked like over the map, since opaque mid-grey drowns the text.
+pcall(function()
+    local current = getConfig("mapInfoColor")
+    if type(current) ~= "table" or current[4] == 255 then return end
+    local isStockDefault = current[1] == 150 and current[2] == 150 and current[3] == 150
+    if isStockDefault then
+        setConfig("mapInfoColor", {40, 44, 52, 255})
+    else
+        setConfig("mapInfoColor", {current[1], current[2], current[3], 255})
+    end
+end)
+
 local ICON_PRIORITY = {
     "link", "orbit", "shuttlepad", "exchange", "shipyard", "hospital", "bar", "courier"
 }
