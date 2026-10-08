@@ -23,23 +23,25 @@ local _CSS_MENU_BG = [[
     border: 1px solid rgba(80,95,140,200);
     border-radius: 5px;
 ]]
-local _CSS_MENU_ITEM = [[
-    QLabel {
-        background-color: rgba(28,32,48,220);
-        color: rgba(205,215,225,255);
-        border: 1px solid rgba(80,90,120,170);
-        border-radius: 3px;
-        font-family: "Consolas","Monaco",monospace;
-        font-size: 12px;
-        qproperty-alignment: AlignVCenter;
-        padding: 0 4px;
-    }
-    QLabel::hover {
-        background-color: rgba(50,60,90,235);
-        border-color: rgba(100,160,255,200);
-        color: white;
-    }
-]]
+local function menuItemCss(background, border, color)
+    return string.format([[
+        QLabel {
+            background-color: %s;
+            color: %s;
+            border: 1px solid %s;
+            border-radius: 3px;
+            font-family: "Consolas","Monaco",monospace;
+            font-size: 12px;
+            qproperty-alignment: AlignVCenter;
+            padding: 0 4px;
+        }
+    ]], background, color, border)
+end
+
+-- Hover is applied from enter/leave callbacks: the menu is reused across opens
+-- and stacked over the dropdown backdrop, where Qt's :hover state doesn't track.
+local _CSS_MENU_ITEM       = menuItemCss("rgba(28,32,48,220)", "rgba(80,90,120,170)", "rgba(205,215,225,255)")
+local _CSS_MENU_ITEM_HOVER = menuItemCss("rgba(56,68,104,240)", "rgba(100,160,255,220)", "white")
 
 local BUTTON_WIDTH  = 78
 local BUTTON_HEIGHT = 22
@@ -126,10 +128,12 @@ function f2tBuildMapNearest(parent, gid)
     button:echo("<center>Nearest ▾</center>")
 
     local menu        = nil
+    local menuItems   = {}
     local menuVisible = false
 
     local function closeMenu()
         if menu then menu:hide() end
+        for _, item in ipairs(menuItems) do item:setStyleSheet(_CSS_MENU_ITEM) end
         if menuVisible then f2tHideDropdownBackdrop() end
         menuVisible = false
     end
@@ -167,6 +171,9 @@ function f2tBuildMapNearest(parent, gid)
             }, menu)
             item:setStyleSheet(_CSS_MENU_ITEM)
             item:echo(rowHtml(entry))
+            item:setOnEnter(function() item:setStyleSheet(_CSS_MENU_ITEM_HOVER) end)
+            item:setOnLeave(function() item:setStyleSheet(_CSS_MENU_ITEM) end)
+            table.insert(menuItems, item)
             item:setClickCallback(function()
                 closeMenu()
                 goToNearest(entry)

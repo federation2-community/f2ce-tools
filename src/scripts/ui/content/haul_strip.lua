@@ -38,18 +38,25 @@ end
 local _BTN_HAUL_CSS = actionBtnCss("#7aa2ff", "#9cb8ff")
 local _BTN_MODE_CSS = actionBtnCss("#b48cff", "#c8a8ff")
 
-local _MENU_ITEM_CSS = [[
-    QLabel {
-        background-color: rgba(24,26,38,220);
-        border: none; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-family: "Consolas","Monaco",monospace;
-        padding: 0 6px;
-    }
-    QLabel::hover {
-        background-color: rgba(48,56,88,230);
-        color: white;
-    }
-]]
+local function menuItemCss(background, color, accent)
+    return string.format([[
+        QLabel {
+            background-color: %s;
+            color: %s;
+            border: none;
+            border-left: 3px solid %s;
+            border-bottom: 1px solid rgba(255,255,255,0.10);
+            font-family: "Consolas","Monaco",monospace;
+            padding: 0 6px;
+        }
+    ]], background, color, accent)
+end
+
+-- Hover is applied from enter/leave callbacks: the menu sits over the dropdown
+-- backdrop, where Qt's :hover state doesn't track.
+local _MENU_ITEM_CSS       = menuItemCss("rgb(34,38,56)", "#e4e8f4", "transparent")
+local _MENU_ITEM_HOVER_CSS = menuItemCss("rgb(60,72,112)", "white", "#7aa2ff")
+local MENU_COMMAND_COLOR   = "#a4aed0"
 
 local STATE_STYLE = {
     stopped  = { label = "STOPPED",   color = "#888888" },
@@ -138,8 +145,8 @@ local function openMenu(strip, x, items)
         x = 0, y = 0, width = "100%", height = "100%",
     }, menu)
     bg:setStyleSheet([[
-        background-color: rgba(20, 22, 32, 250);
-        border: 1px solid rgba(100, 100, 110, 200);
+        background-color: rgb(20, 22, 32);
+        border: 1px solid rgba(122, 162, 255, 160);
         border-radius: 4px;
     ]])
 
@@ -151,8 +158,10 @@ local function openMenu(strip, x, items)
         lbl:setStyleSheet(_MENU_ITEM_CSS)
         lbl:echo(string.format(
             "<table width='100%%'><tr><td style='%s'>%s</td>" ..
-            "<td align='right' style='%scolor:#6f7896;'>%s</td></tr></table>",
-            CELL_FONT, item.label, CELL_FONT, item.command))
+            "<td align='right' style='%scolor:%s;'>%s</td></tr></table>",
+            CELL_FONT, item.label, CELL_FONT, MENU_COMMAND_COLOR, item.command))
+        lbl:setOnEnter(function() lbl:setStyleSheet(_MENU_ITEM_HOVER_CSS) end)
+        lbl:setOnLeave(function() lbl:setStyleSheet(_MENU_ITEM_CSS) end)
         local command = item.command
         lbl:setClickCallback(function()
             closeMenu(strip)
@@ -280,10 +289,10 @@ local function showHoverTip(strip, x, text)
         }, target.content)
         strip.hoverTip:setStyleSheet(string.format([[
             QLabel {
-                background-color: rgba(29, 32, 48, 250);
-                border: 1px solid rgba(255,255,255,0.18);
+                background-color: rgb(58, 62, 80);
+                border: 1px solid rgba(255,255,255,0.35);
                 border-radius: 3px;
-                color: #e8ebf5;
+                color: #f2f4fa;
                 padding: 2px 6px;
                 qproperty-wordWrap: true;
                 %s
@@ -355,16 +364,15 @@ function f2tHaulStripCreate(target)
         hideHoverTip(strip)
         openMenu(strip, haulBtnX, haulMenuItems(f2tHaulingSnapshot()))
     end)
-    haulBtn:setOnEnter(function() showHoverTip(strip, haulBtnX, "Start, pause or stop hauling (haul ...)") end)
-    haulBtn:setOnLeave(function() hideHoverTip(strip) end)
 
     modeBtn:setClickCallback(function()
         hideHoverTip(strip)
         if strip.multiMode then openMenu(strip, strip.modeBtnX, modeMenuItems(f2tHaulingSnapshot())) end
     end)
     modeBtn:setOnEnter(function()
-        showHoverTip(strip, strip.modeBtnX, strip.multiMode and "What 'haul start' runs (haul mode ...)"
-            or "What 'haul start' runs at your rank")
+        showHoverTip(strip, strip.modeBtnX, strip.multiMode
+            and "Hauling mode: what 'haul start' runs. Click to change it."
+            or "Hauling mode: the one 'haul start' runs at your rank.")
     end)
     modeBtn:setOnLeave(function() hideHoverTip(strip) end)
 
