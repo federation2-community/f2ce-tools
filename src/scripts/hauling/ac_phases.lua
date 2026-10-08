@@ -10,6 +10,45 @@
 -- tempTimer() safety nets remain solely as a fallback in case a GMCP push is
 -- ever missed -- they are not the primary detection mechanism.
 
+--- Walk to a planet's AC office, exploring unmapped stretches on the way.
+--- onArrived runs there; onUnreachable(why) when the map can't get there.
+--- A pause, stop or newer walk makes the outcome stale, and it is dropped.
+--- @param planet string
+--- @param phase string Phase the walk belongs to
+--- @param onArrived function
+--- @param onUnreachable function
+local function walkToAcRoom(planet, phase, onArrived, onUnreachable)
+    if not f2t_map_on_map() then
+        f2t_hauling_do_stop()
+        return
+    end
+
+    local hash = f2t_ac_get_room_hash(planet)
+    if F2T_AC_ROOMS[planet] and f2t_map_get_room_by_hash(hash) == nil then
+        onUnreachable(string.format("The AC office on %s isn't on your map (import the bundled map " ..
+            "with 'map import db')", planet))
+        return
+    end
+
+    local token = (F2T_HAULING_STATE.ac_walk_token or 0) + 1
+    F2T_HAULING_STATE.ac_walk_token = token
+    f2t_map_walk_to(hash, function(_, result)
+        if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == phase
+                and F2T_HAULING_STATE.ac_walk_token == token) then
+            return
+        end
+        if result == "stopped" then
+            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
+            f2t_hauling_do_stop()
+        elseif f2t_ac_get_current_planet() == planet then
+            onArrived()
+        else
+            onUnreachable(string.format("Couldn't find a way to the AC office on %s", planet))
+        end
+    end)
+end
+
 --- Phase: Select the best AC job from the live job board
 --- @return boolean True if phase complete, false if waiting
 function f2t_hauling_phase_ac_fetch_jobs()
@@ -169,47 +208,30 @@ function f2t_hauling_phase_ac_navigate_to_source()
 
     f2t_debug_log("[hauling/ac] Navigating to source: %s", job.source)
 
-    -- Check if already there
-    local current_planet = f2t_ac_get_current_planet()
-    if current_planet == job.source then
+    if f2t_ac_get_current_planet() == job.source then
         f2t_debug_log("[hauling/ac] Already at source")
         F2T_HAULING_STATE.current_phase = "ac_accepting_job"
-        return true
+        return f2t_hauling_phase_ac_accept_job()
     end
 
-    -- Get Fed2 hash for destination
-    local hash = f2t_ac_get_room_hash(job.source)
-    if not hash then
-        cecho(string.format("\n<red>[hauling]<reset> Unknown AC room for planet: %s\n", job.source))
-        f2t_hauling_stop()
-        return true
-    end
-
-    -- Use map navigation with hash
     cecho(string.format("\n<cyan>[hauling]<reset> Navigating to AC room at %s...\n", job.source))
-    local result = f2t_map_navigate(hash)
-
-    if f2t_map_navigate_ok(result) then
-        -- Map says we're already there, but verify by checking planet
-        local verify_planet = f2t_ac_get_current_planet()
-        if verify_planet == job.source then
-            f2t_debug_log("[hauling/ac] Verified at source AC room")
-            F2T_HAULING_STATE.current_phase = "ac_accepting_job"
-            return f2t_hauling_phase_ac_accept_job()
-        else
-            -- Map was wrong, wait for actual navigation
-            f2t_debug_log(
-                "[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
-                verify_planet or "unknown", job.source)
-            return false
+    walkToAcRoom(job.source, "ac_navigating_to_source", function()
+        f2t_hauling_transition("ac_accepting_job")
+    end, function(why)
+        -- A contract already accepted (resumed from before 'haul start') can't be swapped
+        if f2t_ac_get_current_job() then
+            cecho(string.format("\n<red>[hauling]<reset> %s, and your contract is already accepted. Get there " ..
+                "by hand and collect, then 'haul start' again.\n", why))
+            f2t_hauling_do_stop()
+            return
         end
-    end
-
-    -- result is false or nil - navigation started or needs retry
-    -- Wait for speedwalk to complete (event handler will transition)
-    -- Note: f2t_map_navigate may return false if current location unknown,
-    -- but it will auto-retry with 'look' command
-    f2t_debug_log("[hauling/ac] Waiting for navigation to complete")
+        F2T_HAULING_STATE.ac_unreachable = F2T_HAULING_STATE.ac_unreachable or {}
+        F2T_HAULING_STATE.ac_unreachable[job.id] = true
+        F2T_HAULING_STATE.ac_job = nil
+        cecho(string.format("\n<yellow>[hauling]<reset> %s, so skipping job %d and picking another\n",
+            why, job.id))
+        f2t_hauling_transition("ac_fetching_jobs")
+    end)
     return false
 end
 
@@ -379,47 +401,21 @@ function f2t_hauling_phase_ac_navigate_to_dest()
 
     f2t_debug_log("[hauling/ac] Navigating to destination: %s", job.destination)
 
-    -- Check if already there
-    local current_planet = f2t_ac_get_current_planet()
-    if current_planet == job.destination then
+    if f2t_ac_get_current_planet() == job.destination then
         f2t_debug_log("[hauling/ac] Already at destination")
         F2T_HAULING_STATE.current_phase = "ac_delivering"
-        return true
+        return f2t_hauling_phase_ac_deliver()
     end
 
-    -- Get Fed2 hash for destination
-    local hash = f2t_ac_get_room_hash(job.destination)
-    if not hash then
-        cecho(string.format("\n<red>[hauling]<reset> Unknown AC room for planet: %s\n", job.destination))
-        f2t_hauling_stop()
-        return true
-    end
-
-    -- Use map navigation with hash
     cecho(string.format("\n<cyan>[hauling]<reset> Navigating to AC room at %s...\n", job.destination))
-    local result = f2t_map_navigate(hash)
-
-    if f2t_map_navigate_ok(result) then
-        -- Map says we're already there, but verify by checking planet
-        local verify_planet = f2t_ac_get_current_planet()
-        if verify_planet == job.destination then
-            f2t_debug_log("[hauling/ac] Verified at destination AC room")
-            F2T_HAULING_STATE.current_phase = "ac_delivering"
-            return f2t_hauling_phase_ac_deliver()
-        else
-            -- Map was wrong, wait for actual navigation
-            f2t_debug_log(
-                "[hauling/ac] Map returned true but not at correct planet (at %s, need %s), waiting for navigation",
-                verify_planet or "unknown", job.destination)
-            return false
-        end
-    end
-
-    -- result is false or nil - navigation started or needs retry
-    -- Wait for speedwalk to complete (event handler will transition)
-    -- Note: f2t_map_navigate may return false if current location unknown,
-    -- but it will auto-retry with 'look' command
-    f2t_debug_log("[hauling/ac] Waiting for navigation to destination to complete")
+    walkToAcRoom(job.destination, "ac_navigating_to_dest", function()
+        f2t_hauling_transition("ac_delivering")
+    end, function(why)
+        -- The cargo is aboard and the contract can't be swapped, so hand over
+        cecho(string.format("\n<red>[hauling]<reset> %s with %s aboard. Get there by hand and " ..
+            "deliver, then 'haul start' again.\n", why, job.commodity or "the cargo"))
+        f2t_hauling_do_stop()
+    end)
     return false
 end
 
@@ -612,166 +608,6 @@ end
 -- AC Event Handlers
 -- ========================================
 
---- Check if navigation to AC source is complete
-function f2t_hauling_check_nav_to_ac_source_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "ac_navigating_to_source" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        -- Capture result immediately to prevent race conditions with next speedwalk
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/ac] Speedwalk stopped with result: %s", result or "unknown")
-
-        -- Wait briefly for final GMCP update before processing result
-        -- IMPORTANT: AC handlers verify planet location using f2t_ac_get_current_planet()
-        -- which depends on gmcp.room.info. We need to wait for GMCP to settle after
-        -- room change before checking location. Exchange handlers don't need this
-        -- because they just transition phases without location verification.
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "ac_navigating_to_source") then
-                return
-            end
-
-            local job = F2T_HAULING_STATE.ac_job
-            if not job then
-                f2t_debug_log("[hauling/ac] No job in state, cannot verify source")
-                return
-            end
-
-            -- Check speedwalk result and handle accordingly
-            if result == "completed" then
-                -- Speedwalk completed successfully - verify we're at correct planet
-                local current_planet = f2t_ac_get_current_planet()
-                if current_planet == job.source then
-                    f2t_debug_log("[hauling/ac] Verified arrival at source planet %s", job.source)
-                    f2t_hauling_transition("ac_accepting_job")
-                else
-                    f2t_debug_log("[hauling/ac] Speedwalk completed but not at source (at %s, need %s)",
-                        current_planet or "unknown", job.source)
-                    cecho(string.format(
-                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
-                    f2t_hauling_phase_ac_navigate_to_source()
-                end
-
-            elseif result == "stopped" then
-                -- User manually stopped speedwalk - respect that and stop hauling
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_debug_log("[hauling/ac] User stopped navigation, stopping hauling")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                -- Speedwalk couldn't reach destination after retries - path is blocked
-                -- NOTE: AC mode fetches new jobs instead of stopping because there are many
-                -- available jobs. One blocked path doesn't mean all jobs are unreachable.
-                -- Exchange mode stops hauling on "failed" because the selected commodity/location
-                -- is the most profitable choice - can't proceed without reaching it.
-                cecho(string.format(
-                    "\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n",
-                    job.source))
-                f2t_debug_log("[hauling/ac] Navigation failed after retries, skipping job")
-                F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-                f2t_hauling_phase_ac_fetch_jobs()
-
-            else
-                -- No result or unknown - treat as legacy behavior for compatibility
-                f2t_debug_log("[hauling/ac] Unknown speedwalk result, using legacy verification")
-                local current_planet = f2t_ac_get_current_planet()
-                if current_planet == job.source then
-                    f2t_hauling_transition("ac_accepting_job")
-                else
-                    cecho(string.format(
-                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.source))
-                    f2t_hauling_phase_ac_navigate_to_source()
-                end
-            end
-        end)
-    end
-end
-
---- Check if navigation to AC destination is complete
-function f2t_hauling_check_nav_to_ac_dest_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "ac_navigating_to_dest" then
-        return
-    end
-
-    -- Check if speedwalk is no longer active
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        -- Capture result immediately to prevent race conditions with next speedwalk
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/ac] Speedwalk stopped with result: %s", result or "unknown")
-
-        -- Wait briefly for final GMCP update before processing result
-        -- (See source handler for explanation of why AC uses tempTimer)
-        tempTimer(0.3, function()
-            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused and
-                    F2T_HAULING_STATE.current_phase == "ac_navigating_to_dest") then
-                return
-            end
-
-            local job = F2T_HAULING_STATE.ac_job
-            if not job then
-                f2t_debug_log("[hauling/ac] No job in state, cannot verify destination")
-                return
-            end
-
-            -- Check speedwalk result and handle accordingly
-            if result == "completed" then
-                -- Speedwalk completed successfully - verify we're at correct planet
-                local current_planet = f2t_ac_get_current_planet()
-                if current_planet == job.destination then
-                    f2t_debug_log("[hauling/ac] Verified arrival at destination planet %s", job.destination)
-                    f2t_hauling_transition("ac_delivering")
-                else
-                    f2t_debug_log("[hauling/ac] Speedwalk completed but not at destination (at %s, need %s)",
-                        current_planet or "unknown", job.destination)
-                    cecho(string.format(
-                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
-                    f2t_hauling_phase_ac_navigate_to_dest()
-                end
-
-            elseif result == "stopped" then
-                -- User manually stopped speedwalk - respect that and stop hauling
-                cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-                f2t_debug_log("[hauling/ac] User stopped navigation, stopping hauling")
-                f2t_hauling_stop()
-
-            elseif result == "failed" then
-                -- Speedwalk couldn't reach destination after retries - path is blocked
-                -- (See source handler for explanation of why AC fetches new jobs vs stopping)
-                cecho(string.format(
-                    "\n<red>[hauling]<reset> Cannot reach %s (path blocked), skipping job and fetching new ones\n",
-                    job.destination))
-                f2t_debug_log("[hauling/ac] Navigation failed after retries, skipping job")
-                F2T_HAULING_STATE.current_phase = "ac_fetching_jobs"
-                f2t_hauling_phase_ac_fetch_jobs()
-
-            else
-                -- No result or unknown - treat as legacy behavior for compatibility
-                f2t_debug_log("[hauling/ac] Unknown speedwalk result, using legacy verification")
-                local current_planet = f2t_ac_get_current_planet()
-                if current_planet == job.destination then
-                    f2t_hauling_transition("ac_delivering")
-                else
-                    cecho(string.format(
-                        "\n<yellow>[hauling]<reset> Navigation interrupted, resuming to %s...\n", job.destination))
-                    f2t_hauling_phase_ac_navigate_to_dest()
-                end
-            end
-        end)
-    end
-end
-
 --- Re-run job selection when the live board changes
 function f2t_hauling_check_ac_board_update()
     if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
@@ -807,14 +643,6 @@ end
 --- @return table Map of handler ids, keyed by GMCP event name
 function f2t_ac_register_handlers()
     local handlers = {}
-
-    -- Map navigation completion (speedwalk state, unrelated to job data)
-    handlers.room_info = registerAnonymousEventHandler("gmcp.room.info", function()
-        tempTimer(0.5, function()
-            f2t_hauling_check_nav_to_ac_source_complete()
-            f2t_hauling_check_nav_to_ac_dest_complete()
-        end)
-    end)
 
     -- Live job board (job selection)
     handlers.jobs_board = registerAnonymousEventHandler("gmcp.jobs.board", f2t_hauling_check_ac_board_update)

@@ -448,6 +448,8 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.ac_cash_before_deliver = nil
     F2T_HAULING_STATE.ac_completing = false
     F2T_HAULING_STATE.ac_50_milestone_shown = false
+    F2T_HAULING_STATE.ac_unreachable = {}
+    F2T_HAULING_STATE.ac_walk_token = 0
 
     -- Clear Akaturi state; the contract itself stays with the game
     F2T_HAULING_STATE.akaturi_take_attempts = 0
@@ -529,7 +531,6 @@ function f2t_hauling_pause(immediate)
             f2t_akaturi_visit_cancel("hauling")
             F2T_HAULING_STATE.paused_speedwalk_destination = nil
         end
-
         -- Stop any active speedwalk (will recompute on resume)
         if F2T_SPEEDWALK_ACTIVE then
             f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
@@ -607,8 +608,9 @@ function f2t_hauling_resume()
     end
 
     -- Akaturi phases restart from the contract as it now stands, which also
-    -- covers work done by hand while paused.
-    if F2T_HAULING_STATE.mode == "akaturi" then
+    -- covers work done by hand while paused. AC walks are restarted by their
+    -- phase, so they explore again rather than replaying a bare speedwalk.
+    if F2T_HAULING_STATE.mode == "akaturi" or F2T_HAULING_STATE.mode == "ac" then
         F2T_HAULING_STATE.paused_speedwalk_destination = nil
     end
 

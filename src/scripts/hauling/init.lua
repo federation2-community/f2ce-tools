@@ -117,6 +117,14 @@ f2t_settings_register("hauling", "mode", {
     choices     = {"auto", "ac", "akaturi", "exchange", "planet", "deficit"},
 })
 
+f2t_settings_register("hauling", "ac_priority", {
+    label       = "AC job priority",
+    description = "Among the board jobs paying the most hauling credits, which AC hauling takes " ..
+        "next: shortest (pickup nearest where the last job was delivered) or return (most pay)",
+    default     = "shortest",
+    choices     = {"shortest", "return"},
+})
+
 f2t_settings_register("hauling", "margin_threshold", {
     label       = "Margin threshold (%)",
     description = "Minimum profit margin % to continue trading a commodity",

@@ -238,8 +238,58 @@ function f2t_ac_should_repay_loan()
     return false, nil
 end
 
---- Select the best AC job from the live board
---- Priority: highest hauling credits, then highest payment, then current location match
+--- Map room holding a planet's AC office: the fixed Sol room, else the shuttlepad
+--- @param planet string
+--- @return number|nil
+local function acRoomId(planet)
+    local hash = F2T_AC_ROOMS[planet]
+    if hash then return f2t_map_get_room_by_hash(hash) end
+    return f2t_map_find_shuttlepad_room(planet)
+end
+
+--- Moves on the mapped route between two rooms, and how many of them are in space
+--- @return number|nil moves nil when the map has no route
+--- @return number|nil spaceMoves
+local function routeLength(fromId, toId)
+    if not fromId or not toId then return nil end
+    if fromId == toId then return 0, 0 end
+    if not getPath(fromId, toId) then return nil end
+    local spaceMoves = 0
+    for _, roomId in ipairs(speedWalkPath) do
+        local areaName = getRoomAreaName(getRoomArea(tonumber(roomId)))
+        if type(areaName) == "string" and f2t_map_get_system_from_space_area(areaName) then
+            spaceMoves = spaceMoves + 1
+        end
+    end
+    return #speedWalkPath, spaceMoves
+end
+
+--- Travel and expected pay for a job. The contract clock (gtu) ticks once per
+--- move in space after accepting, so only the source-to-destination leg counts
+--- toward the late penalty (half pay) or the fast-delivery bonus (+20% within 2/3).
+--- @return table { toSource = number, leg = number, fee = number } (moves are math.huge when unmapped)
+local function assessJob(job, hereId)
+    local sourceId = acRoomId(job.source)
+    local toSource = hereId and routeLength(hereId, sourceId)
+    local leg, legSpaceMoves = routeLength(sourceId, acRoomId(job.destination))
+
+    local fee = job.quantity * job.payment
+    local gtu = tonumber(job.gtu)
+    if legSpaceMoves and gtu then
+        if legSpaceMoves > gtu then
+            fee = fee / 2
+        elseif legSpaceMoves <= (gtu * 2) / 3 then
+            fee = fee * 6 / 5
+        end
+    end
+
+    return { toSource = toSource or math.huge, leg = leg or math.huge, fee = fee }
+end
+
+--- Select the best AC job from the live board: most hauling credits first, then
+--- per the hauling/ac_priority setting:
+--- shortest = fewest moves from here to the job's source, then shortest delivery;
+--- return = highest expected fee
 --- @param jobs table Array of gmcp.jobs.board entries
 --- @param current_planet string|nil Current planet name
 --- @param ship_capacity number Ship cargo capacity in tons
@@ -252,8 +302,11 @@ function f2t_ac_select_best_job(jobs, current_planet, ship_capacity)
 
     -- Filter jobs that fit in ship capacity
     local suitable_jobs = {}
+    local unreachable = F2T_HAULING_STATE.ac_unreachable or {}
     for _, job in ipairs(jobs) do
-        if job.quantity <= ship_capacity then
+        if unreachable[job.id] then
+            f2t_debug_log("[hauling/ac] Job %d skipped, its source couldn't be reached", job.id)
+        elseif job.quantity <= ship_capacity then
             table.insert(suitable_jobs, job)
         else
             f2t_debug_log("[hauling/ac] Job %d requires %d tons but ship capacity is %d",
@@ -266,19 +319,25 @@ function f2t_ac_select_best_job(jobs, current_planet, ship_capacity)
         return nil
     end
 
-    -- Sort by: hauling credits (desc), payment (desc), current location match
+    local hereId = F2T_MAP_CURRENT_ROOM_ID
+    local assessment = {}
+    for _, job in ipairs(suitable_jobs) do
+        assessment[job] = assessJob(job, hereId)
+    end
+
+    local shortest = f2t_settings_get("hauling", "ac_priority") ~= "return"
     table.sort(suitable_jobs, function(a, b)
-        -- First priority: hauling credits
-        if a.credits ~= b.credits then
-            return a.credits > b.credits
+        local aInfo, bInfo = assessment[a], assessment[b]
+        if a.credits ~= b.credits then return a.credits > b.credits end
+        if shortest then
+            if aInfo.toSource ~= bInfo.toSource then return aInfo.toSource < bInfo.toSource end
+            if aInfo.leg ~= bInfo.leg then return aInfo.leg < bInfo.leg end
+            if aInfo.fee ~= bInfo.fee then return aInfo.fee > bInfo.fee end
+        else
+            if aInfo.fee ~= bInfo.fee then return aInfo.fee > bInfo.fee end
+            if aInfo.toSource ~= bInfo.toSource then return aInfo.toSource < bInfo.toSource end
         end
 
-        -- Second priority: payment per ton
-        if a.payment ~= b.payment then
-            return a.payment > b.payment
-        end
-
-        -- Third priority: current location match
         if current_planet then
             local a_at_source = (a.source == current_planet)
             local b_at_source = (b.source == current_planet)
@@ -287,14 +346,18 @@ function f2t_ac_select_best_job(jobs, current_planet, ship_capacity)
             end
         end
 
-        -- Default: lower job id (older job)
         return a.id < b.id
     end)
 
     local best_job = suitable_jobs[1]
-    f2t_debug_log("[hauling/ac] Selected job %d: %s from %s to %s (%dig/tn, %dhcr)",
-        best_job.id, best_job.commodity, best_job.source, best_job.destination,
-        best_job.payment, best_job.credits)
+    local best_info = assessment[best_job]
+    local function movesText(moves) return moves == math.huge and "?" or tostring(moves) end
+    f2t_debug_log("[hauling/ac] Selected job %d (%s): %s from %s to %s (%dig/tn, %dhcr, " ..
+        "%s moves to source, %s to deliver, ~%dig)",
+        best_job.id, shortest and "shortest" or "return",
+        best_job.commodity, best_job.source, best_job.destination,
+        best_job.payment, best_job.credits,
+        movesText(best_info.toSource), movesText(best_info.leg), math.floor(best_info.fee))
 
     return best_job
 end
