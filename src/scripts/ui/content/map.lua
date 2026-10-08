@@ -300,7 +300,10 @@ local function buildContentDef()
             resizeCount = resizeCount + 1
             f2t_debug_log("[map content] resize() #%d called, hasMapper=%s",
                 resizeCount, tostring(target._f2tHasMapper))
-            if target._f2tHasMapper then mapperFit() end
+            if target._f2tHasMapper then
+                mapperFit()
+                if f2tMapNearestReposition then f2tMapNearestReposition() end
+            end
         end,
     }
 end

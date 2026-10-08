@@ -93,8 +93,29 @@ local function resolveRoom(room_id)
     return room_id
 end
 
+-- Text each info line last painted, keyed by contributor name, so overlays
+-- can sit below the box however it wraps. f2tMapInfoChanged fires (deferred,
+-- outside the paint) when any of it changes.
+F2T_MAP_INFO_TEXT = {}
+local _infoChangePending = false
+
+local function noteInfoText(key, ...)
+    local text = (...) or ""
+    if F2T_MAP_INFO_TEXT[key] ~= text then
+        F2T_MAP_INFO_TEXT[key] = text
+        if not _infoChangePending then
+            _infoChangePending = true
+            tempTimer(0, function()
+                _infoChangePending = false
+                raiseEvent("f2tMapInfoChanged")
+            end)
+        end
+    end
+    return ...
+end
+
 -- Line 1: galaxy path breadcrumb  (cartel › system › planet)
-registerMapInfo("fed2_bc", function(room_id)
+local function breadcrumbInfo(room_id)
     room_id = resolveRoom(room_id)
     if not room_id or not roomExists(room_id) then return "" end
 
@@ -109,10 +130,10 @@ registerMapInfo("fed2_bc", function(room_id)
 
     if #parts == 0 then return "" end
     return table.concat(parts, " › "), false, false, 190, 210, 230
-end)
+end
 
 -- Line 2: room name with colored badge when the room has a typed flag.
-registerMapInfo("fed2_rm", function(room_id)
+local function roomNameInfo(room_id)
     room_id = resolveRoom(room_id)
     if not room_id or not roomExists(room_id) then return "" end
 
@@ -143,6 +164,13 @@ registerMapInfo("fed2_rm", function(room_id)
     end
 
     return name, false, false, 190, 210, 230
+end
+
+registerMapInfo("fed2_bc", function(room_id)
+    return noteInfoText("fed2_bc", breadcrumbInfo(room_id))
+end)
+registerMapInfo("fed2_rm", function(room_id)
+    return noteInfoText("fed2_rm", roomNameInfo(room_id))
 end)
 
 enableMapInfo("fed2_bc")

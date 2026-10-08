@@ -49,23 +49,91 @@ local ITEM_HEIGHT   = 26
 local GAP           = 4
 local PAD           = 6
 
--- Mudlet paints the info lines from y=10 down: each is one display-font line
--- plus 10px, starting at y=20. fed2_bc and fed2_rm make two lines. Their
--- emoji fall back to a colour emoji font with taller lines than the display
--- font, so the tallest of those sets the line height.
-local INFO_LINE_COUNT = 2
+-- Mudlet paints each info line from y=20 down as a box word-wrapped to the
+-- map width minus 40px, its wrapped text height plus 10px tall. Emoji fall
+-- back to a colour emoji font with taller lines than the display font, so the
+-- tallest of those sets the line height, and each is taken as two cells wide.
+local INFO_KEYS = { "fed2_bc", "fed2_rm" }
+local INFO_LINE_COUNT = 2   -- assumed before the map has painted any
 local EMOJI_FONTS = { "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji" }
 
-local function infoBarBottom()
+-- Last-built pane's button and its parent; the move handler targets these.
+local _current = nil
+local _infoHandlerId = nil
+
+local function fontMetrics()
     local size = getFontSize()
-    local lineHeight = 16
-    local fonts = { getFont() }
-    for _, font in ipairs(EMOJI_FONTS) do table.insert(fonts, font) end
-    for _, font in ipairs(fonts) do
-        local ok, _, height = pcall(calcFontSize, size, font)
-        if ok and tonumber(height) and height > lineHeight then lineHeight = height end
+    local charWidth, lineHeight = 8, 16
+    local ok, width, height = pcall(calcFontSize, size, getFont())
+    if ok and tonumber(width) then charWidth = width end
+    if ok and tonumber(height) then lineHeight = height end
+    for _, font in ipairs(EMOJI_FONTS) do
+        local fontOk, _, fontHeight = pcall(calcFontSize, size, font)
+        if fontOk and tonumber(fontHeight) and fontHeight > lineHeight then lineHeight = fontHeight end
     end
-    return 20 + INFO_LINE_COUNT * (lineHeight + 10)
+    return charWidth, lineHeight
+end
+
+local function codepointOf(character)
+    local lead = string.byte(character, 1)
+    if lead < 0x80 then return lead end
+    local codepoint = lead % (lead >= 0xF0 and 0x08 or lead >= 0xE0 and 0x10 or 0x20)
+    for index = 2, #character do
+        codepoint = codepoint * 0x40 + string.byte(character, index) % 0x40
+    end
+    return codepoint
+end
+
+-- Joiners and variation selectors take no space.
+local function cellCount(text)
+    local cells = 0
+    for character in string.gmatch(text, "[%z\1-\127\194-\244][\128-\191]*") do
+        local codepoint = codepointOf(character)
+        local zeroWidth = codepoint == 0x200D or (codepoint >= 0xFE00 and codepoint <= 0xFE0F)
+        if codepoint >= 0x1F000 or (codepoint >= 0x2600 and codepoint <= 0x2BFF) then
+            cells = cells + 2
+        elseif not zeroWidth then
+            cells = cells + 1
+        end
+    end
+    return cells
+end
+
+local function wrappedLineCount(text, availableWidth, charWidth)
+    local lines, lineWidth = 1, 0
+    for word, spaces in string.gmatch(text, "(%S+)(%s*)") do
+        local wordWidth = cellCount(word) * charWidth
+        if lineWidth > 0 and lineWidth + wordWidth > availableWidth then
+            lines = lines + 1
+            lineWidth = 0
+        end
+        lineWidth = lineWidth + wordWidth + #spaces * charWidth
+    end
+    return lines
+end
+
+local function infoBarBottom(mapWidth)
+    local charWidth, lineHeight = fontMetrics()
+    local texts = F2T_MAP_INFO_TEXT
+    if not texts or next(texts) == nil or not mapWidth then
+        return 20 + INFO_LINE_COUNT * (lineHeight + 10)
+    end
+    local bottom = 20
+    for _, key in ipairs(INFO_KEYS) do
+        local text = string.match(texts[key] or "", "^%s*(.-)%s*$")
+        if text ~= "" then
+            bottom = bottom + wrappedLineCount(text, mapWidth - 40, charWidth) * lineHeight + 10
+        end
+    end
+    return bottom
+end
+
+function f2tMapNearestReposition()
+    if not _current then return end
+    local y = infoBarBottom(_current.parent:get_width()) + MARGIN
+    if y ~= _current.button:get_y() - _current.parent:get_y() then
+        _current.button:move(MARGIN, y)
+    end
 end
 
 local function nearestTypes()
@@ -113,7 +181,7 @@ end
 
 function f2tBuildMapNearest(parent, gid)
     local pfx = gid .. "_near_"
-    local buttonY = infoBarBottom() + MARGIN
+    local buttonY = infoBarBottom(parent:get_width()) + MARGIN
 
     local button = Geyser.Label:new({
         name   = pfx .. "button",
@@ -183,6 +251,10 @@ function f2tBuildMapNearest(parent, gid)
         menu:raiseAll()
         menuVisible = true
     end)
+
+    _current = { button = button, parent = parent }
+    if _infoHandlerId then killAnonymousEventHandler(_infoHandlerId) end
+    _infoHandlerId = registerAnonymousEventHandler("f2tMapInfoChanged", f2tMapNearestReposition)
 
     return button
 end
