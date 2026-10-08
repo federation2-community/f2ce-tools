@@ -381,10 +381,11 @@ local function areaIdFor(ctx, name)
 end
 
 -- Per-area digest of what coverage needs: lowercased fed2_planet names (for
--- orbit rooms in a space area), the first room holding each flag, how many
--- unexplored exits remain, and the area's explored mark. Rescanned only when
--- the area's room count changes or an explore records a mark, and at most once
--- per populate pass.
+-- orbit rooms in a space area), the first room holding each flag, whether the
+-- landing pad has been stood on (a placeholder made from orbit has no exit
+-- list), and the area's explored mark. Rescanned only when the area's room
+-- count changes or an explore records a mark, and at most once per populate
+-- pass.
 local areaDigests = {}
 
 local function areaDigest(ctx, areaId)
@@ -396,11 +397,13 @@ local function areaDigest(ctx, areaId)
     local epoch = F2T_MAP_EXPLORED_EPOCH or 0
     if digest and digest.count == count and digest.epoch == epoch then return digest end
 
-    digest = { count = count, planets = {}, flagRoom = {}, stubs = 0, epoch = epoch,
+    digest = { count = count, planets = {}, flagRoom = {}, padVisited = false, epoch = epoch,
         explored = getAreaUserData(areaId, "fed2_explored") }
     for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
-        for _ in pairs(getExitStubs(roomId) or {}) do digest.stubs = digest.stubs + 1 end
         local data = getAllRoomUserData(roomId) or {}
+        if data.fed2_flag_shuttlepad == "true" and (data.fed2_exits or "") ~= "" then
+            digest.padVisited = true
+        end
         if data.fed2_planet and data.fed2_planet ~= "" then
             digest.planets[data.fed2_planet:lower()] = true
         end
@@ -437,16 +440,21 @@ local function requiredFlags(ctx, system_name)
     return ctx.required[key]
 end
 
+-- Sol's planets with no exchange; every player planet has one.
+local SOL_PLANETS_WITHOUT_EXCHANGE = { magrathea = true, hunt = true, graveyard = true, starbase1 = true }
+
 -- Explored once an explore has said so, or (for planets explored before that
--- was recorded) once every room a brief explore looks for is mapped or nothing
--- on the planet is left unexplored. Reaching the orbit only maps a single
--- landing pad room.
+-- was recorded) once every room a brief explore looks for is mapped. A Sol
+-- planet without an exchange only needs its landing pad stood on.
 local function planetExplored(ctx, system_name, planet_name)
     if not planetMapped(ctx, system_name, planet_name) then return false end
     local area_id = areaIdFor(ctx, planet_name)
     if not area_id then return false end
     local digest = areaDigest(ctx, area_id)
-    if digest.explored or (digest.count > 1 and digest.stubs == 0) then return true end
+    if digest.explored then return true end
+    if SOL_PLANETS_WITHOUT_EXCHANGE[planet_name:lower()] and f2t_map_explore_is_sol(system_name) then
+        return digest.padVisited
+    end
     for _, flag in ipairs(requiredFlags(ctx, system_name)) do
         if not digest.flagRoom[flag] then return false end
     end
