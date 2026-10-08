@@ -440,19 +440,17 @@ local function requiredFlags(ctx, system_name)
     return ctx.required[key]
 end
 
--- Sol's planets with no exchange; every player planet has one.
-local SOL_PLANETS_WITHOUT_EXCHANGE = { magrathea = true, hunt = true, graveyard = true, starbase1 = true }
-
 -- Explored once an explore has said so, or (for planets explored before that
 -- was recorded) once every room a brief explore looks for is mapped. A Sol
--- planet without an exchange only needs its landing pad stood on.
+-- planet the game files give no exchange (every player planet has one) only
+-- needs its landing pad stood on.
 local function planetExplored(ctx, system_name, planet_name)
     if not planetMapped(ctx, system_name, planet_name) then return false end
     local area_id = areaIdFor(ctx, planet_name)
     if not area_id then return false end
     local digest = areaDigest(ctx, area_id)
     if digest.explored then return true end
-    if SOL_PLANETS_WITHOUT_EXCHANGE[planet_name:lower()] and f2t_map_explore_is_sol(system_name) then
+    if f2t_map_explore_is_sol(system_name) and f2t_map_sol_planet_has_flag(planet_name, "exchange") == false then
         return digest.padVisited
     end
     for _, flag in ipairs(requiredFlags(ctx, system_name)) do

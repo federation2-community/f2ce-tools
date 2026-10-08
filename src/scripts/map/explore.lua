@@ -296,6 +296,13 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         end
         local system_name = getAreaUserData(current_area, "fed2_system") or ""
         brief_flags = f2t_map_explore_strip_courier_outside_sol(brief_flags, system_name)
+        -- The game files say what a Sol planet has; don't search for the rest
+        local area_name = getRoomAreaName(current_area)
+        for i = #brief_flags, 1, -1 do
+            if f2t_map_sol_planet_has_flag(area_name, brief_flags[i]) == false then
+                table.remove(brief_flags, i)
+            end
+        end
         local brief_flags_set = {}
         for _, flag in ipairs(brief_flags) do brief_flags_set[flag] = true end
         local brief_flags_found = {}

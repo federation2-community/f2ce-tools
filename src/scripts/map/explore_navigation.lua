@@ -19,6 +19,46 @@ local function next_known_crossing(current_room)
     return nil
 end
 
+-- On a Sol planet the game files show where the rooms a brief explore or a
+-- room search is after are: the walk there, nearest first, each tried once.
+local function sol_data_route(current_room)
+    local state = F2T_MAP_EXPLORE_STATE
+    local area_id = state.starting_area_id
+    if not area_id or getRoomArea(current_room) ~= area_id
+        or getAreaUserData(area_id, "fed2_system") ~= "Sol" then
+        return nil
+    end
+    local planet = getRoomAreaName(area_id)
+    local here = tonumber(getRoomUserData(current_room, "fed2_num"))
+
+    local missing = {}
+    if state.planet_mode == "brief" and (state.brief_flags_remaining_count or 0) > 0 then
+        for flag in pairs(state.brief_flags_set or {}) do
+            if not state.brief_flags_found[flag] then table.insert(missing, flag) end
+        end
+    end
+    local target = not state.target_room_found_id and state.target_room_name
+    if not here or (#missing == 0 and not target) then return nil end
+
+    state.sol_routes_tried = state.sol_routes_tried or {}
+    local tried = state.sol_routes_tried
+    local function wanted(num, name, flags)
+        if tried[planet .. "|" .. num] then return false end
+        for _, flag in ipairs(missing) do
+            if string.find("," .. flags .. ",", "," .. flag .. ",", 1, true) then return true end
+        end
+        if not target then return false end
+        local room_id = f2t_map_get_room_by_hash(string.format("Sol.%s.%d", planet, num))
+        if room_id and state.target_room_skip and state.target_room_skip[room_id] then return false end
+        if state.target_room_exact then return name == target end
+        return string.find(string.lower(name), string.lower(target), 1, true) ~= nil
+    end
+    local commands, dest = f2t_map_sol_route(planet, here, wanted)
+    if not commands then return nil end
+    tried[planet .. "|" .. dest] = true
+    return commands
+end
+
 -- A queued exit can be mapped before it's walked (another exit naming the same
 -- game room showed where it leads), and needs no visit then.
 local function still_unexplored(exit)
@@ -37,6 +77,13 @@ function f2t_map_explore_navigate_to_next()
     if next_exit then
         F2T_MAP_EXPLORE_STATE.planned_exit = nil
     else
+        local commands = current_room and sol_data_route(current_room)
+        if commands then
+            f2t_map_explore_brief_mode_start()
+            cecho(string.format("  <dim_grey>Walking %d step(s) the game's Sol files show<reset>\n", #commands))
+            f2t_map_speedwalk_send_blind(commands)
+            return
+        end
         while not next_exit and #F2T_MAP_EXPLORE_STATE.frontier_stack > 0 do
             local candidate = table.remove(F2T_MAP_EXPLORE_STATE.frontier_stack, 1)
             if still_unexplored(candidate) then next_exit = candidate end

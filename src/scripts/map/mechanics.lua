@@ -108,4 +108,78 @@ function f2t_map_sol_uncrossed(planet, skip)
     return list
 end
 
+local function sol_planet_rooms(planet)
+    local data = F2T_SOL_MECHANICS and planet and F2T_SOL_MECHANICS[planet]
+    return data and data.rooms and data or nil
+end
+
+local function has_flag(room, flag)
+    return string.find("," .. room[2] .. ",", "," .. flag .. ",", 1, true) ~= nil
+end
+
+--- Whether the game files give a Sol planet a room with this flag
+--- @return boolean|nil nil when there is no data for the planet
+function f2t_map_sol_planet_has_flag(planet, flag)
+    local data = sol_planet_rooms(planet)
+    if not data then return nil end
+    for _, room in pairs(data.rooms) do
+        if has_flag(room, flag) then return true end
+    end
+    return false
+end
+
+-- Where walking into room num really leaves you
+local function landing(data, num)
+    local seen = {}
+    while data.bounce[num] and not seen[num] do
+        seen[num] = true
+        num = data.bounce[num]
+    end
+    return num
+end
+
+--- The fewest moves the game files give from room `from` to the nearest room
+--- `wanted(num, name, flags)` accepts, never through a room that kills
+--- @return table|nil commands, number|nil destination room number
+function f2t_map_sol_route(planet, from, wanted)
+    local data = sol_planet_rooms(planet)
+    if not data or not data.rooms[from] then return nil end
+    if not index then build_index() end
+    local deadly = index.deadly[planet] or {}
+    local specials = {}
+    for _, special in ipairs(data.special or {}) do
+        specials[special[1]] = specials[special[1]] or {}
+        table.insert(specials[special[1]], { special[2], special[3] })
+    end
+
+    local previous = { [from] = false }
+    local queue, head = { from }, 1
+    while head <= #queue do
+        local num = queue[head]
+        head = head + 1
+        local room = data.rooms[num]
+        if num ~= from and wanted(num, room[1], room[2]) then
+            local commands = {}
+            while previous[num] do
+                table.insert(commands, 1, previous[num].command)
+                num = previous[num].from
+            end
+            return commands, queue[head - 1]
+        end
+        local steps = {}
+        for short, dest in string.gmatch(room[3], "([^,:]+):(%d+)") do
+            table.insert(steps, { short, tonumber(dest) })
+        end
+        for _, special in ipairs(specials[num] or {}) do table.insert(steps, special) end
+        for _, step in ipairs(steps) do
+            local dest = landing(data, step[2])
+            if data.rooms[dest] and previous[dest] == nil and not deadly[dest] then
+                previous[dest] = { from = num, command = step[1] }
+                table.insert(queue, dest)
+            end
+        end
+    end
+    return nil
+end
+
 f2t_debug_log("[map] Loaded mechanics.lua")
