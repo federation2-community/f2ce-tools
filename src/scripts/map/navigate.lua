@@ -293,10 +293,13 @@ function f2t_map_navigate_explore_hint(destination, hint, opts)
     local scope = string.format("%s:%s",
         travelOnly and "link" or hint.kind, string.lower(hint.name or ""))
 
+    local routeExists
     local function finish(success, status)
         if settled then return end
         settled = true
         if timer_id then killTimer(timer_id); timer_id = nil end
+        local pending = F2T_MAP_EXPLORE_PENDING_STOP
+        if pending and pending.stop_when == routeExists then F2T_MAP_EXPLORE_PENDING_STOP = nil end
         f2t_map_brief_hold_release("nav")
         if opts.on_result then opts.on_result(success, status or "failed") end
     end
@@ -386,7 +389,7 @@ function f2t_map_navigate_explore_hint(destination, hint, opts)
     -- the "board" exit to it. So the destination resolves to a room that did
     -- not exist when this began, and the id we set out with may be an older,
     -- orphaned one that never becomes reachable at all.
-    local function routeExists()
+    routeExists = function()
         local here = F2T_MAP_CURRENT_ROOM_ID
         if not here then return false end
         -- A sweep redirected to find the local interstellar link is done the
@@ -399,19 +402,19 @@ function f2t_map_navigate_explore_hint(destination, hint, opts)
         return here == target or getPath(here, target) and true or false
     end
 
-    F2T_MAP_EXPLORE_STATE.stop_when = routeExists
-    F2T_MAP_EXPLORE_STATE.stop_reason = linkWanted
-        and string.format("Found %s's interstellar link - ending the sweep early", linkWanted)
-        or "Route to the destination found - ending the sweep early"
-    F2T_MAP_EXPLORE_STATE.on_stop_early = function()
-        if settled then return end
-        f2t_debug_log("[map/nav] explore: %s - swept enough",
-            linkWanted and string.format("%s's interstellar link is mapped", linkWanted)
-                or string.format("'%s' now resolves to a reachable room", tostring(destination)))
-        tempTimer(0.5, function()
-            if not settled then on_complete() end
+    f2t_map_explore_set_stop_condition(routeExists,
+        linkWanted
+            and string.format("Found %s's interstellar link - ending the sweep early", linkWanted)
+            or "Route to the destination found - ending the sweep early",
+        function()
+            if settled then return end
+            f2t_debug_log("[map/nav] explore: %s - swept enough",
+                linkWanted and string.format("%s's interstellar link is mapped", linkWanted)
+                    or string.format("'%s' now resolves to a reachable room", tostring(destination)))
+            tempTimer(0.5, function()
+                if not settled then on_complete() end
+            end)
         end)
-    end
 
     timer_id = tempTimer(180, function() finish(false) end)
 end

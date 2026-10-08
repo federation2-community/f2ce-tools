@@ -61,7 +61,25 @@ function f2t_map_explore_claim_run(mode)
     F2T_MAP_EXPLORE_STATE = blankState()
     F2T_MAP_EXPLORE_STATE.active = true
     if mode then F2T_MAP_EXPLORE_STATE.mode = mode end
+    local pending = F2T_MAP_EXPLORE_PENDING_STOP
+    if pending then
+        F2T_MAP_EXPLORE_STATE.stop_when = pending.stop_when
+        F2T_MAP_EXPLORE_STATE.stop_reason = pending.stop_reason
+        F2T_MAP_EXPLORE_STATE.on_stop_early = pending.on_stop_early
+    end
     f2t_map_explore_register_safety_hooks()
+end
+
+-- An early stop for the run about to start. A sweep can claim its run only
+-- after an asynchronous step (capturing a system's planet list), so the
+-- condition waits here as well as on the state until the caller clears it.
+function f2t_map_explore_set_stop_condition(stopWhen, reason, onStopEarly)
+    F2T_MAP_EXPLORE_PENDING_STOP = stopWhen and {
+        stop_when = stopWhen, stop_reason = reason, on_stop_early = onStopEarly,
+    } or nil
+    F2T_MAP_EXPLORE_STATE.stop_when = stopWhen
+    F2T_MAP_EXPLORE_STATE.stop_reason = reason
+    F2T_MAP_EXPLORE_STATE.on_stop_early = onStopEarly
 end
 
 function f2t_map_explore_release_run()
@@ -1027,8 +1045,7 @@ function f2t_map_explore_check_stop_condition()
 
     local onStop = F2T_MAP_EXPLORE_STATE.on_stop_early
     local reason = F2T_MAP_EXPLORE_STATE.stop_reason
-    F2T_MAP_EXPLORE_STATE.stop_when = nil
-    F2T_MAP_EXPLORE_STATE.on_stop_early = nil
+    f2t_map_explore_set_stop_condition(nil)
     f2t_map_explore_stop(reason or "Found what this sweep was for - ending it early")
     if onStop then onStop() end
     return true
