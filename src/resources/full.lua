@@ -201,15 +201,16 @@ Mux.registerWorkspace("f2ce-tools", {
         {
             activeContent = "fed2_cargo",
             anchor = {
-                alongH = 952.99999999999,
+                alongH = 0,
                 h = {
                     myEdge = "top",
-                    ref = "output",
-                    targetEdge = "top"
+                    ref = "pane_3",
+                    targetEdge = "bottom"
                 }
             },
             anchorable = true,
             atAnchor = true,
+            bordered = false,
             closeable = false,
             contentState = {},
             contentable = false,

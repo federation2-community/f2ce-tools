@@ -99,7 +99,7 @@ function f2t_map_sol_uncrossed(planet, skip)
     local data = F2T_SOL_MECHANICS and F2T_SOL_MECHANICS[planet]
     local list = {}
     for _, special in ipairs(data and data.special or {}) do
-        local key = special[1] .. "|" .. special[2]
+        local key = planet .. "|" .. special[1] .. "|" .. special[2]
         local from_id = mapped(sol_hash(planet, special[1]))
         if from_id and not mapped(sol_hash(planet, special[3])) and not (skip and skip[key]) then
             table.insert(list, { from_id = from_id, command = special[2], to_num = special[3], key = key })

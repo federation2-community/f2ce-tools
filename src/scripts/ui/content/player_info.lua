@@ -323,6 +323,26 @@ local function layoutCells(inst)
         if cell then pcall(function() cell:move(x, 0); cell:resize(w, "100%") end) end
         x = x + w
     end
+    -- A docked cargo pane hangs off the Hold cell, so it follows every re-flow.
+    if f2t_cargo_refresh_open then f2t_cargo_refresh_open() end
+end
+
+-- Screen rect of the first visible strip's Hold cell, plus the id of the pane
+-- hosting that strip, or nil when no strip is showing.
+function f2tPlayerInfoHoldRect()
+    for _, inst in pairs(instances) do
+        local cell = inst.labels and inst.labels.hold
+        local pane = inst.target
+        while pane and pane.pane do pane = pane.pane end   -- tab -> owning pane
+        if cell and cell.get_x and pane and pane.id and not pane.hidden and not pane._conditionHidden then
+            local width = cell:get_width()
+            if width and width > 0 then
+                return { x = cell:get_x(), y = cell:get_y(), width = width,
+                         height = cell:get_height(), paneId = pane.id }
+            end
+        end
+    end
+    return nil
 end
 
 local function buildContent(target)
@@ -398,7 +418,8 @@ local function buildContent(target)
 
     labels.hold:setToolTip("Cargo hold")   -- legacy inline cargo panel is now fed2_cargo
 
-    instances[gid] = { labels = labels, buttons = buttons, cells = cells, host = target.content, layout = layout }
+    instances[gid] = { labels = labels, buttons = buttons, cells = cells, host = target.content,
+                       layout = layout, target = target }
     refreshEatButton(instances[gid])
     layoutCells(instances[gid])
     refreshInstance(gid)

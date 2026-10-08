@@ -1,5 +1,24 @@
 -- f2ce-tools map — exploration navigation (ported from map_explore_navigation.lua)
 
+-- Walking only finds ordinary exits. On a Sol planet the game files also name
+-- the special ones (teleport disks, lift buttons, airlocks; see mechanics.lua):
+-- the next one the map hasn't been through, from a room reachable from here.
+local function next_known_crossing(current_room)
+    local area_id = F2T_MAP_EXPLORE_STATE.starting_area_id
+    if not area_id or not f2t_map_sol_uncrossed or getAreaUserData(area_id, "fed2_system") ~= "Sol" then
+        return nil
+    end
+    local crossed = F2T_MAP_EXPLORE_STATE.crossed_specials or {}
+    F2T_MAP_EXPLORE_STATE.crossed_specials = crossed
+    for _, option in ipairs(f2t_map_sol_uncrossed(getRoomAreaName(area_id), crossed)) do
+        crossed[option.key] = true
+        if option.from_id == current_room or getPath(current_room, option.from_id) then
+            return {room_id = option.from_id, direction = option.command, special = true}
+        end
+    end
+    return nil
+end
+
 function f2t_map_explore_navigate_to_next()
     if not F2T_MAP_EXPLORE_STATE.active then return end
     local current_room = F2T_MAP_CURRENT_ROOM_ID
@@ -22,6 +41,19 @@ function f2t_map_explore_navigate_to_next()
                 tostring(F2T_MAP_EXPLORE_STATE.phase))
             return
         end
+        -- Held in a ride's holding room (an airlock): it moves us on by itself
+        if current_room and getRoomUserData(current_room, "fed2_transit") == "true" then
+            f2t_debug_log("[map/explore] in a ride's holding room, waiting to arrive")
+            return
+        end
+        next_exit = next_known_crossing(current_room)
+        if next_exit then
+            cecho(string.format("\n<cyan>[map-explore]<reset> No ordinary exits left; taking '%s' (known from the " ..
+                "game files) to reach the rest\n", next_exit.direction))
+        end
+    end
+
+    if not next_exit then
         F2T_MAP_EXPLORE_STATE.phase = "area_complete"
 
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and
@@ -75,7 +107,10 @@ function f2t_map_explore_navigate_to_next()
         if not success then
             cecho(string.format("\n<red>[map-explore]<reset> Failed to navigate to room %d\n", next_exit.room_id))
             F2T_MAP_EXPLORE_STATE.planned_exit = nil
-            f2t_map_explore_temp_lock_exit(next_exit.room_id, next_exit.direction)
+            -- A special exit's command isn't a direction to lock; it is already marked tried
+            if not next_exit.special then
+                f2t_map_explore_temp_lock_exit(next_exit.room_id, next_exit.direction)
+            end
             tempTimer(0.5, function()
                 if F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_next_step() end
             end)

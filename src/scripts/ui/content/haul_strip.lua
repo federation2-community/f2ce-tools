@@ -106,6 +106,7 @@ local function closeMenu(strip)
     if strip.menu then
         strip.menu:hide()
         strip.menu = nil
+        f2tHideDropdownBackdrop()
     end
 end
 
@@ -124,10 +125,13 @@ local function openMenu(strip, x, items)
     strip.menuGen = strip.menuGen + 1
     local gen = strip.menuGen
 
+    f2tShowDropdownBackdrop(function() closeMenu(strip) end)
+    -- Top-level, at the panel's screen position, so it stacks above the backdrop.
     local menu = Geyser.Container:new({
         name = string.format("%s_hsm_%d", target._gid, gen),
-        x = x, y = strip.height, width = menuW, height = #items * rowH,
-    }, target.content)
+        x = target.content:get_x() + x, y = target.content:get_y() + strip.height,
+        width = menuW, height = #items * rowH,
+    }, Geyser)
 
     local bg = Geyser.Label:new({
         name = string.format("%s_hsmbg_%d", target._gid, gen),
@@ -380,6 +384,7 @@ end
 --- Forget a panel's strip (its widgets go with the panel)
 --- @param gid string Owning panel's _gid
 function f2tHaulStripRemove(gid)
+    if strips[gid] then closeMenu(strips[gid]) end
     strips[gid] = nil
 end
 

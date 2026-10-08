@@ -130,7 +130,14 @@ function f2tBuildMapNearest(parent, gid)
 
     local function closeMenu()
         if menu then menu:hide() end
+        if menuVisible then f2tHideDropdownBackdrop() end
         menuVisible = false
+    end
+
+    -- Top-level so it stacks above the dropdown backdrop; placed under the
+    -- button's current screen position on every open.
+    local function placeMenu()
+        menu:move(button:get_x(), button:get_y() + BUTTON_HEIGHT + 3)
     end
 
     local function buildMenu()
@@ -139,11 +146,11 @@ function f2tBuildMapNearest(parent, gid)
 
         menu = Geyser.Container:new({
             name   = pfx .. "menu",
-            x      = MARGIN,
-            y      = buttonY + BUTTON_HEIGHT + 3,
+            x      = 0,
+            y      = 0,
             width  = MENU_WIDTH,
             height = panelHeight,
-        }, parent)
+        }, Geyser)
 
         local background = Geyser.Label:new({
             name = pfx .. "menuBg", x = 0, y = 0, width = "100%", height = "100%",
@@ -170,6 +177,8 @@ function f2tBuildMapNearest(parent, gid)
     button:setClickCallback(function()
         if menuVisible then closeMenu(); return end
         if not menu then buildMenu() end
+        f2tShowDropdownBackdrop(closeMenu)
+        placeMenu()
         menu:show()
         menu:raise()
         menuVisible = true

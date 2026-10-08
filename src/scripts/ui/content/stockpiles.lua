@@ -164,6 +164,7 @@ local function closeMenu(inst)
     if inst.menu then
         inst.menu:hide()
         inst.menu = nil
+        f2tHideDropdownBackdrop()
     end
 end
 
@@ -180,10 +181,13 @@ local function togglePreviewMenu(inst, target)
     local rowH, menuW = f2tScaled(target, 22), f2tScaled(target, 160)
     local labelPt = f2tTextPt(target, LABEL_PT)
     inst.menuGen = inst.menuGen + 1
+    f2tShowDropdownBackdrop(function() closeMenu(inst) end)
+    -- Top-level, at the panel's screen position, so it stacks above the backdrop.
     local menu = Geyser.Container:new({
         name = string.format("%s_spm_%d", target._gid, inst.menuGen),
-        x = 6, y = inst.barH, width = menuW, height = #items * rowH,
-    }, target.content)
+        x = target.content:get_x() + 6, y = target.content:get_y() + inst.barH,
+        width = menuW, height = #items * rowH,
+    }, Geyser)
     local background = Geyser.Label:new({
         name = string.format("%s_spmbg_%d", target._gid, inst.menuGen),
         x = 0, y = 0, width = "100%", height = "100%",

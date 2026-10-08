@@ -72,6 +72,33 @@ local function roundPoints(pt) return math.max(5, math.floor(pt * 10 + 0.5) / 10
 function f2tUiPt(target, pt)   return roundPoints(pt * F2T_UI_FONT_SCALE * f2tTextScale(target)) end
 function f2tTextPt(target, pt) return roundPoints(pt * f2tTextScale(target)) end
 
+-- Click-outside dismissal for dropdowns: a transparent full-window label shown
+-- under the menu, so a click anywhere off the menu lands on it and runs
+-- onDismiss. The menu must be top-level (parented to Geyser) and raised after
+-- this call, or the backdrop covers it.
+local dropdownBackdrop
+function f2tShowDropdownBackdrop(onDismiss)
+    local screenW, screenH = getMainWindowSize()
+    if not dropdownBackdrop then
+        dropdownBackdrop = Geyser.Label:new({
+            name = "f2t_dropdown_backdrop", x = 0, y = 0, width = screenW, height = screenH,
+        }, Geyser)
+        dropdownBackdrop:setStyleSheet("background-color: rgba(0,0,0,0); border: none;")
+    end
+    dropdownBackdrop:setClickCallback(function()
+        f2tHideDropdownBackdrop()
+        if onDismiss then onDismiss() end
+    end)
+    dropdownBackdrop:move(0, 0)
+    dropdownBackdrop:resize(screenW, screenH)
+    dropdownBackdrop:show()
+    dropdownBackdrop:raise()
+end
+
+function f2tHideDropdownBackdrop()
+    if dropdownBackdrop then dropdownBackdrop:hide() end
+end
+
 -- onTextScale handler for content that lays itself out once in apply(): re-applies
 -- it at the new size and carries serialize() state across. afterRebuild(target)
 -- restores what serialize() doesn't keep. Coalesced, so stepping the size several
