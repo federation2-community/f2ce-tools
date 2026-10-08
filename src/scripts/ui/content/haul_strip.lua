@@ -38,25 +38,23 @@ end
 local _BTN_HAUL_CSS = actionBtnCss("#7aa2ff", "#9cb8ff")
 local _BTN_MODE_CSS = actionBtnCss("#b48cff", "#c8a8ff")
 
-local function menuItemCss(background, color, accent)
-    return string.format([[
-        QLabel {
-            background-color: %s;
-            color: %s;
-            border: none;
-            border-left: 3px solid %s;
-            border-bottom: 1px solid rgba(255,255,255,0.10);
-            font-family: "Consolas","Monaco",monospace;
-            padding: 0 6px;
-        }
-    ]], background, color, accent)
-end
-
--- Hover is applied from enter/leave callbacks: the menu sits over the dropdown
--- backdrop, where Qt's :hover state doesn't track.
-local _MENU_ITEM_CSS       = menuItemCss("rgb(34,38,56)", "#e4e8f4", "transparent")
-local _MENU_ITEM_HOVER_CSS = menuItemCss("rgb(60,72,112)", "white", "#7aa2ff")
-local MENU_COMMAND_COLOR   = "#a4aed0"
+local _MENU_ITEM_CSS = [[
+    QLabel {
+        background-color: rgb(34,38,56);
+        color: #e4e8f4;
+        border: none;
+        border-left: 3px solid transparent;
+        border-bottom: 1px solid rgba(255,255,255,0.10);
+        font-family: "Consolas","Monaco",monospace;
+        padding: 0 6px;
+    }
+    QLabel::hover {
+        background-color: rgb(60,72,112);
+        border-left: 3px solid #7aa2ff;
+        color: white;
+    }
+]]
+local MENU_COMMAND_COLOR = "#a4aed0"
 
 local STATE_STYLE = {
     stopped  = { label = "STOPPED",   color = "#888888" },
@@ -160,8 +158,6 @@ local function openMenu(strip, x, items)
             "<table width='100%%'><tr><td style='%s'>%s</td>" ..
             "<td align='right' style='%scolor:%s;'>%s</td></tr></table>",
             CELL_FONT, item.label, CELL_FONT, MENU_COMMAND_COLOR, item.command))
-        lbl:setOnEnter(function() lbl:setStyleSheet(_MENU_ITEM_HOVER_CSS) end)
-        lbl:setOnLeave(function() lbl:setStyleSheet(_MENU_ITEM_CSS) end)
         local command = item.command
         lbl:setClickCallback(function()
             closeMenu(strip)
@@ -170,7 +166,7 @@ local function openMenu(strip, x, items)
     end
 
     menu:show()
-    menu:raise()
+    menu:raiseAll()
     strip.menu = menu
 end
 

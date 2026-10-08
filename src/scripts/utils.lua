@@ -74,8 +74,9 @@ function f2tTextPt(target, pt) return roundPoints(pt * f2tTextScale(target)) end
 
 -- Click-outside dismissal for dropdowns: a transparent full-window label shown
 -- under the menu, so a click anywhere off the menu lands on it and runs
--- onDismiss. The menu must be top-level (parented to Geyser) and raised after
--- this call, or the backdrop covers it.
+-- onDismiss. The menu must be top-level (parented to Geyser) and raiseAll()ed
+-- after this call, or the backdrop covers it; a bare Container:raise() moves
+-- no widgets.
 local dropdownBackdrop
 function f2tShowDropdownBackdrop(onDismiss)
     local screenW, screenH = getMainWindowSize()

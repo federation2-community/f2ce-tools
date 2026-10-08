@@ -211,7 +211,7 @@ local function togglePreviewMenu(inst, target)
         end)
     end
     menu:show()
-    menu:raise()
+    menu:raiseAll()
     inst.menu = menu
 end
 
