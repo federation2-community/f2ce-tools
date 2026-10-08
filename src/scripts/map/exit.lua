@@ -25,6 +25,65 @@ local function has_stub_in_direction(room_id, direction)
     return false
 end
 
+-- A game room that moves you on as you enter (Hydrostatic's room 1 sends you
+-- to its Main Terminal) is never shown, so exits naming it can't be matched by
+-- number. Once one is walked, the area remembers where that number really
+-- lands, and every exit naming it is mapped there too.
+local function arrival_key(fed2_num)
+    return "fed2_arrives_" .. fed2_num
+end
+
+local function listed_destination(room_id, direction)
+    local dir_num = f2t_map_direction_to_number(direction)
+    local exits_data = getRoomUserData(room_id, "fed2_exits")
+    if not dir_num or not exits_data then return nil end
+    for dir, num in string.gmatch(exits_data, "([^,:]+):(%d+)") do
+        if f2t_map_direction_to_number(dir) == dir_num then return tonumber(num) end
+    end
+    return nil
+end
+
+local function arrival_room(area_id, fed2_num)
+    local hash = getAreaUserData(area_id, arrival_key(fed2_num))
+    if not hash or hash == "" then return nil end
+    return f2t_map_get_room_by_hash(hash)
+end
+
+local function connect_stubs_listing(area_id, fed2_num, dest_room_id)
+    local fed2_num_str = tostring(fed2_num)
+    for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
+        local stubs = getExitStubs(room_id)
+        local exits_data = stubs and next(stubs) ~= nil and getRoomUserData(room_id, "fed2_exits")
+        if exits_data and exits_data ~= "" then
+            for dir, num in string.gmatch(exits_data, "([^,:]+):(%d+)") do
+                if num == fed2_num_str and has_stub_in_direction(room_id, dir) then
+                    local dir_num = f2t_map_direction_to_number(dir)
+                    setExit(room_id, dest_room_id, dir_num)
+                    setExitStub(room_id, dir_num, false)
+                end
+            end
+        end
+    end
+end
+
+function f2t_map_note_arrival(from_room_id, arrived_room_id, direction)
+    if not from_room_id or not arrived_room_id or not direction then return end
+    local area_id = getRoomArea(from_room_id)
+    if not area_id or area_id ~= getRoomArea(arrived_room_id) then return end
+    local listed = listed_destination(from_room_id, direction)
+    if not listed or listed == tonumber(getRoomUserData(arrived_room_id, "fed2_num")) then return end
+    local listed_hash = string.format("%s.%s.%d", getRoomUserData(from_room_id, "fed2_system"),
+        getRoomUserData(from_room_id, "fed2_area"), listed)
+    if f2t_map_get_room_by_hash(listed_hash) then return end
+    local arrived_hash = f2t_map_generate_hash_from_room(arrived_room_id)
+    if not arrived_hash then return end
+    if getAreaUserData(area_id, arrival_key(listed)) ~= arrived_hash then
+        setAreaUserData(area_id, arrival_key(listed), arrived_hash)
+        f2t_debug_log("[map] Room %d on this planet lands in %s", listed, arrived_hash)
+    end
+    connect_stubs_listing(area_id, listed, arrived_room_id)
+end
+
 function f2t_map_process_exits(current_room_id, gmcp_exits, gmcp_room_data)
     if not current_room_id or not roomExists(current_room_id) then return end
     if not gmcp_exits then return end
@@ -81,9 +140,16 @@ function f2t_map_process_exits(current_room_id, gmcp_exits, gmcp_room_data)
         else
             -- A mapped exit can lead somewhere other than the room the game
             -- names (a room that moves you on as you enter): leave it be
-            if not get_existing_exit(current_room_id, direction)
-                and not has_stub_in_direction(current_room_id, direction) then
-                setExitStub(current_room_id, f2t_map_direction_to_number(direction), true)
+            if not get_existing_exit(current_room_id, direction) then
+                local area_id = getRoomArea(current_room_id)
+                local lands_in = area_id and arrival_room(area_id, fed2_num)
+                local dir_num = f2t_map_direction_to_number(direction)
+                if lands_in then
+                    setExit(current_room_id, lands_in, dir_num)
+                    setExitStub(current_room_id, dir_num, false)
+                elseif not has_stub_in_direction(current_room_id, direction) then
+                    setExitStub(current_room_id, dir_num, true)
+                end
             end
         end
     end
@@ -110,6 +176,7 @@ function f2t_map_resolve_stub_exit(prev_room_id, current_room_id, direction)
     if not has_stub then return end
     setExit(prev_room_id, current_room_id, dir_num)
     setExitStub(prev_room_id, dir_num, false)
+    f2t_map_note_arrival(prev_room_id, current_room_id, direction)
 end
 
 function f2t_map_connect_incoming_stubs(room_id, fed2_num)

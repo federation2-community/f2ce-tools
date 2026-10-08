@@ -370,6 +370,7 @@ function f2t_map_speedwalk_on_room_change()
                 elseif direction_num then
                     setExit(from_room, current_room, direction_num)
                     setExitStub(from_room, direction_num, false)
+                    f2t_map_note_arrival(from_room, current_room, command)
                     repointed = true
                 end
                 if repointed then
@@ -451,11 +452,9 @@ end
 function f2t_map_speedwalk_recompute_path(silent)
     if not F2T_SPEEDWALK_ACTIVE then return false end
     if F2T_SPEEDWALK_BLIND or not F2T_SPEEDWALK_DESTINATION_ROOM_ID then
-        cecho("\n<red>[map]<reset> Unable to recover speedwalk: no mapped destination to replan against\n")
-        F2T_SPEEDWALK_LAST_RESULT     = "failed"
-        F2T_SPEEDWALK_FAILED_EXIT_ROOM = F2T_MAP_CURRENT_ROOM_ID
-        F2T_SPEEDWALK_FAILED_EXIT_DIR  = F2T_SPEEDWALK_LAST_COMMAND
-        f2t_map_speedwalk_stop(); return false
+        -- Failing (not stopping) tells a waiting explorer at once
+        f2t_map_speedwalk_fail("Unable to recover speedwalk: no mapped destination to replan against")
+        return false
     end
     local current_room_id = F2T_MAP_CURRENT_ROOM_ID
     if not current_room_id then

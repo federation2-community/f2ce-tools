@@ -19,6 +19,16 @@ local function next_known_crossing(current_room)
     return nil
 end
 
+-- A queued exit can be mapped before it's walked (another exit naming the same
+-- game room showed where it leads), and needs no visit then.
+local function still_unexplored(exit)
+    local dir_num = f2t_map_direction_to_number(exit.direction)
+    for _, stub_dir_num in pairs(getExitStubs(exit.room_id) or {}) do
+        if stub_dir_num == dir_num then return true end
+    end
+    return false
+end
+
 function f2t_map_explore_navigate_to_next()
     if not F2T_MAP_EXPLORE_STATE.active then return end
     local current_room = F2T_MAP_CURRENT_ROOM_ID
@@ -27,8 +37,9 @@ function f2t_map_explore_navigate_to_next()
     if next_exit then
         F2T_MAP_EXPLORE_STATE.planned_exit = nil
     else
-        if #F2T_MAP_EXPLORE_STATE.frontier_stack > 0 then
-            next_exit = table.remove(F2T_MAP_EXPLORE_STATE.frontier_stack, 1)
+        while not next_exit and #F2T_MAP_EXPLORE_STATE.frontier_stack > 0 do
+            local candidate = table.remove(F2T_MAP_EXPLORE_STATE.frontier_stack, 1)
+            if still_unexplored(candidate) then next_exit = candidate end
         end
     end
 
