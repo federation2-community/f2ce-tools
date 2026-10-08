@@ -503,8 +503,23 @@ function f2t_map_explore_brief_return_to_shuttlepad()
     )
 end
 
+-- Records on a planet's area how far it has been explored ("brief": its
+-- required rooms found, "full": every exit walked), for the galaxy navigator.
+-- F2T_MAP_EXPLORED_EPOCH tells readers caching the mark that one changed.
+function f2t_map_explore_mark_planet_explored(area_id, depth)
+    local area_name = area_id and getRoomAreaName(area_id)
+    if not area_name or f2t_map_get_system_from_space_area(area_name) then return end
+    local current = getAreaUserData(area_id, "fed2_explored")
+    if current == "full" or current == depth then return end
+    setAreaUserData(area_id, "fed2_explored", depth)
+    F2T_MAP_EXPLORED_EPOCH = (F2T_MAP_EXPLORED_EPOCH or 0) + 1
+end
+
 function f2t_map_explore_brief_call_callback()
     if not F2T_MAP_EXPLORE_STATE.active then return end
+    if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0 then
+        f2t_map_explore_mark_planet_explored(F2T_MAP_EXPLORE_STATE.starting_area_id, "brief")
+    end
     local callback = F2T_MAP_EXPLORE_STATE.on_complete_callback
     if callback then callback()
     else f2t_map_explore_complete()

@@ -391,9 +391,17 @@ local function areaDigest(ctx, areaId)
     local rooms = getAreaRooms(areaId) or {}
     local count = #rooms + (rooms[0] and 1 or 0)
     local digest = areaDigests[areaId]
-    if digest and digest.count == count then return digest end
+    local epoch = F2T_MAP_EXPLORED_EPOCH or 0
+    if digest and digest.count == count then
+        if digest.epoch ~= epoch then
+            digest.explored = getAreaUserData(areaId, "fed2_explored")
+            digest.epoch = epoch
+        end
+        return digest
+    end
 
-    digest = { count = count, planets = {}, flagRoom = {} }
+    digest = { count = count, planets = {}, flagRoom = {}, epoch = epoch,
+        explored = getAreaUserData(areaId, "fed2_explored") }
     for _, roomId in ipairs(f2t_map_area_room_list(areaId)) do
         local data = getAllRoomUserData(roomId) or {}
         if data.fed2_planet and data.fed2_planet ~= "" then
@@ -422,15 +430,40 @@ local function planetMapped(ctx, system_name, planet_name)
     return areaDigest(ctx, space_area_id).planets[planet_name:lower()] == true
 end
 
+local function requiredFlags(ctx, system_name)
+    local key = system_name:lower()
+    ctx.required = ctx.required or {}
+    if not ctx.required[key] then
+        ctx.required[key] = f2t_map_explore_strip_courier_outside_sol(
+            f2t_map_explore_default_required_flags(), system_name)
+    end
+    return ctx.required[key]
+end
+
+-- Explored once an explore has said so, or (for planets explored before that
+-- was recorded) once every room a brief explore looks for is mapped. Reaching
+-- the orbit only maps the landing pad.
+local function planetExplored(ctx, system_name, planet_name)
+    if not planetMapped(ctx, system_name, planet_name) then return false end
+    local area_id = areaIdFor(ctx, planet_name)
+    if not area_id then return false end
+    local digest = areaDigest(ctx, area_id)
+    if digest.explored then return true end
+    for _, flag in ipairs(requiredFlags(ctx, system_name)) do
+        if not digest.flagRoom[flag] then return false end
+    end
+    return true
+end
+
 local function systemCoverage(ctx, sd)
-    local mapped, total = 0, 0
+    local explored, total = 0, 0
     for _, pd in ipairs(sd.planets or {}) do
         if pd.name ~= (sd.name .. " Space") then
             total = total + 1
-            if planetMapped(ctx, sd.name, pd.name) then mapped = mapped + 1 end
+            if planetExplored(ctx, sd.name, pd.name) then explored = explored + 1 end
         end
     end
-    return mapped, total
+    return explored, total
 end
 
 -- A closed system can't be explored right now, so its unmapped remainder
@@ -764,12 +797,14 @@ local function createRow(inst, parent, name, row_type, indent_level, y_px, data,
 
     local info_tip = "Click for info (di " .. row_type .. ")"
     if has_badge then
-        local mapped_note = string.format("%d of %d planets mapped", cov.mapped, cov.total)
+        local mapped_note = string.format("%d of %d planets explored", cov.mapped, cov.total)
         if cov.state == "closed" then mapped_note = mapped_note .. " (closed to visitors)" end
         nlbl:setToolTip(mapped_note .. "\n" .. info_tip)
     elseif row_type == "planet" then
         if cov.state == "unmapped" then
             nlbl:setToolTip("Not yet mapped\n" .. info_tip)
+        elseif cov.state == "partial" then
+            nlbl:setToolTip("Orbit found, surface not explored yet\n" .. info_tip)
         elseif num_chips > 0 then
             local names = {}
             for _, f in ipairs(cov.flags) do names[#names + 1] = FLAG_DISPLAY_NAME[f] end
@@ -991,7 +1026,9 @@ local function populate(gid)
                                                     if show_p then
                                                         local pcur = (pd.name == cur_planet) and (sn == cur_system)
                                                         local p_mapped = planetMapped(ctx, sn, pd.name)
-                                                        local p_cov = { state = p_mapped and "mapped" or "unmapped",
+                                                        local p_state = (planetExplored(ctx, sn, pd.name) and "mapped")
+                                                            or (p_mapped and "partial") or "unmapped"
+                                                        local p_cov = { state = p_state,
                                                             flags = p_mapped and planetFlags(ctx, pd.name) or {} }
                                                         createRow(inst, inst.content, pd.name, "planet", 3, y, pd,
                                                             pcur, p_cov)

@@ -66,6 +66,7 @@ function f2t_map_explore_navigate_to_next()
 
     if not next_exit then
         F2T_MAP_EXPLORE_STATE.phase = "area_complete"
+        f2t_map_explore_mark_planet_explored(F2T_MAP_EXPLORE_STATE.starting_area_id, "full")
 
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count and
            F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count > 0 then
