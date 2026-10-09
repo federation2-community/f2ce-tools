@@ -332,9 +332,14 @@ function f2t_map_resolve_location(location)
 
             local area_id = f2t_map_get_area_id(search_area_name)
             if not area_id then
-                return nil,
-                    string.format("'%s' not found - area may not exist or hasn't been explored yet", area_name),
-                    flagHint(original_area_name, flag)
+                local err_msg = string.format(
+                    "'%s' not found - area may not exist or hasn't been explored yet", area_name)
+                -- A planet sweep has to start from a mapped room on that planet,
+                -- so a planet with no area yet needs its system found first.
+                if flag ~= "link" then
+                    return nil, err_msg, {kind = "whereis_pending", name = original_area_name}
+                end
+                return nil, err_msg, flagHint(original_area_name, flag)
             end
 
             local area_rooms = f2t_map_area_room_list(area_id)

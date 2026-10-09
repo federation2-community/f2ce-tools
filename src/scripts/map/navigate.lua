@@ -401,9 +401,17 @@ function f2t_map_navigate_explore_hint(destination, hint, opts)
         if linkWanted then
             return f2t_map_find_link_room_in_system(linkWanted) ~= nil
         end
-        local target = f2t_map_resolve_location(destination) or opts.target_room_id
-        if not target or not roomExists(target) then return false end
-        return here == target or getPath(here, target) and true or false
+        local resolved, _, nextHint = f2t_map_resolve_location(destination)
+        local target = resolved or opts.target_room_id
+        if target and roomExists(target) then
+            return here == target or getPath(here, target) and true or false
+        end
+        -- A system sweep never looks for a planet's bar or hospital; once that
+        -- planet is reachable, a planet sweep is what finds the rest.
+        if hint.kind ~= "system" or not (nextHint and nextHint.kind == "planet") then return false end
+        local planetArea = f2t_map_get_area_id(nextHint.name)
+        local planetRoom = planetArea and f2t_map_area_room_list(planetArea)[1]
+        return planetRoom ~= nil and (here == planetRoom or getPath(here, planetRoom) and true or false)
     end
 
     f2t_map_explore_set_stop_condition(routeExists,
