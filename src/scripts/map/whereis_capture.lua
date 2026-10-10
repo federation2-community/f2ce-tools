@@ -25,7 +25,11 @@ function f2t_map_whereis_capture_complete(system_name, cartel_name, syndicate_na
     local callback = F2T_MAP_WHEREIS_CAPTURE.callback
     if F2T_MAP_WHEREIS_CAPTURE.timer_id then killTimer(F2T_MAP_WHEREIS_CAPTURE.timer_id) end
     F2T_MAP_WHEREIS_CAPTURE = {active = false}
-    if callback then callback(system_name, cartel_name, syndicate_name) end
+    -- Answered from inside the trigger that deletes the game's line; anything the
+    -- callback prints would land in that line, so run it after
+    if callback then
+        tempTimer(0, function() callback(system_name, cartel_name, syndicate_name) end)
+    end
 end
 
 f2t_debug_log("[map] Loaded whereis_capture.lua")
