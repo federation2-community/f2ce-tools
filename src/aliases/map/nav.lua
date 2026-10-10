@@ -20,29 +20,23 @@ local subcommand = string.lower(args):match("^(%S+)")
 if subcommand == "stop" then
     local stop_rest = args:match("^stop%s+(.+)") or ""
     if f2t_handle_help("nav stop", stop_rest) then return end
-    if not F2T_SPEEDWALK_ACTIVE then
-        cecho("\n<yellow>[map]<reset> No active speedwalk to stop\n")
-        return
+    if not f2tNav.stopAll() then
+        cecho("\n<yellow>[map]<reset> Not navigating anywhere\n")
     end
-    f2t_map_speedwalk_stop()
 
 elseif subcommand == "pause" then
     local pause_rest = args:match("^pause%s+(.+)") or ""
     if f2t_handle_help("nav pause", pause_rest) then return end
-    if not F2T_SPEEDWALK_ACTIVE then
-        cecho("\n<yellow>[map]<reset> No active speedwalk to pause\n")
-        return
+    if not f2tNav.pause() then
+        cecho("\n<yellow>[map]<reset> Nothing to pause\n")
     end
-    f2t_map_speedwalk_pause()
 
 elseif subcommand == "resume" then
     local resume_rest = args:match("^resume%s+(.+)") or ""
     if f2t_handle_help("nav resume", resume_rest) then return end
-    if not F2T_SPEEDWALK_ACTIVE then
-        cecho("\n<yellow>[map]<reset> No speedwalk to resume\n")
-        return
+    if not f2tNav.resume() then
+        cecho("\n<yellow>[map]<reset> Nothing paused to resume\n")
     end
-    f2t_map_speedwalk_resume()
 
 elseif subcommand == "info" then
     local info_rest = args:match("^info%s+(.+)$")
@@ -70,5 +64,5 @@ elseif subcommand == "info" then
 
 else
     if f2tControlBlocks("Navigation") then return end
-    f2t_map_navigate(args, {interactive = true, compensate_incomplete_map = true})
+    f2tNav.go(args, { ask = true })
 end

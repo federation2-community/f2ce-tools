@@ -311,39 +311,6 @@ function f2t_map_manual_unlock_area_exits(area_id)
     return cleared
 end
 
-function f2t_map_manual_lock_status(room_id)
-    if not room_id or not roomExists(room_id) then
-        cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return
-    end
-    local room_name = getRoomName(room_id) or "unnamed"
-    cecho(string.format("\n<green>[map]<reset> Lock status for room %d (<white>%s<reset>):\n", room_id, room_name))
-    local is_safe = getRoomUserData(room_id, "f2t_safe")
-    if is_safe == "true" then cecho("  <cyan>Safe flag: SET<reset> (death monitor will never auto-lock)\n") end
-    if roomLocked(room_id) then
-        cecho("  <red>Room is LOCKED<reset>\n")
-        local death_date = getRoomUserData(room_id, "f2t_death_date")
-        if death_date and death_date ~= "" then
-            cecho(string.format("  <red>Death Location<reset>: %s\n", death_date))
-        end
-    else
-        cecho("  <green>Room is UNLOCKED<reset>\n")
-    end
-    local exits = getRoomExits(room_id)
-    if exits and next(exits) ~= nil then
-        cecho("\n  <yellow>Exit Lock Status:<reset>\n")
-        local has_locked = false
-        for dir, dest_id in pairs(exits) do
-            if hasExitLock(room_id, dir) then
-                has_locked = true
-                cecho(string.format("    <red>%-10s<reset> <red>LOCKED<reset>   -> <white>%s<reset> (ID: %d)\n",
-                    dir, getRoomName(dest_id) or "unnamed", dest_id))
-            end
-        end
-        if not has_locked then cecho("    <green>No locked exits<reset>\n") end
-    end
-    cecho("\n")
-end
-
 function f2t_map_manual_mark_room_safe(room_id)
     if not room_id or not roomExists(room_id) then
         cecho(string.format("\n<red>[map]<reset> Room %s does not exist\n", tostring(room_id))); return false

@@ -151,63 +151,12 @@ end
 -- direct link, system closed, exiled. The edge has already been recorded
 -- against the model by the caller; this only unwinds the movement that was
 -- waiting on it, so nothing sits out the 3s move timeout and then spends its
--- retry budget re-sending the identical command.
---
--- An explorer blind-jump chain has no destination room id to recompute
--- against, so it skips to its next target instead of replanning.
-function f2t_map_jump_abort_after_refusal(dest_system, reason)
+-- retry budget re-sending the identical command. A blind jump chain fails
+-- outright, and the trip that sent it plans around the refusal.
+function f2t_map_jump_abort_after_refusal(_destSystem, _reason)
     if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
         killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
         F2T_SPEEDWALK_MOVE_TIMEOUT_ID = nil
-    end
-
-    if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
-        local mode = F2T_MAP_EXPLORE_STATE.mode
-        local phase = F2T_MAP_EXPLORE_STATE.phase
-
-        -- A travel leg's jump chain. Nothing downstream knows how to recover
-        -- one - next_step has no branch for these phases - so a refusal here
-        -- leaves the whole exploration active with a target it can never
-        -- reach, and every later navigate refuses to start because it thinks
-        -- a sweep is running. End the leg.
-        if phase == "explore_travel_jumping" or phase == "explore_travel_arriving" then
-            cecho(string.format("\n<yellow>[map-explore]<reset> Jump to '%s' refused, giving up on %s\n",
-                dest_system, tostring(F2T_MAP_EXPLORE_STATE.travel_target or dest_system)))
-            F2T_SPEEDWALK_WAITING_FOR_MOVE = false
-            F2T_SPEEDWALK_ACTIVE = false
-            f2t_map_explore_travel_finish(false)
-            return true
-        end
-        local jumping_to_cartel = mode == "galaxy" and
-            (phase == "arriving_in_cartel" or phase == "jumping_to_cartel")
-        local jumping_to_system = (mode == "cartel" or mode == "galaxy") and
-            (phase == "arriving_in_system" or phase == "jumping_to_system")
-
-        if jumping_to_cartel or jumping_to_system then
-            cecho(string.format("\n<yellow>[map-explore]<reset> Jump to '%s' %s, skipping...\n",
-                dest_system, reason))
-            F2T_SPEEDWALK_WAITING_FOR_MOVE = false
-            F2T_SPEEDWALK_ACTIVE = false
-            F2T_MAP_EXPLORE_STATE.phase = nil
-
-            if jumping_to_cartel then
-                F2T_MAP_EXPLORE_STATE.galaxy_target_cartel = nil
-                tempTimer(0.5, function()
-                    if F2T_MAP_EXPLORE_STATE.active and F2T_MAP_EXPLORE_STATE.mode == "galaxy" then
-                        f2t_map_explore_galaxy_next_cartel()
-                    end
-                end)
-            else
-                F2T_MAP_EXPLORE_STATE.cartel_target_system = nil
-                tempTimer(0.5, function()
-                    if F2T_MAP_EXPLORE_STATE.active and
-                       (F2T_MAP_EXPLORE_STATE.mode == "cartel" or F2T_MAP_EXPLORE_STATE.mode == "galaxy") then
-                        f2t_map_explore_cartel_next_system()
-                    end
-                end)
-            end
-            return true
-        end
     end
 
     -- Ordinary planned speedwalk: replan now rather than waiting out the

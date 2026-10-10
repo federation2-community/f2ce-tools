@@ -1,6 +1,6 @@
 -- f2ce-tools: navigate-hint confirm dialog
 --
--- Shown by f2t_map_navigate when a typed destination isn't in the local map
+-- Shown by navigation when a typed destination isn't in the local map
 -- but resolve_location found something worth acting on (a known-but-
 -- incomplete planet/system, or a whereis-confirmed real place). Interactive
 -- callers (the `nav` alias) only - automated callers skip this and explore

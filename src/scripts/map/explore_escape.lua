@@ -14,7 +14,7 @@ function f2t_map_explore_escape_start(destination_room_id, on_success, on_failur
     if current_room == destination_room_id then
         if on_success then on_success() end; return true
     end
-    if f2t_map_navigate_ok(f2t_map_navigate(tostring(destination_room_id))) then
+    if f2t_map_walk_room(destination_room_id) then
         F2T_MAP_EXPLORE_STATE.escape_state = {
             destination_room_id = destination_room_id,
             on_success = on_success, on_failure = on_failure,
@@ -97,7 +97,7 @@ function f2t_map_explore_escape_on_room_change()
         f2t_map_explore_escape_success(); return true
     end
     if escape.phase == "navigating_to_destination" then return true end
-    if f2t_map_navigate_ok(f2t_map_navigate(tostring(escape.destination_room_id))) then
+    if f2t_map_walk_room(escape.destination_room_id) then
         cecho("\n<green>[map-explore]<reset> Found path! Navigating to destination...\n")
         escape.phase = "navigating_to_destination"; return true
     end
@@ -118,7 +118,7 @@ function f2t_map_explore_escape_on_speedwalk_complete(result)
         if current_room == escape.destination_room_id then
             f2t_map_explore_escape_success(); return true
         end
-        if f2t_map_navigate_ok(f2t_map_navigate(tostring(escape.destination_room_id))) then
+        if f2t_map_walk_room(escape.destination_room_id) then
             escape.phase = "navigating_to_destination"; return true
         end
         tempTimer(0.3, function()

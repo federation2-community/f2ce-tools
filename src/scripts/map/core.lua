@@ -61,15 +61,6 @@ function f2t_map_handle_gmcp_room()
         f2t_map_special_exit_discovery_complete(room_id)
     end
 
-    -- Circuit travel manual boarding check
-    if F2T_MAP_CIRCUIT_STATE and F2T_MAP_CIRCUIT_STATE.active and
-       F2T_MAP_CIRCUIT_STATE.phase == "waiting_arrival" then
-        local current_hash = f2t_map_generate_hash_from_room(room_id)
-        if current_hash == F2T_MAP_CIRCUIT_STATE.vehicle_room then
-            f2t_map_circuit_handle_boarding(true)
-        end
-    end
-
     -- On-arrival commands
     local arrival_cmd, exec_type = f2t_map_special_get_arrival(room_id)
     if arrival_cmd and exec_type then

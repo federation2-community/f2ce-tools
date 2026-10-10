@@ -6,12 +6,12 @@
 --
 -- The lock is advisory and only guards player-facing entry points (haul start,
 -- map explore, nav). A package holding it calls f2ce-tools functions directly
--- (f2t_map_navigate, f2t_bulk_buy_start, f2t_hauling_start, ...) as usual.
+-- (f2tNav.go, f2t_bulk_buy_start, f2t_hauling_start, ...) as usual.
 --
 -- Events:
 --   f2tControlChanged(owner)            owner is nil once released
 --   f2tControlRevoked(owner, reason)    the player took control back; stop work
---   f2tSpeedwalkFinished(result, roomId, settled)  raised from speedwalk.lua
+--   f2tNavFinished(owner, status, roomId, reason)  raised from nav_api.lua
 
 F2T_CONTROL = F2T_CONTROL or { owner = nil, reason = nil, since = nil }
 
@@ -19,7 +19,7 @@ F2T_CONTROL = F2T_CONTROL or { owner = nil, reason = nil, since = nil }
 function f2tControlNativeActivity()
     if F2T_HAULING_STATE and F2T_HAULING_STATE.active then return "hauling" end
     if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then return "exploration" end
-    if F2T_SPEEDWALK_ACTIVE then return "navigation" end
+    if f2tNav and f2tNav.busy() then return "navigation" end
     if F2T_BULK_STATE and F2T_BULK_STATE.active then return "bulk trading" end
     if f2t_po and f2t_po.phase ~= "idle" then return "planet economy capture" end
     if f2tPriceServiceBusy and f2tPriceServiceBusy() then return "price check" end
@@ -70,7 +70,7 @@ function f2tControlRevoke(reason)
     f2t_debug_log("[control] revoked from %s (%s)", owner, tostring(reason))
     raiseEvent("f2tControlRevoked", owner, reason or "player")
     raiseEvent("f2tControlChanged", nil)
-    if F2T_SPEEDWALK_ACTIVE then f2t_map_speedwalk_stop() end
+    if f2tNav then f2tNav.stopAll() end
     return true
 end
 

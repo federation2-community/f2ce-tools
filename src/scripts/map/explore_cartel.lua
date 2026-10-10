@@ -189,8 +189,7 @@ function f2t_map_explore_cartel_abort()
         callback()
         return
     end
-    f2t_map_clear_nav_owner()
-    if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    f2t_map_explore_release_stamina()
     f2t_map_explore_brief_mode_restore()
     F2T_MAP_EXPLORE_STATE.active = false
     F2T_MAP_EXPLORE_STATE.mode = nil

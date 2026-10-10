@@ -194,10 +194,6 @@ function f2t_map_topology_mark_open(system)
     return true
 end
 
-function f2t_map_topology_is_closed(system)
-    return canonicalKey(F2T_MAP_TOPOLOGY.closed or {}, system) ~= nil
-end
-
 -- Exile is per-player and, unlike closure, is left visible in the server's
 -- jump lists on purpose, so only actually standing in the system retires it.
 function f2t_map_topology_mark_exiled(system)
@@ -250,15 +246,6 @@ function f2t_map_topology_mark_refused(from_system, to_system)
     end
     if from[to_system] then return false end
     from[to_system] = os.time()
-    return true
-end
-
-function f2t_map_topology_clear_refusal(from_system, to_system)
-    local t = F2T_MAP_TOPOLOGY
-    local from = t.refused and t.refused[from_system]
-    if not from or not from[to_system] then return false end
-    from[to_system] = nil
-    if next(from) == nil then t.refused[from_system] = nil end
     return true
 end
 
@@ -315,14 +302,6 @@ end
 function f2t_map_topology_canonical_system(name)
     local t = F2T_MAP_TOPOLOGY
     return canonicalKey(t.systems, name) or canonicalKey(t.cartels, name)
-end
-
-function f2t_map_topology_canonical_cartel(name)
-    return canonicalKey(F2T_MAP_TOPOLOGY.cartels, name)
-end
-
-function f2t_map_topology_canonical_syndicate(name)
-    return canonicalKey(F2T_MAP_TOPOLOGY.syndicates, name)
 end
 
 function f2t_map_topology_grouping_known(cartel)
@@ -652,6 +631,42 @@ function f2t_map_topology_jump_chain(from_system, to_system)
     end
 
     return (not blocked) and chain or nil
+end
+
+-- Fewest jumps from one system to another over the legal jump graph, skipping
+-- closed, exiled and refused edges. Returns "jump <system>" commands, or nil
+-- when the model can't connect the two. Falls back to the server's own chain
+-- shape when the search can't place a system the chain rules still can.
+function f2t_map_topology_route(from_system, to_system)
+    f2t_map_topology_ensure_loaded()
+    local from = f2t_map_topology_canonical_system(from_system) or from_system
+    local to = f2t_map_topology_canonical_system(to_system) or to_system
+    if not from or not to then return nil end
+    local goal = string.lower(to)
+    if string.lower(from) == goal then return {} end
+
+    local previous = { [from] = false }
+    local queue, head = { from }, 1
+    while head <= #queue do
+        local system = queue[head]
+        head = head + 1
+        for dest in pairs(f2t_map_topology_jump_destinations(system) or {}) do
+            if previous[dest] == nil then
+                previous[dest] = system
+                if string.lower(dest) == goal then
+                    local chain = {}
+                    local step = dest
+                    while previous[step] do
+                        table.insert(chain, 1, string.format("jump %s", step))
+                        step = previous[step]
+                    end
+                    return chain
+                end
+                queue[#queue + 1] = dest
+            end
+        end
+    end
+    return f2t_map_topology_jump_chain(from, to)
 end
 
 -- Every mapped system's link room, flagging the ones with more than one room

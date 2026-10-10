@@ -76,31 +76,6 @@ function f2t_death_start_monitoring()
     f2t_debug_log("[death] Death monitoring started")
 end
 
-function f2t_death_stop_monitoring()
-    if not F2T_DEATH_STATE.monitoring_active then
-        return
-    end
-
-    -- Cleanup any active recovery
-    f2t_death_cleanup()
-
-    -- Unregister room tracking handler
-    f2t_death_unregister_room_tracking_handler()
-
-    -- Unregister vitals handler
-    if F2T_DEATH_STATE.vitals_handler_id then
-        killAnonymousEventHandler(F2T_DEATH_STATE.vitals_handler_id)
-        F2T_DEATH_STATE.vitals_handler_id = nil
-    end
-    if F2T_DEATH_STATE.suicide_timeout_id then
-        killTimer(F2T_DEATH_STATE.suicide_timeout_id)
-        F2T_DEATH_STATE.suicide_timeout_id = nil
-    end
-
-    F2T_DEATH_STATE.monitoring_active = false
-    f2t_debug_log("[death] Death monitoring stopped")
-end
-
 -- ========================================
 -- Recovery Process
 -- ========================================
@@ -189,17 +164,8 @@ function f2t_death_stop_all_components()
         f2t_debug_log("[death] Cancelled food run")
     end
 
-    -- Stop active speedwalk/navigation
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[death] Stopping active speedwalk")
-        if f2t_map_speedwalk_stop then
-            f2t_map_speedwalk_stop()
-        end
-    end
-
-    -- Clear navigation ownership (if any)
-    if f2t_map_clear_nav_owner then
-        f2t_map_clear_nav_owner()
+    if f2tNav and f2tNav.stopAll() then
+        f2t_debug_log("[death] Stopped navigation")
     end
 end
 
@@ -229,14 +195,6 @@ function f2t_death_register_room_tracking_handler()
     end)
 
     f2t_debug_log("[death] Room tracking handler registered")
-end
-
-function f2t_death_unregister_room_tracking_handler()
-    if F2T_DEATH_STATE.room_tracking_handler_id then
-        killAnonymousEventHandler(F2T_DEATH_STATE.room_tracking_handler_id)
-        F2T_DEATH_STATE.room_tracking_handler_id = nil
-        f2t_debug_log("[death] Room tracking handler unregistered")
-    end
 end
 
 function f2t_death_track_room_change()

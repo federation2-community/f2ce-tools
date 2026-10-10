@@ -18,11 +18,6 @@
 --- @param onArrived function
 --- @param onUnreachable function
 local function walkToAcRoom(planet, phase, onArrived, onUnreachable)
-    if not f2t_map_on_map() then
-        f2t_hauling_do_stop()
-        return
-    end
-
     local hash = f2t_ac_get_room_hash(planet)
     if F2T_AC_ROOMS[planet] and f2t_map_get_room_by_hash(hash) == nil then
         onUnreachable(string.format("The AC office on %s isn't on your map (import the bundled map " ..
@@ -30,22 +25,9 @@ local function walkToAcRoom(planet, phase, onArrived, onUnreachable)
         return
     end
 
-    local token = (F2T_HAULING_STATE.ac_walk_token or 0) + 1
-    F2T_HAULING_STATE.ac_walk_token = token
-    f2t_map_walk_to(hash, function(_, result)
-        if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                and F2T_HAULING_STATE.current_phase == phase
-                and F2T_HAULING_STATE.ac_walk_token == token) then
-            return
-        end
-        if result == "stopped" then
-            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-            f2t_hauling_do_stop()
-        elseif f2t_ac_get_current_planet() == planet then
-            onArrived()
-        else
-            onUnreachable(string.format("Couldn't find a way to the AC office on %s", planet))
-        end
+    F2T_HAULING_STATE.current_phase = phase
+    f2t_hauling_walk(hash, onArrived, function(reason)
+        onUnreachable(string.format("Couldn't find a way to the AC office on %s (%s)", planet, reason or "no route"))
     end)
 end
 

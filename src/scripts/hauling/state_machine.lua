@@ -15,6 +15,52 @@ function f2t_hauling_register_stamina()
     })
 end
 
+--- Walk somewhere for the current phase. onArrived runs there; onUnreachable(reason)
+--- when navigation can't get there. A pause, stop or newer walk makes the outcome
+--- stale, and it is dropped.
+--- @param destination string|number
+--- @param onArrived function
+--- @param onUnreachable function
+function f2t_hauling_walk(destination, onArrived, onUnreachable)
+    -- Nothing can be planned from off the map, for this job or any other
+    if not f2t_map_on_map() then
+        f2t_hauling_do_stop()
+        return
+    end
+    local phase = F2T_HAULING_STATE.current_phase
+    local token = (F2T_HAULING_STATE.walk_token or 0) + 1
+    F2T_HAULING_STATE.walk_token = token
+    f2tNav.go(destination, { owner = "hauling", onDone = function(result)
+        if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                and F2T_HAULING_STATE.current_phase == phase
+                and F2T_HAULING_STATE.walk_token == token) then
+            return
+        end
+        f2t_debug_log("[hauling] Walk to %s: %s", tostring(destination), result.status)
+        if result.status == "arrived" then
+            onArrived()
+        elseif result.status == "stopped" then
+            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
+            f2t_hauling_do_stop()
+        elseif result.status == "superseded" then
+            cecho(string.format("\n<yellow>[hauling]<reset> Navigation taken over by %s, pausing hauling. " ..
+                "Use <white>haul resume<reset> to carry on\n", tostring(result.by)))
+            f2t_hauling_pause(true)
+        else
+            onUnreachable(result.reason)
+        end
+    end })
+end
+
+-- Drop any outstanding hauling walk and stop it if it is still moving.
+function f2t_hauling_halt_walk()
+    F2T_HAULING_STATE.walk_token = (F2T_HAULING_STATE.walk_token or 0) + 1
+    local status = f2tNav.status()
+    if status and (status.owner == "hauling" or status.owner == "akaturi") then
+        f2tNav.stop()
+    end
+end
+
 -- Start hauling automation
 --- @param requested_mode string|nil Strategy to run (see F2T_HAUL_STRATEGIES); nil uses hauling/mode
 function f2t_hauling_start(requested_mode)
@@ -57,16 +103,6 @@ function f2t_hauling_start(requested_mode)
     F2T_HAULING_STATE.stopping = false
     F2T_HAULING_STATE.cycle_count = 0
     raiseEvent("f2tHaulingStatusChanged")
-
-    -- Set navigation ownership for hauling
-    -- Callback handles customs interrupt by requesting auto-resume
-    if f2t_map_set_nav_owner then
-        f2t_map_set_nav_owner("hauling", function(reason)
-            f2t_debug_log("[hauling] Navigation interrupted by %s", reason)
-            -- Hauling uses auto-resume - customs handler will resume navigation
-            return { auto_resume = true }
-        end)
-    end
 
     -- Reset statistics for new session
     F2T_HAULING_STATE.total_cycles = 0
@@ -169,12 +205,8 @@ function f2t_hauling_start(requested_mode)
     -- Register mode-specific event handlers
     if mode == "ac" then
         F2T_HAULING_STATE.handler_id = f2t_ac_register_handlers()
-    elseif mode == "exchange" then
-        F2T_HAULING_STATE.handler_id = f2t_exchange_register_handlers()
     elseif mode == "akaturi" then
         F2T_HAULING_STATE.handler_id = f2t_akaturi_register_handlers()
-    elseif mode == "po" then
-        F2T_HAULING_STATE.handler_id = f2t_po_register_handlers()
     end
 
     -- Hold brief for the whole session rather than letting every leg of every
@@ -243,7 +275,7 @@ function f2t_hauling_stop()
             return
         end
         f2t_akaturi_visit_cancel("hauling")
-        if F2T_SPEEDWALK_ACTIVE then f2t_map_speedwalk_stop() end
+        f2t_hauling_halt_walk()
         f2t_hauling_do_stop()
         return
     end
@@ -260,10 +292,7 @@ function f2t_hauling_stop()
             return
         end
         -- No cargo, stop immediately
-        if F2T_SPEEDWALK_ACTIVE then
-            f2t_debug_log("[hauling] Stopping speedwalk due to immediate stop")
-            f2t_map_speedwalk_stop()
-        end
+        f2t_hauling_halt_walk()
         f2t_hauling_do_stop()
         return
     end
@@ -279,11 +308,7 @@ function f2t_hauling_stop()
         f2t_debug_log("[hauling] Graceful stop requested, will finish selling %d lots", #cargo)
     else
         -- No cargo/job, stop immediately
-        -- Stop any active speedwalk since we're stopping now
-        if F2T_SPEEDWALK_ACTIVE then
-            f2t_debug_log("[hauling] Stopping speedwalk due to immediate stop")
-            f2t_map_speedwalk_stop()
-        end
+        f2t_hauling_halt_walk()
         f2t_hauling_do_stop()
     end
 end
@@ -314,21 +339,13 @@ function f2t_hauling_terminate()
 
     F2T_HAULING_STATE.pause_requested = false
 
-    -- Stop any active speedwalk
-    if F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling] Stopping speedwalk due to termination")
-        f2t_map_speedwalk_stop()
-    end
-
+    f2t_hauling_halt_walk()
     f2t_hauling_do_stop()
 end
 
 -- Internal function to actually stop hauling (preserves statistics)
 function f2t_hauling_do_stop()
-    -- Clear navigation ownership
-    if f2t_map_clear_nav_owner then
-        f2t_map_clear_nav_owner()
-    end
+    F2T_HAULING_STATE.walk_token = (F2T_HAULING_STATE.walk_token or 0) + 1
 
     -- Released before the safe room run so that walk handles its own mode
     -- switching like any other standalone speedwalk.
@@ -342,12 +359,9 @@ function f2t_hauling_do_stop()
         cecho(string.format("\n<green>[hauling]<reset> Returning to safe room: <cyan>%s<reset>\n", safe_room))
         f2t_debug_log("[hauling] Navigating to safe room: %s", safe_room)
 
-        f2t_map_navigate(safe_room)
-
-        -- Wait for navigation to complete before showing final stats
-        tempTimer(2, function()
+        f2tNav.go(safe_room, { owner = "hauling", onDone = function()
             f2t_hauling_finish_stop()
-        end)
+        end })
     else
         -- Safe room disabled or not configured, stop immediately
         f2t_hauling_finish_stop()
@@ -382,12 +396,8 @@ function f2t_hauling_finish_stop()
     -- Clean up mode-specific event handlers
     if F2T_HAULING_STATE.mode == "ac" and F2T_HAULING_STATE.handler_id then
         f2t_ac_cleanup_handlers(F2T_HAULING_STATE.handler_id)
-    elseif F2T_HAULING_STATE.mode == "exchange" and F2T_HAULING_STATE.handler_id then
-        f2t_exchange_cleanup_handlers(F2T_HAULING_STATE.handler_id)
     elseif F2T_HAULING_STATE.mode == "akaturi" and F2T_HAULING_STATE.handler_id then
         f2t_akaturi_cleanup_handlers(F2T_HAULING_STATE.handler_id)
-    elseif F2T_HAULING_STATE.mode == "po" and F2T_HAULING_STATE.handler_id then
-        f2t_po_cleanup_handlers(F2T_HAULING_STATE.handler_id)
     elseif F2T_HAULING_STATE.handler_id then
         -- Generic cleanup for any other mode
         killAnonymousEventHandler(F2T_HAULING_STATE.handler_id)
@@ -449,7 +459,7 @@ function f2t_hauling_finish_stop()
     F2T_HAULING_STATE.ac_completing = false
     F2T_HAULING_STATE.ac_50_milestone_shown = false
     F2T_HAULING_STATE.ac_unreachable = {}
-    F2T_HAULING_STATE.ac_walk_token = 0
+    F2T_HAULING_STATE.po_sell_unreachable = false
 
     -- Clear Akaturi state; the contract itself stays with the game
     F2T_HAULING_STATE.akaturi_take_attempts = 0
@@ -506,14 +516,6 @@ function f2t_hauling_pause(immediate)
         F2T_HAULING_STATE.pause_requested = false
         F2T_HAULING_STATE.paused = true
 
-        -- Store speedwalk destination before stopping (so we can recompute on resume)
-        if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_DESTINATION_ROOM_ID then
-            F2T_HAULING_STATE.paused_speedwalk_destination = F2T_SPEEDWALK_DESTINATION_ROOM_ID
-            f2t_debug_log("[hauling] Stored speedwalk destination: %d", F2T_SPEEDWALK_DESTINATION_ROOM_ID)
-        else
-            F2T_HAULING_STATE.paused_speedwalk_destination = nil
-        end
-
         cecho(string.format("\n<green>[hauling]<reset> Paused at phase: <cyan>%s<reset>\n",
             F2T_HAULING_STATE.current_phase or "unknown"))
 
@@ -529,13 +531,9 @@ function f2t_hauling_pause(immediate)
         -- An Akaturi room search starts over on resume
         if F2T_HAULING_STATE.mode == "akaturi" then
             f2t_akaturi_visit_cancel("hauling")
-            F2T_HAULING_STATE.paused_speedwalk_destination = nil
         end
-        -- Stop any active speedwalk (will recompute on resume)
-        if F2T_SPEEDWALK_ACTIVE then
-            f2t_debug_log("[hauling] Stopping speedwalk (will recompute on resume)")
-            f2t_map_speedwalk_stop()
-        end
+        -- The phase walks again on resume
+        f2t_hauling_halt_walk()
 
         f2t_map_brief_hold_release("hauling")
     else
@@ -599,44 +597,8 @@ function f2t_hauling_resume()
 
     f2t_hauling_register_stamina()
 
-    -- Re-establish navigation ownership (may have been cleared by stamina monitor)
-    if f2t_map_set_nav_owner then
-        f2t_map_set_nav_owner("hauling", function(reason)
-            f2t_debug_log("[hauling] Navigation interrupted by %s", reason)
-            return { auto_resume = true }
-        end)
-    end
-
-    -- Akaturi phases restart from the contract as it now stands, which also
-    -- covers work done by hand while paused. AC walks are restarted by their
-    -- phase, so they explore again rather than replaying a bare speedwalk.
-    if F2T_HAULING_STATE.mode == "akaturi" or F2T_HAULING_STATE.mode == "ac" then
-        F2T_HAULING_STATE.paused_speedwalk_destination = nil
-    end
-
-    -- If we had a paused speedwalk, recompute path to the original destination
-    local should_restart_phase = true
-    if F2T_HAULING_STATE.paused_speedwalk_destination then
-        local destination = F2T_HAULING_STATE.paused_speedwalk_destination
-        F2T_HAULING_STATE.paused_speedwalk_destination = nil  -- Clear it
-
-        f2t_debug_log("[hauling] Recomputing speedwalk to destination: %d", destination)
-        cecho(string.format("\n<cyan>[hauling]<reset> Recomputing path to destination...\n"))
-
-        -- Navigate to the stored destination
-        local result = f2t_map_navigate(destination)
-        if f2t_map_navigate_ok(result) then
-            f2t_debug_log("[hauling] Already at destination, continuing phase")
-            -- Already there, restart phase
-        else
-            -- Navigation started, don't restart phase yet
-            should_restart_phase = false
-        end
-    end
-
-    -- Only re-execute phase if we don't have an active speedwalk
-    -- This prevents starting a new navigation when we're already navigating
-    if should_restart_phase and F2T_HAULING_STATE.current_phase then
+    -- Every phase restarts from where the player now stands; walking phases walk again.
+    if F2T_HAULING_STATE.current_phase then
         f2t_debug_log("[hauling] Restarting phase: %s", F2T_HAULING_STATE.current_phase)
         f2t_hauling_transition(F2T_HAULING_STATE.current_phase)
     end
@@ -848,6 +810,8 @@ function f2t_hauling_transition(new_phase)
         f2t_hauling_phase_navigate_to_sell()
     elseif new_phase == "selling" then
         f2t_hauling_phase_sell()
+    elseif new_phase == "dumping_cargo" then
+        f2t_hauling_phase_navigate_to_dump()
     -- Armstrong Cuthbert phases
     elseif new_phase == "ac_fetching_jobs" then
         f2t_hauling_phase_ac_fetch_jobs()
@@ -1045,13 +1009,21 @@ function f2t_hauling_jettison_cargo(callback)
         end
     end
 
-    -- Wait for jettison to complete, then continue
-    tempTimer(1, function()
+    -- The game takes the lots one at a time, so wait for the hold to read empty
+    local waited = 0
+    local function check()
         if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
             return
         end
+        local remaining = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
+        if remaining and #remaining > 0 and waited < 15 then
+            waited = waited + 0.5
+            tempTimer(0.5, check)
+            return
+        end
         callback()
-    end)
+    end
+    tempTimer(0.5, check)
 end
 
 f2t_debug_log("[hauling] State machine loaded")

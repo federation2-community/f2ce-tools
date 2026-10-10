@@ -1,7 +1,7 @@
 -- f2tBuildMapNearest(parent, gid) creates a "Nearest ▾" button in the top-left
 -- of the F2CE Map pane, just below the map info lines. Clicking it toggles a
 -- dropdown of the legend's room types; picking one walks to the closest mapped
--- room of that type (f2t_map_nearest_room_with_flag + f2t_map_walk_to).
+-- room of that type (f2t_map_nearest_room_with_flag + f2tNav.go).
 
 local _CSS_BTN = [[
     QLabel {
@@ -172,11 +172,11 @@ local function goToNearest(entry)
     end
     cecho(string.format("\n<cyan>[map]<reset> Heading to the nearest %s: %s (%d steps)\n",
         label, getRoomName(roomId) or ("room " .. roomId), steps))
-    f2t_map_walk_to(roomId, function(arrived, result)
-        if not arrived and result ~= "stopped" then
+    f2tNav.go(roomId, { onDone = function(result)
+        if result.status == "unreachable" then
             cecho(string.format("\n<red>[map]<reset> Couldn't reach the %s.\n", label))
         end
-    end)
+    end })
 end
 
 function f2tBuildMapNearest(parent, gid)

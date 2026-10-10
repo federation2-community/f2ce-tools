@@ -103,7 +103,7 @@ local function summaryHtml()
 end
 
 local function navigateExchange(planet)
-    if planet and f2t_map_navigate then f2t_map_navigate(planet .. " exchange") end
+    if planet then f2tNav.go(planet .. " exchange") end
 end
 
 local function planetCell(key)

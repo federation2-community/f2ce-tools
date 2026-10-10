@@ -38,8 +38,7 @@ local function layerFields()
         galaxy_cartel_list = {}, galaxy_current_cartel_index = 0,
         galaxy_target_cartel = nil, galaxy_syndicate_filter = nil,
         galaxy_stats = {total_cartels=0,cartels_explored=0,cartels_skipped=0,total_systems=0,total_planets=0},
-        travel_kind = nil, travel_target = nil, travel_on_arrived = nil, travel_on_failed = nil,
-        travel_learned_target = nil,
+        travel = nil,
     }
 end
 
@@ -84,8 +83,7 @@ end
 
 function f2t_map_explore_release_run()
     F2T_MAP_EXPLORE_STATE.active = false
-    f2t_map_clear_nav_owner()
-    if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    f2t_map_explore_release_stamina()
     f2t_map_explore_unlock_temp_exits()
     f2t_map_explore_brief_mode_restore()
 end
@@ -137,122 +135,57 @@ function f2t_map_explore_init_area(area_id, mode_fields)
     return #F2T_MAP_EXPLORE_STATE.frontier_stack
 end
 
--- Walk to a mapped planet before starting Layer 1 exploration there. This is
--- a plain getPath() walk, not a jump chain - any topology-modeled system
--- already has "jump <system>" special exits on its link room (see
--- topology.lua's f2t_map_topology_rebuild_exits), so ordinary pathfinding
--- already crosses legal jumps on its own. The blind jump-chain builder is
--- only needed to reach territory with no rooms mapped yet at all, which a
--- single named planet can't be (f2t_map_lookup_planet already requires the
--- planet's area to exist).
+-- Get somewhere before a sweep starts. A standalone sweep travels as an
+-- ordinary trip before it claims its run, so navigation can explore its way
+-- there; a sweep nested in a bigger one travels inside that run.
+function f2t_map_explore_go(destination, on_arrived, on_failed)
+    if F2T_MAP_EXPLORE_STATE.active then
+        f2t_map_explore_travel(destination, on_arrived, on_failed)
+        return
+    end
+    f2tNav.go(destination, { owner = "explore", onDone = function(result)
+        if result.status == "arrived" then
+            on_arrived()
+            return
+        end
+        if result.status == "unreachable" then
+            cecho(string.format("\n<red>[map-explore]<reset> Couldn't reach %s: %s\n",
+                tostring(destination), result.reason or "no route"))
+        end
+        if on_failed then on_failed() end
+    end })
+end
+
+-- Reach a planet, then start Layer 1 exploration there. A planet's area can
+-- be a lone stub room, wired from its orbit's "board" before anyone landed,
+-- with no flags for a name lookup to find; going to that room by id lands
+-- there all the same.
 function f2t_map_explore_travel_to_planet(planet_mode, planet_name, on_complete_callback, override_flags,
                                            target_room_name, target_room_exact, target_room_skip)
-    -- Mark the sweep active (for a standalone, callback-driven caller) before
-    -- navigating. f2t_map_navigate()'s hint guard only refuses to launch a
-    -- second hint-driven explore while F2T_MAP_EXPLORE_STATE.active is
-    -- already true. Without this, a planet whose area partially exists but
-    -- isn't fully explored (a "planet" hint, not "whereis_pending") recurses
-    -- straight back into f2t_map_explore_planet_start on retry - via
-    -- f2t_map_navigate_explore_hint, which always supplies a callback - with
-    -- active still false every time: infinite synchronous recursion, stack
-    -- overflow. Gated on on_complete_callback like
-    -- f2t_map_explore_system_start_with_planets does, so a plain top-level
-    -- call with no callback still falls through to
-    -- f2t_map_explore_init_area's own state reset on arrival instead of
-    -- this also claiming the standalone slot.
-    local guard_active = not F2T_MAP_EXPLORE_STATE.active and on_complete_callback ~= nil
-    -- Failing to get there ends the run without its callback, like a stop does
-    local function cleanup()
-        if guard_active then
-            f2t_map_explore_release_run()
-            raiseEvent("f2tExploreStopped")
-        end
-    end
-
-    local effective_callback = on_complete_callback
-    if guard_active then
-        f2t_map_explore_claim_run()
-        effective_callback = f2t_map_explore_wrap_release(on_complete_callback)
-    end
-
-    local function start_here()
-        return f2t_map_explore_planet_start(planet_mode, planet_name, effective_callback,
-            override_flags, target_room_name, target_room_exact, target_room_skip)
-    end
-
-    local function await_arrival()
-        local handler_id
-        handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-            if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
-            killAnonymousEventHandler(handler_id)
-            local area = getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
-            local arrived_planet = area and getRoomAreaName(area)
-            if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
-                cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
-                cleanup()
-                return
-            end
-            start_here()
-        end)
-    end
-
-    -- For the by-room-id call below, which passes no on_result and so has to
-    -- read its answer off the return value.
-    local function proceed(nav_result)
-        if nav_result == "pending" then return true end
-        if not f2t_map_navigate_ok(nav_result) then
-            cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
-            cleanup()
-            return false
-        end
-        if not F2T_SPEEDWALK_ACTIVE then
-            return start_here()
-        end
-        await_arrival()
-        return true
-    end
-
-    -- f2t_map_process_special_exits (exit.lua) eagerly stubs a planet's area
-    -- from GMCP alone the moment a "board"/"orbit" hash is seen from its
-    -- system-space orbit room - before anyone has ever landed there - and
-    -- wires a "board" special exit straight to that stub room. So a planet's
-    -- area can exist with a single, completely unflagged room: not a
-    -- corrupt/leftover state, just "known to be there, never physically
-    -- visited". f2t_map_navigate(planet_name) alone can never reach that,
-    -- since resolve_location's planet branch only ever looks for a
-    -- shuttlepad-flagged room - the very flag that can only get set by
-    -- actually walking in via that stub. Reach the stub directly by room ID
-    -- (getPath() will route across the "board" special exit) so Layer-1
-    -- exploration can take over for real once we're actually standing there.
+    local standalone = not F2T_MAP_EXPLORE_STATE.active
+    local destination = planet_name
     local planet_area_id = f2t_map_get_area_id(planet_name)
     if planet_area_id then
-        local known_room_id = f2t_map_find_room_with_flag(planet_area_id, "shuttlepad")
-        if not known_room_id then
-            known_room_id = f2t_map_area_room_list(planet_area_id)[1]
-        end
-        if known_room_id then
-            return proceed(f2t_map_navigate(tostring(known_room_id)))
-        end
+        destination = f2t_map_find_room_with_flag(planet_area_id, "shuttlepad")
+            or f2t_map_area_room_list(planet_area_id)[1] or planet_name
     end
 
-    -- Nothing mapped on this planet at all yet (no stub, no shuttlepad):
-    -- fall back to the name-based resolver, which can self-heal a totally
-    -- unknown planet via whereis (f2t_map_navigate's own active guard, set
-    -- above, stops this from recursing into another hint-driven explore of
-    -- the same planet).
-    f2t_map_navigate(planet_name, {
-        on_result = function(success)
-            -- Fires exactly once whichever path the navigate took, so this is
-            -- the only place the outcome is handled - reading the return value
-            -- as well would double up on the synchronous cases.
-            if not success then
-                cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s\n", planet_name))
-                cleanup()
-                return
-            end
-            if F2T_SPEEDWALK_ACTIVE then await_arrival() else start_here() end
-        end,
-    })
+    -- Failing to get there ends a standalone search without its callback, like a stop does
+    local function failed()
+        if standalone then raiseEvent("f2tExploreStopped", "failed") end
+    end
+
+    f2t_map_explore_go(destination, function()
+        local area = F2T_MAP_CURRENT_ROOM_ID and getRoomArea(F2T_MAP_CURRENT_ROOM_ID)
+        local arrived_planet = area and getRoomAreaName(area)
+        if not arrived_planet or arrived_planet:lower() ~= planet_name:lower() then
+            cecho(string.format("\n<red>[map-explore]<reset> Could not reach %s\n", planet_name))
+            failed()
+            return
+        end
+        f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_callback,
+            override_flags, target_room_name, target_room_exact, target_room_skip)
+    end, failed)
     return true
 end
 
@@ -331,10 +264,9 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
 
     if on_complete_callback then
         -- Nested (parent sweep already has .active/hooks) or a standalone
-        -- callback-driven call (e.g. f2t_map_navigate's hint resolver, or an
-        -- Akaturi target-room search) that hasn't started anything yet -
-        -- ensure both here too, and unwind them once completion fires, same
-        -- as f2t_map_explore_system_start_with_planets does for system-level.
+        -- callback-driven call (a navigation sweep, an Akaturi room search) that
+        -- hasn't started anything yet - ensure both here too, and unwind them
+        -- once completion fires, as the system-level start does.
         local started_standalone = not F2T_MAP_EXPLORE_STATE.active
         if started_standalone then
             f2t_map_explore_claim_run()
@@ -533,18 +465,21 @@ function f2t_map_explore_brief_call_callback()
     end
 end
 
--- Nav-owner + stamina-monitor safety hooks shared by every standalone explore
--- entry point (system/cartel/galaxy/syndicate all register the same pair;
--- nested layers skip this since the parent that started the sweep already holds it).
-function f2t_map_explore_register_safety_hooks()
-    -- Customs: the walk resumes by itself afterwards, and the explorer waits it
-    -- out (F2T_SPEEDWALK_CUSTOMS_PENDING) rather than pausing, which nothing
-    -- would ever lift.
-    f2t_map_set_nav_owner("map-explore", function()
-        return {auto_resume = true}
-    end)
+-- Whether this exploration is the stamina monitor's client. A sweep run as a
+-- navigation self-heal under hauling leaves hauling as the client.
+local exploreHoldsStamina = false
 
+function f2t_map_explore_release_stamina()
+    if exploreHoldsStamina and f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    exploreHoldsStamina = false
+end
+
+-- Stamina-monitor hook shared by every standalone explore entry point (nested
+-- layers skip this since the parent that started the sweep already holds it).
+function f2t_map_explore_register_safety_hooks()
+    if f2t_stamina_has_client and f2t_stamina_has_client() then return end
     if f2t_stamina_register_client then
+        exploreHoldsStamina = true
         f2t_stamina_register_client({
             pause_callback  = f2t_map_explore_pause,
             resume_callback = f2t_map_explore_resume,
@@ -555,166 +490,34 @@ function f2t_map_explore_register_safety_hooks()
     end
 end
 
--- Shared travel-to-container primitive: reach an unmapped system or cartel
--- hub via a blind jump chain built from the topology model, or a plain walk
--- when we're already in the target's home system/cartel. Used standalone or
--- nested under any layer's sweep. on_arrived()/on_failed() are stored on
--- state and fired once the gmcp.room.info dispatcher (below) confirms
--- arrival or a failure; on_failed is optional (a no-op if omitted).
-
---- @param kind string "system" or "cartel"
---- @param target string Target system or cartel name
-function f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
-    F2T_MAP_EXPLORE_STATE.travel_kind = kind
-    F2T_MAP_EXPLORE_STATE.travel_target = target
-    F2T_MAP_EXPLORE_STATE.travel_on_arrived = on_arrived
-    F2T_MAP_EXPLORE_STATE.travel_on_failed = on_failed
-    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_arriving"
-end
-
-function f2t_map_explore_travel_to(kind, target, on_arrived, on_failed)
-    -- Store the callbacks before anything can fail. Every exit below reports
-    -- through f2t_map_explore_travel_finish, which fires whichever of these
-    -- applies - and the guards that bail early used to run before they were
-    -- stored, so their travel_finish had nothing to call and the caller was
-    -- left waiting on a trip that had already been abandoned.
-    f2t_map_explore_await_arrival(kind, target, on_arrived, on_failed)
-
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
-    if current_room and f2t_map_room_has_flag(current_room, "link") then
-        f2t_map_explore_travel_jump()
-        return
-    end
-
-    -- Already standing in the target system with no mapped route to its own
-    -- space area: a jump chain can't help - you can't jump to the system
-    -- you're already in, so link_room below would resolve to the very room
-    -- that's already unreachable and just retry the identical broken walk.
-    -- This happens when the game renumbers a planet's local rooms out from
-    -- under an existing map (a stranded duplicate one level down from a
-    -- whole stranded system). Board into space instead and let the ordinary
-    -- frontier sweep rediscover real exits from wherever that lands - the
-    -- "explore_travel_arriving" phase set above already resolves as soon as
-    -- fed2_system matches, regardless of which room that turns out to be.
-    local current_system = current_room and getRoomUserData(current_room, "fed2_system")
-    if kind == "system" and current_system and current_system:lower() == string.lower(target) then
-        if f2t_map_room_has_flag(current_room, "shuttlepad") then
-            cecho(string.format(
-                "  <dim_grey>Already in %s but its mapped space is unreachable from here - " ..
-                "boarding to look for a route<reset>\n", target))
-            send("board")
-            return
+-- A sweep's travel is a navigation trip like any other. The sweep waits in the
+-- "travelling" phase, which its own room-change handling leaves alone, and
+-- carries on from on_arrived. The player taking navigation over stops the
+-- sweep; anything else taking it over pauses it, and resuming travels again.
+function f2t_map_explore_travel(destination, on_arrived, on_failed)
+    F2T_MAP_EXPLORE_STATE.phase = "travelling"
+    F2T_MAP_EXPLORE_STATE.travel = { destination = destination, on_arrived = on_arrived, on_failed = on_failed }
+    f2tNav.go(destination, { owner = "explore", onDone = function(result)
+        local state = F2T_MAP_EXPLORE_STATE
+        if not state.active or state.phase ~= "travelling" or state.paused then return end
+        if result.status == "arrived" then
+            state.phase = nil
+            state.travel = nil
+            if on_arrived then on_arrived() end
+        elseif result.status == "superseded" and result.by ~= "player" then
+            state.paused = true
+            state.paused_reason = "travel"
+            cecho("\n<yellow>[map-explore]<reset> Paused while navigation is needed elsewhere\n")
+        elseif result.status == "stopped" or result.status == "superseded" then
+            f2t_map_explore_stop()
+        else
+            state.phase = nil
+            state.travel = nil
+            cecho(string.format("\n<red>[map-explore]<reset> Couldn't reach %s: %s\n",
+                destination, result.reason or "no route"))
+            if on_failed then on_failed() end
         end
-        cecho(string.format("  <red>Error:<reset> No mapped route to %s's space from here\n", target))
-        f2t_map_explore_travel_finish(false)
-        return
-    end
-
-    local barredReason = f2t_map_link_barred and
-        f2t_map_link_barred(current_room and getRoomUserData(current_room, "fed2_system"))
-    if barredReason then
-        cecho(string.format("\n<red>[map-explore]<reset> Cannot reach %s: %s\n", target, barredReason))
-        f2t_map_explore_travel_finish(false)
-        return
-    end
-
-    -- Jumping works only from the interstellar link, so this has to be that
-    -- room specifically. An entry-room lookup won't do: on a sparse map it
-    -- falls back to "any room in the system's space area", and jumping from
-    -- the wrong one just gets "You jump up and down, but nothing happens."
-    local link_room = current_system and f2t_map_find_link_room_in_system(current_system)
-    if not link_room then
-        cecho(string.format(
-            "  <red>Error:<reset> No interstellar link mapped in %s, so there is no way to jump to %s\n",
-            current_system or "this system", target))
-        cecho("  <dim_grey>Explore this system first, then try again<reset>\n")
-        f2t_map_explore_travel_finish(false)
-        return
-    end
-    cecho(string.format("  <dim_grey>Navigating to link to jump to %s<reset>\n", target))
-    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_jumping"
-    local nav_result = f2t_map_navigate(tostring(link_room))
-    if nav_result == "pending" then
-        cecho(string.format("  <red>Error:<reset> Cannot navigate to a link room to reach %s\n", target))
-        f2t_map_explore_travel_finish(false)
-    elseif nav_result == "failed" then
-        -- No route and nothing left to try - getPath already printed why.
-        -- Nothing is moving, so no room-change event will ever arrive to
-        -- drive the next step; without this the sweep sits ACTIVE forever.
-        f2t_map_explore_travel_finish(false)
-    end
-    -- arrived/walking: wait for the room-change dispatcher to drive the next
-    -- step.
-end
-
--- Issue the blind jump chain toward the stored travel target from the link
--- room we're standing in. Falls back to a single direct jump when the model
--- can't build a chain (it may still be legal, just not modeled yet).
-function f2t_map_explore_travel_jump()
-    local target = F2T_MAP_EXPLORE_STATE.travel_target
-    -- Whatever route got us here, confirm the room before committing a blind
-    -- chain to it: a chain fired from a non-link room cannot be replanned,
-    -- only abandoned.
-    local current_room = F2T_MAP_CURRENT_ROOM_ID
-    if not (current_room and f2t_map_room_has_flag(current_room, "link")) then
-        cecho(string.format(
-            "  <red>Error:<reset> Not at an interstellar link, so cannot jump to %s\n",
-            tostring(target)))
-        f2t_map_explore_travel_finish(false)
-        return
-    end
-    local current_system = f2t_get_current_system()
-    local chain = current_system and f2t_map_topology_jump_chain(current_system, target)
-    if not chain or #chain == 0 then
-        -- The model can't place the destination, so it can't build a legal
-        -- route to it, and a bare "jump <target>" only works when the two
-        -- happen to be adjacent. "di system <name>" names the system's cartel
-        -- and syndicate on every planet line, which is exactly the missing
-        -- fact - learn it and build a real chain instead of guessing once.
-        if not F2T_MAP_EXPLORE_STATE.travel_learned_target then
-            F2T_MAP_EXPLORE_STATE.travel_learned_target = true
-            cecho(string.format(
-                "  <dim_grey>Looking up where %s sits before jumping...<reset>\n", target))
-            f2t_map_di_system_capture_start(target, function(_, _, no_such_system)
-                if not F2T_MAP_EXPLORE_STATE.active then return end
-                if no_such_system then
-                    cecho(string.format(
-                        "\n<red>[map-explore]<reset> There is no star system called '%s'\n", target))
-                    f2t_map_explore_travel_finish(false)
-                    return
-                end
-                f2t_map_explore_travel_jump()
-            end)
-            return
-        end
-        chain = {string.format("jump %s", target)}
-    end
-    cecho(string.format("  <dim_grey>Jumping: %s<reset>\n", table.concat(chain, "; ")))
-    f2t_map_speedwalk_send_blind(chain)
-    F2T_MAP_EXPLORE_STATE.phase = "explore_travel_arriving"
-end
-
--- Fire the stored callback for the outcome and clear travel state either way.
-function f2t_map_explore_travel_finish(arrived)
-    local on_arrived = F2T_MAP_EXPLORE_STATE.travel_on_arrived
-    local on_failed = F2T_MAP_EXPLORE_STATE.travel_on_failed
-    local target = F2T_MAP_EXPLORE_STATE.travel_target
-    F2T_MAP_EXPLORE_STATE.travel_kind = nil
-    F2T_MAP_EXPLORE_STATE.travel_target = nil
-    F2T_MAP_EXPLORE_STATE.travel_on_arrived = nil
-    F2T_MAP_EXPLORE_STATE.travel_on_failed = nil
-    F2T_MAP_EXPLORE_STATE.travel_learned_target = nil
-    F2T_MAP_EXPLORE_STATE.phase = nil
-
-    if not arrived then
-        if on_failed then on_failed() end
-        return
-    end
-
-    cecho(string.format("  <green>Arrived at %s!<reset>\n", target))
-    tempTimer(0.5, function()
-        if F2T_MAP_EXPLORE_STATE.active and on_arrived then on_arrived() end
-    end)
+    end })
 end
 
 function f2t_map_explore_start(mode, name)
@@ -798,10 +601,16 @@ end
 -- only case where a statistics dump is worth printing.
 function f2t_map_explore_stop(reason)
     if not F2T_MAP_EXPLORE_STATE.active then
-        cecho("\n<yellow>[map-explore]<reset> No exploration in progress\n"); return
+        -- A standalone sweep still travelling to where it starts
+        if f2tNav.stop("explore") then
+            cecho("\n<yellow>[map]<reset> Exploration stopped before it started\n")
+        else
+            cecho("\n<yellow>[map-explore]<reset> No exploration in progress\n")
+        end
+        return
     end
-    f2t_map_clear_nav_owner()
-    if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    f2tNav.stop("explore")
+    f2t_map_explore_release_stamina()
     f2t_map_explore_unlock_temp_exits()
     if reason then
         cecho(string.format("\n<green>[map-explore]<reset> %s\n", reason))
@@ -812,7 +621,7 @@ function f2t_map_explore_stop(reason)
     f2t_map_explore_brief_mode_restore()
     F2T_MAP_EXPLORE_STATE = blankState()
     -- A stopped run never calls its completion callback; callers waiting on one listen for this.
-    raiseEvent("f2tExploreStopped")
+    raiseEvent("f2tExploreStopped", reason)
 end
 
 -- Deletes every room in an area and reports how many. Shared by the manual
@@ -891,6 +700,15 @@ function f2t_map_explore_pause()
     if F2T_MAP_EXPLORE_STATE.paused or F2T_MAP_EXPLORE_STATE.pause_requested then
         cecho("\n<yellow>[map-explore]<reset> Exploration already paused\n"); return
     end
+    -- Nothing steps the sweep while it travels, so a pause stops the trip now and resuming travels again
+    if F2T_MAP_EXPLORE_STATE.phase == "travelling" then
+        F2T_MAP_EXPLORE_STATE.paused = true
+        F2T_MAP_EXPLORE_STATE.paused_reason = "travel"
+        f2tNav.stop("explore")
+        cecho("\n<yellow>[map]<reset> Exploration paused while travelling\n")
+        cecho("  Use <white>map explore resume<reset> to continue\n")
+        return
+    end
     F2T_MAP_EXPLORE_STATE.pause_requested = true
     cecho(string.format("\n<yellow>[map]<reset> Will pause after current operation... (phase: <cyan>%s<reset>)\n",
         F2T_MAP_EXPLORE_STATE.phase or "unknown"))
@@ -919,6 +737,12 @@ function f2t_map_explore_resume()
     end
     F2T_MAP_EXPLORE_STATE.paused = false
     cecho("\n<green>[map]<reset> Exploration resumed\n")
+    local travel = F2T_MAP_EXPLORE_STATE.travel
+    if F2T_MAP_EXPLORE_STATE.paused_reason == "travel" and travel then
+        F2T_MAP_EXPLORE_STATE.paused_reason = nil
+        f2t_map_explore_travel(travel.destination, travel.on_arrived, travel.on_failed)
+        return
+    end
     if F2T_MAP_EXPLORE_STATE.paused_reason == "stranded" then
         F2T_MAP_EXPLORE_STATE.paused_reason = nil
         local destination = F2T_MAP_EXPLORE_STATE.paused_destination
@@ -926,7 +750,7 @@ function f2t_map_explore_resume()
         if F2T_MAP_EXPLORE_STATE.brief_flags_found then
             f2t_map_explore_brief_return_to_shuttlepad(); return
         elseif destination then
-            if f2t_map_navigate_ok(f2t_map_navigate(tostring(destination))) then
+            if f2t_map_walk_room(destination) then
                 F2T_MAP_EXPLORE_STATE.phase = "navigating"; return
             end
             f2t_map_explore_escape_start(destination,
@@ -1016,7 +840,7 @@ end
 
 function f2t_map_explore_complete()
     if not F2T_MAP_EXPLORE_STATE.active then return end
-    if f2t_stamina_unregister_client then f2t_stamina_unregister_client() end
+    f2t_map_explore_release_stamina()
     f2t_map_explore_unlock_temp_exits()
     cecho("\n<green>[map]<reset> Exploration Complete!\n")
     f2t_map_explore_show_statistics()
@@ -1145,19 +969,8 @@ function f2t_map_explore_next_step()
     f2t_debug_log("[map/explore] next step: phase %s, mode %s, %d unexplored exits", tostring(phase),
         tostring(F2T_MAP_EXPLORE_STATE.mode), #F2T_MAP_EXPLORE_STATE.frontier_stack)
 
-    -- Travel phases are driven by arrivals, not by this loop. Reaching here
-    -- in one means the arrival that was supposed to drive it never came - a
-    -- refused jump, a walk that failed - and with no branch below to run,
-    -- the sweep would sit active forever, silently blocking every later
-    -- navigate that checks whether a sweep is running.
-    if phase == "explore_travel_jumping" or phase == "explore_travel_arriving" then
-        if not F2T_SPEEDWALK_ACTIVE and F2T_MAP_EXPLORE_STATE.travel_target then
-            cecho(string.format("\n<red>[map-explore]<reset> Travel to %s stalled, giving up\n",
-                tostring(F2T_MAP_EXPLORE_STATE.travel_target)))
-            f2t_map_explore_travel_finish(false)
-        end
-        return
-    end
+    -- Travel is navigation's; the trip's outcome drives the next step
+    if phase == "travelling" then return end
 
     if phase == "navigating" then
         f2t_map_explore_navigate_to_next()
@@ -1177,6 +990,7 @@ function f2t_map_explore_on_room_change()
     noteActivity()
     if F2T_MAP_EXPLORE_STATE.paused then return end
     if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
+    if F2T_MAP_EXPLORE_STATE.phase == "travelling" then return end
 
     -- Before any layer acts on this arrival: it may have been the one that
     -- made the destination reachable, and everything below here is the sweep
@@ -1281,27 +1095,6 @@ function f2t_map_explore_on_room_change()
         if F2T_MAP_EXPLORE_STATE.phase == "navigating" and not F2T_MAP_EXPLORE_STATE.planned_exit then
             f2t_map_explore_recompute_frontier()
         end
-    end
-
-    -- Shared travel-to-container phase transitions (system or cartel target,
-    -- used standalone or nested under any layer's sweep).
-    if F2T_MAP_EXPLORE_STATE.phase == "explore_travel_jumping" then
-        f2t_map_explore_travel_jump(); return
-    elseif F2T_MAP_EXPLORE_STATE.phase == "explore_travel_arriving" then
-        local kind = F2T_MAP_EXPLORE_STATE.travel_kind
-        local target = F2T_MAP_EXPLORE_STATE.travel_target
-        local arrived
-        if kind == "cartel" then
-            local current_cartel = f2t_map_get_current_cartel()
-            arrived = current_cartel ~= nil and current_cartel:lower() == target:lower()
-        else
-            arrived = getRoomUserData(current_room, "fed2_system") == target
-        end
-        if not arrived then
-            cecho(string.format("  <red>Error:<reset> Jump failed, could not reach %s\n", target))
-        end
-        f2t_map_explore_travel_finish(arrived)
-        return
     end
 
     -- System/Cartel phase transitions

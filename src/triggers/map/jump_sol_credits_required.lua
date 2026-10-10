@@ -17,25 +17,6 @@ if f2t_map_mark_link_barred then
     f2t_map_mark_link_barred(f2t_get_current_system(), reason)
 end
 
--- An exploration's travel leg has no branch that can recover a refused jump
--- chain, so end the leg rather than leaving the whole sweep active with a
--- target it can never reach.
-if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active
-    and (F2T_MAP_EXPLORE_STATE.phase == "explore_travel_jumping"
-         or F2T_MAP_EXPLORE_STATE.phase == "explore_travel_arriving") then
-    if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
-        killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
-        F2T_SPEEDWALK_MOVE_TIMEOUT_ID = nil
-    end
-    F2T_SPEEDWALK_WAITING_FOR_MOVE = false
-    F2T_SPEEDWALK_ACTIVE = false
-    tempTimer(0.2, function()
-        cecho(string.format("\n<red>[map-explore]<reset> %s\n", reason))
-        f2t_map_explore_travel_finish(false)
-    end)
-    return
-end
-
 if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE then
     tempTimer(0.2, function() f2t_map_speedwalk_fail(reason) end)
 end

@@ -111,15 +111,13 @@ local function stripThe(name)
 end
 
 local function navigateTo(location)
-    if not f2t_map_navigate then return end
-    -- Sol locations have dedicated AC offices; prefer the "<planet> ac" target.
-    local resolved = f2t_map_resolve_location and f2t_map_resolve_location(location)
-    if resolved and getRoomUserData(resolved, "fed2_system") == "Sol" then
-        if not f2t_map_navigate_ok(f2t_map_navigate(location .. " ac")) then
-            f2t_map_navigate(location)
-        end
+    -- Sol locations have dedicated AC offices; prefer the "<planet> ac" target when it's mapped.
+    local resolved = f2t_map_resolve_location(location)
+    if resolved and getRoomUserData(resolved, "fed2_system") == "Sol"
+        and f2t_map_resolve_location(location .. " ac") then
+        f2tNav.go(location .. " ac")
     else
-        f2t_map_navigate(location)
+        f2tNav.go(location)
     end
 end
 

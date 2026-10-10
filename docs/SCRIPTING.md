@@ -47,7 +47,8 @@ Register with `registerAnonymousEventHandler(name, fn)`.
 |---|---|---|
 | `f2tControlChanged` | `owner` (`nil` once released) | Control was acquired, released or revoked |
 | `f2tControlRevoked` | `owner, reason` | The player took control back |
-| `f2tSpeedwalkFinished` | `result, roomId, settled` | A walk ended. `result` is `"completed"`, `"stopped"` or `"failed"`. `settled` is `false` when navigation is still working toward the destination (a recovery leg or a self-healing exploration started from this one), so wait for a settled event before acting on the result. |
+| `f2tNavStarted` | `owner, destination` | A trip began |
+| `f2tNavFinished` | `owner, status, roomId, reason` | A trip ended. `status` is as for `f2tNav.go`'s `onDone` below |
 | `f2tHaulingStatusChanged` | | Hauling was started, paused, resumed or stopped, moved to a new phase, or its mode setting changed |
 | `f2tStockpileChanged` | | A stockpile preview, update or setting changed |
 
@@ -58,15 +59,38 @@ through a callback, so you don't need to watch game text yourself.
 
 **Navigation**
 
+Everything that moves the player goes through `f2tNav`, F2CE-Tools' own
+hauling and commands included. It gets from where the player stands to any
+real place, exploring and jumping through unmapped space on the way when it
+has to.
+
 ```lua
-local status = f2t_map_navigate("Earth exchange", {
-    on_result = function(ok, status) end,  -- fires exactly once
+f2tNav.go("Earth exchange", {
+    owner  = "mybot",
+    onDone = function(result) end,  -- fires exactly once, when the trip is over
 })
--- status: "walking", "arrived", "pending" or "failed"
 ```
 
-`on_result` reports whether the walk *started*. To know when it ends, use
-`f2tSpeedwalkFinished`. Stop a walk with `f2t_map_speedwalk_stop()`.
+The destination is anything `nav` accepts: `<planet> exchange` (or any other
+room flag), a planet, `<system> link`, a room id or hash, a saved destination.
+`result.status` is one of:
+
+| Status | Meaning |
+|---|---|
+| `"arrived"` | The player is there |
+| `"stopped"` | The trip was stopped (`f2tNav.stop`, `nav stop`, the player stopping its exploration) |
+| `"unreachable"` | Navigation couldn't get there; `result.reason` says why |
+| `"superseded"` | Another trip started; `result.by` names its owner |
+
+`result.roomId` is where the player ended up. One trip runs at a time: a new
+`go` ends the current one as `"superseded"`.
+
+| Function | Notes |
+|---|---|
+| `f2tNav.stop(owner)` | Ends the trip as `"stopped"`; with `owner`, only a trip that owner started |
+| `f2tNav.pause()`, `f2tNav.resume()` | |
+| `f2tNav.status()` | `nil`, or `{owner, destination, paused}` for the trip under way |
+| `f2tNav.busy()` | `true` while anything is moving the player |
 
 **Trading** (at an exchange)
 
@@ -117,7 +141,7 @@ current run state, mode, phase and session totals.
 
 ## Stability
 
-The control functions and events above are the supported surface and will
+The control functions, `f2tNav` and the events above are the supported surface and will
 keep their names and arguments within the 3.x series. Other `f2t_*` functions
 are what F2CE-Tools uses internally. They are fine to call, but they can
 change between releases, so pin the F2CE-Tools versions you've tested against.

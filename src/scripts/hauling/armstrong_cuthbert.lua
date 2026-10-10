@@ -157,23 +157,6 @@ function f2t_ac_get_hauling_credits()
     return nil
 end
 
---- Check if player should use AC jobs based on rank
---- Players below Merchant rank must use AC jobs
---- @return boolean True if should use AC jobs
-function f2t_ac_should_use_jobs()
-    local rank = f2t_get_rank()
-    if not rank then
-        f2t_debug_log("[hauling/ac] Cannot determine rank, defaulting to AC jobs")
-        return true
-    end
-
-    -- If below Merchant (rank level 5), use AC jobs
-    local is_below_merchant = f2t_is_rank_below("Merchant")
-    f2t_debug_log("[hauling/ac] Rank: %s, should use AC: %s", rank, tostring(is_below_merchant))
-
-    return is_below_merchant
-end
-
 --- Check if player has enough hauling credits to advance
 --- @return boolean True if has 500+ credits
 function f2t_ac_has_enough_credits()

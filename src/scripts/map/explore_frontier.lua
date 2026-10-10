@@ -20,52 +20,14 @@ function f2t_map_explore_is_exit_valid(room_id, direction)
     return true
 end
 
-function f2t_map_explore_add_room_to_frontier(room_id)
-    local stubs = getExitStubs(room_id)
-    if not stubs then return 0 end
-    local added_count = 0
-    for _, stub_dir_num in pairs(stubs) do
-        local direction = f2t_map_explore_direction_number_to_name(stub_dir_num)
-        if direction and f2t_map_explore_is_exit_valid(room_id, direction) then
-            table.insert(F2T_MAP_EXPLORE_STATE.frontier_stack, {room_id=room_id, direction=direction})
-            added_count = added_count + 1
-        end
-    end
-    return added_count
-end
-
-function f2t_map_explore_remove_from_frontier(room_id)
-    local new_frontier = {}
-    local removed_count = 0
-    for _, exit in ipairs(F2T_MAP_EXPLORE_STATE.frontier_stack) do
-        if exit.room_id == room_id then removed_count = removed_count + 1
-        else table.insert(new_frontier, exit)
-        end
-    end
-    F2T_MAP_EXPLORE_STATE.frontier_stack = new_frontier
-    return removed_count
-end
-
-function f2t_map_explore_has_frontier()
-    return #F2T_MAP_EXPLORE_STATE.frontier_stack > 0
-end
-
-function f2t_map_explore_pop_frontier()
-    if #F2T_MAP_EXPLORE_STATE.frontier_stack == 0 then return nil end
-    return table.remove(F2T_MAP_EXPLORE_STATE.frontier_stack)
-end
-
-function f2t_map_explore_frontier_size()
-    return #F2T_MAP_EXPLORE_STATE.frontier_stack
-end
-
 function f2t_map_explore_recompute_frontier()
     local area_id      = F2T_MAP_EXPLORE_STATE.starting_area_id
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     if not area_id or not current_room then return end
 
-    local is_brief       = F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count ~= nil
-    local reference_room = is_brief and F2T_MAP_EXPLORE_STATE.starting_room_id or current_room
+    -- Nearest from where the player stands, so the sweep works outward from
+    -- here instead of crossing the planet and back between neighbouring exits
+    local reference_room = current_room
 
     local candidates = {}
     for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
@@ -89,32 +51,18 @@ function f2t_map_explore_recompute_frontier()
         end
     end
 
-    table.sort(candidates, function(a, b) return a.distance < b.distance end)
-
-    if is_brief and reference_room == F2T_MAP_EXPLORE_STATE.starting_room_id then
-        local seeking_exchange =
-            F2T_MAP_EXPLORE_STATE.brief_flags_set and F2T_MAP_EXPLORE_STATE.brief_flags_set["exchange"]
-        if seeking_exchange and #candidates > 0 then
-            local direction_priority = {"e","n","sw","w","s","ne","nw","se","in","u","d","out"}
-            local grouped = {}
-            for _, dir in ipairs(direction_priority) do grouped[dir] = {} end
-            for _, candidate in ipairs(candidates) do
-                local dir = candidate.direction
-                if grouped[dir] then table.insert(grouped[dir], candidate)
-                else
-                    if not grouped["other"] then grouped["other"] = {} end
-                    table.insert(grouped["other"], candidate)
-                end
-            end
-            candidates = {}
-            for _, dir in ipairs(direction_priority) do
-                for _, candidate in ipairs(grouped[dir]) do table.insert(candidates, candidate) end
-            end
-            if grouped["other"] then
-                for _, candidate in ipairs(grouped["other"]) do table.insert(candidates, candidate) end
-            end
-        end
+    -- Hunting an exchange, equally near exits go in the order exchanges most
+    -- often lie from a landing pad; distance always comes first
+    local seeking_exchange = F2T_MAP_EXPLORE_STATE.brief_flags_set
+        and F2T_MAP_EXPLORE_STATE.brief_flags_set["exchange"]
+    local rank = {}
+    if seeking_exchange then
+        for i, dir in ipairs({"e","n","sw","w","s","ne","nw","se","in","u","d","out"}) do rank[dir] = i end
     end
+    table.sort(candidates, function(a, b)
+        if a.distance ~= b.distance then return a.distance < b.distance end
+        return (rank[a.direction] or 99) < (rank[b.direction] or 99)
+    end)
 
     F2T_MAP_EXPLORE_STATE.frontier_stack = {}
     for i = 1, #candidates do

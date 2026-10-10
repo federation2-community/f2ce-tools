@@ -108,6 +108,15 @@ local function explore(current)
     end
 end
 
+-- Walk for the search; onSettled(arrived, status) with status "stopped" when the
+-- player stopped it or took navigation over.
+local function walk(destination, onSettled)
+    f2tNav.go(destination, { owner = "akaturi", onDone = function(result)
+        local status = result.status == "superseded" and "stopped" or result.status
+        onSettled(status == "arrived", status)
+    end })
+end
+
 -- Exploring only walks ordinary exits. Past those, the game files know the
 -- special ones (teleport disks, elevator buttons, airlocks): take the next one
 -- the map hasn't been through, then explore whatever is on the other side.
@@ -120,7 +129,7 @@ local function cross(current)
     changed()
     cecho(string.format("\n<cyan>[akaturi]<reset> Your map hasn't been past '%s' on %s yet; taking it\n",
         option.command, current.planet))
-    f2t_map_walk_to(option.from_id, function(arrived, result)
+    walk(option.from_id, function(arrived, result)
         if visit ~= current or current.stage ~= "crossing" then return end
         if result == "stopped" then finish("stopped") return end
         if not arrived then step() return end
@@ -188,7 +197,7 @@ step = function()
         changed()
         cecho(string.format("\n<cyan>[akaturi]<reset> Heading to '%s' on %s%s\n", current.room, current.planet,
             total > 1 and string.format(" (%d of %d rooms with that name)", current.index, total) or ""))
-        f2t_map_walk_to(target.roomId, function(_, result)
+        walk(target.roomId, function(_, result)
             if visit ~= current or current.stage ~= "walking" then return end
             if result == "stopped" then
                 finish("stopped")
@@ -254,16 +263,19 @@ function f2t_akaturi_visit_cancel(owner)
     if current.stage ~= "trying" and F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
         f2t_map_explore_stop("Akaturi room search stopped")
     end
-    if (current.stage == "walking" or current.stage == "crossing") and F2T_SPEEDWALK_ACTIVE then
-        f2t_map_speedwalk_stop()
+    if current.stage == "walking" or current.stage == "crossing" then
+        f2tNav.stop("akaturi")
     end
     changed()
 end
 
 -- A stopped exploration never reports back, so a search waiting on one ends here.
-registerAnonymousEventHandler("f2tExploreStopped", function()
+-- While walking, an exploration is navigation's own and only a player's stop (no reason) counts.
+registerAnonymousEventHandler("f2tExploreStopped", function(_, reason)
     local current = visit
-    if current and (current.stage == "exploring" or current.stage == "walking" or current.stage == "crossing") then
+    if not current then return end
+    if current.stage == "exploring"
+        or ((current.stage == "walking" or current.stage == "crossing") and reason == nil) then
         finish("stopped")
     end
 end)

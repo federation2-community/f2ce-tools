@@ -18,7 +18,4 @@ end)
 registerAnonymousEventHandler("sysDisconnectionEvent", function()
     f2t_check_connection()
     f2t_debug_log("[connection] Disconnected")
-    if type(f2t_map_speedwalk_pause_for_disconnect) == "function" then
-        f2t_map_speedwalk_pause_for_disconnect()
-    end
 end)

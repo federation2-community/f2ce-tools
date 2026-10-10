@@ -34,12 +34,6 @@ function f2t_save_settings()
     end
 end
 
-function f2t_load_settings()
-    if Mux and Mux.settings and Mux.settings.load then
-        Mux.settings.load()
-    end
-end
-
 -- ── Registration ─────────────────────────────────────────────────────────────
 
 local function registerWithMux(component, key, config)
@@ -98,15 +92,6 @@ function f2t_settings_set(component, key, value)
     return true
 end
 
-function f2t_settings_clear(component, key)
-    if Mux and Mux.settings and Mux.settings.clear then
-        return Mux.settings.clear(component, key)
-    end
-    _localData[component] = _localData[component] or {}
-    _localData[component][key] = nil
-    return true
-end
-
 -- ── Display / command helpers ─────────────────────────────────────────────────
 
 function f2t_handle_settings_command(component, argsStr)
@@ -114,18 +99,6 @@ function f2t_handle_settings_command(component, argsStr)
         return Mux.settings.handleCommand(component, argsStr)
     end
     cecho(string.format("\n<yellow>[%s]<reset> Settings system not yet available\n", component))
-end
-
-function f2t_settings_show_list(component)
-    if Mux and Mux.settings and Mux.settings.showList then
-        Mux.settings.showList(component)
-    end
-end
-
-function f2t_settings_show_get(component, key)
-    if Mux and Mux.settings and Mux.settings.showSetting then
-        Mux.settings.showSetting(component, key)
-    end
 end
 
 -- ── Core f2ce-tools settings (f2t namespace) ──────────────────────────────────

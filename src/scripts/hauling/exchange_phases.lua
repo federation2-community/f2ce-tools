@@ -18,12 +18,11 @@ local function parse_excluded_commodities()
     return excluded
 end
 
--- f2t_map_navigate() now self-heals an unmapped destination on its own
--- (auto-exploring and retrying); this is only the last-resort action for when
--- that ultimately fails too.
-local function pause_on_nav_failure()
-    cecho("\n<red>[hauling]<reset> Navigation could not be started, pausing hauling\n")
-    cecho("<dim_grey>Resolve the issue above (e.g. explore/map the destination) and run 'haul resume'<reset>\n")
+-- Navigation already heals what it can on the way; this is for when it still can't get there.
+local function pause_on_nav_failure(planet, reason)
+    cecho(string.format("\n<red>[hauling]<reset> Can't reach %s exchange (%s), pausing hauling\n",
+        planet, reason or "no route"))
+    cecho("<dim_grey>Resolve the issue above and run 'haul resume'<reset>\n")
     f2t_hauling_pause(true)
 end
 
@@ -154,71 +153,54 @@ function f2t_hauling_next_commodity()
 
             if use_safe_room and safe_room and safe_room ~= "" then
                 -- Navigate to safe room, pause, then return and continue.
-                local current_location = gmcp.room and gmcp.room.info and gmcp.room.info.num
+                local current_location = F2T_MAP_CURRENT_ROOM_ID
                 if current_location then
                     F2T_HAULING_STATE.cycle_pause_return_location = current_location
-                    local safe_room_msg =
-                        "\n<green>[hauling]<reset> All commodities traded, going to safe room for " ..
-                        "<yellow>%d seconds<reset>...\n"
-                    cecho(string.format(safe_room_msg, cycle_pause))
+                    cecho(string.format("\n<green>[hauling]<reset> All commodities traded, going to safe room " ..
+                        "for <yellow>%d seconds<reset>...\n", cycle_pause))
                     f2t_debug_log(
                         "[hauling] Navigating to safe room for cycle pause (%d seconds), will return to room: %s",
                         cycle_pause, current_location)
 
-                    f2t_map_navigate(safe_room)
+                    local function refresh()
+                        F2T_HAULING_STATE.cycle_pause_return_location = nil
+                        if not F2T_HAULING_STATE.pause_requested then
+                            cecho("\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
+                        end
+                        f2t_hauling_transition("analyzing")
+                    end
 
-                    -- After navigation completes, wait, then return.
-                    tempTimer(3, function()
-                        if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                            and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
-                            if F2T_HAULING_STATE.pause_requested then
-                                f2t_hauling_transition("analyzing")
+                    local function pauseThenReturn()
+                        if F2T_HAULING_STATE.pause_requested then
+                            f2t_hauling_transition("analyzing")
+                            return
+                        end
+                        cecho(string.format(
+                            "\n<green>[hauling]<reset> Pausing at safe room for <yellow>%d seconds<reset>...\n",
+                            cycle_pause))
+                        F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
+                        F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
+                            F2T_HAULING_STATE.cycle_pause_timer_id = nil
+                            F2T_HAULING_STATE.cycle_pause_end_time = nil
+                            if not (F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
+                                    and F2T_HAULING_STATE.current_phase == "cycle_pausing") then
                                 return
                             end
-                            local pausing_msg =
-                                "\n<green>[hauling]<reset> Pausing at safe room for <yellow>%d seconds<reset>...\n"
-                            cecho(string.format(pausing_msg, cycle_pause))
-                            F2T_HAULING_STATE.cycle_pause_end_time = os.time() + cycle_pause
-                            F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
-                                F2T_HAULING_STATE.cycle_pause_timer_id = nil
-                                F2T_HAULING_STATE.cycle_pause_end_time = nil
-                                if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                                    and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
-                                    local return_to = F2T_HAULING_STATE.cycle_pause_return_location
-                                    if return_to then
-                                        if not F2T_HAULING_STATE.pause_requested then
-                                            local returning_msg =
-                                                "\n<green>[hauling]<reset> Returning to previous location: " ..
-                                                "<cyan>%s<reset>\n"
-                                            cecho(string.format(returning_msg, return_to))
-                                        end
-                                        f2t_debug_log("[hauling] Returning to room: %s", return_to)
-                                        f2t_map_navigate(return_to)
+                            local return_to = F2T_HAULING_STATE.cycle_pause_return_location
+                            if not return_to then
+                                refresh()
+                                return
+                            end
+                            if not F2T_HAULING_STATE.pause_requested then
+                                cecho(string.format(
+                                    "\n<green>[hauling]<reset> Returning to previous location: <cyan>%s<reset>\n",
+                                    getRoomName(return_to) or return_to))
+                            end
+                            f2t_hauling_walk(return_to, refresh, refresh)
+                        end)
+                    end
 
-                                        -- Wait for return navigation, then re-analyze.
-                                        tempTimer(3, function()
-                                            if F2T_HAULING_STATE.active and not F2T_HAULING_STATE.paused
-                                                and F2T_HAULING_STATE.current_phase == "cycle_pausing" then
-                                                if not F2T_HAULING_STATE.pause_requested then
-                                                    local msg = "\n<green>[hauling]<reset> " ..
-                                                        "Pause complete, refreshing market data...\n"
-                                                    cecho(msg)
-                                                end
-                                                f2t_hauling_transition("analyzing")
-                                            end
-                                        end)
-                                    else
-                                        if not F2T_HAULING_STATE.pause_requested then
-                                            cecho(
-                                                "\n<green>[hauling]<reset> Pause complete, refreshing market data...\n")
-                                        end
-                                        f2t_hauling_transition("analyzing")
-                                    end
-                                    F2T_HAULING_STATE.cycle_pause_return_location = nil
-                                end
-                            end)
-                        end
-                    end)
+                    f2t_hauling_walk(safe_room, pauseThenReturn, pauseThenReturn)
                 else
                     -- Can't determine current location, pause in place.
                     local pause_in_place_msg =
@@ -398,36 +380,8 @@ function f2t_hauling_remove_current_commodity()
                 f2t_debug_log("[hauling] Dumping at: %s: %s (price: %d ig/ton)",
                     dump_location.system, dump_location.planet, dump_location.price)
 
-                local destination = string.format("%s exchange", dump_location.planet)
-                cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Navigating to dump location: <cyan>%s exchange<reset>\n",
-                    dump_location.planet))
-
-                local nav_result = f2t_map_navigate(destination, {
-                    on_result = function(success)
-                        if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                            return
-                        end
-                        if not success then
-                            cecho(string.format(
-                                "\n<yellow>[hauling]<reset> Cannot reach %s, trying next dump location\n",
-                                dump_location.planet))
-                            f2t_hauling_find_next_dump_location()
-                        end
-                    end,
-                })
-
-                F2T_HAULING_STATE.current_phase = "dumping_cargo"
                 F2T_HAULING_STATE.dump_location = dump_location
-
-                if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-                    tempTimer(0.5, function()
-                        if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                            return
-                        end
-                        f2t_hauling_phase_dump_cargo()
-                    end)
-                end
+                f2t_hauling_transition("dumping_cargo")
             else
                 -- No exchanges buying this commodity - jettison and move on.
                 cecho(string.format(
@@ -443,6 +397,23 @@ function f2t_hauling_remove_current_commodity()
     f2t_hauling_finish_remove_commodity()
 end
 
+-- Phase: walk to the exchange chosen to dump the abandoned commodity at
+function f2t_hauling_phase_navigate_to_dump()
+    local dump_location = F2T_HAULING_STATE.dump_location
+    if not dump_location then
+        f2t_hauling_find_next_dump_location()
+        return
+    end
+    cecho(string.format("\n<yellow>[hauling]<reset> Navigating to dump location: <cyan>%s exchange<reset>\n",
+        dump_location.planet))
+    f2t_hauling_walk(string.format("%s exchange", dump_location.planet), f2t_hauling_phase_dump_cargo,
+        function(reason)
+            cecho(string.format("\n<yellow>[hauling]<reset> Cannot reach %s (%s), trying next dump location\n",
+                dump_location.planet, reason or "no route"))
+            f2t_hauling_find_next_dump_location()
+        end)
+end
+
 -- Phase: dump cargo at any price (when abandoning a commodity)
 function f2t_hauling_phase_dump_cargo()
     local commodity = F2T_HAULING_STATE.current_commodity
@@ -450,13 +421,6 @@ function f2t_hauling_phase_dump_cargo()
     if not commodity then
         cecho("\n<red>[hauling]<reset> No commodity to dump\n")
         f2t_hauling_stop()
-        return
-    end
-
-    -- Both the arrival timer and the room.info handler can land here; leaving the
-    -- dumping_cargo phase keeps later room.info events from starting another dump.
-    if F2T_HAULING_STATE.current_phase ~= "dumping_cargo" then
-        f2t_debug_log("[hauling] Ignoring dump start in phase: %s", tostring(F2T_HAULING_STATE.current_phase))
         return
     end
     F2T_HAULING_STATE.current_phase = "dump_selling"
@@ -526,35 +490,8 @@ function f2t_hauling_find_next_dump_location()
             f2t_debug_log("[hauling] Next dump location: %s: %s at %d ig/ton",
                 next_dump.system, next_dump.planet, next_dump.price)
 
-            local destination = string.format("%s exchange", next_dump.planet)
-            cecho(string.format("\n<yellow>[hauling]<reset> Navigating to dump location: <cyan>%s exchange<reset>\n",
-                next_dump.planet))
-
-            local nav_result = f2t_map_navigate(destination, {
-                on_result = function(success)
-                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                        return
-                    end
-                    if not success then
-                        cecho(string.format(
-                            "\n<yellow>[hauling]<reset> Cannot reach %s, trying next dump location\n",
-                            next_dump.planet))
-                        f2t_hauling_find_next_dump_location()
-                    end
-                end,
-            })
-
-            F2T_HAULING_STATE.current_phase = "dumping_cargo"
             F2T_HAULING_STATE.dump_location = next_dump
-
-            if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-                tempTimer(0.5, function()
-                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                        return
-                    end
-                    f2t_hauling_phase_dump_cargo()
-                end)
-            end
+            f2t_hauling_transition("dumping_cargo")
         else
             cecho(string.format(
                 "\n<yellow>[hauling]<reset> No more exchanges buying <cyan>%s<reset>, jettisoning...\n", commodity))
@@ -600,28 +537,9 @@ function f2t_hauling_phase_navigate_to_buy()
     cecho(string.format("\n<green>[hauling]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n", planet))
     f2t_debug_log("[hauling] Navigating to: %s", destination)
 
-    local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if not success then pause_on_nav_failure() end
-            -- success: a real speedwalk is now in flight; f2t_hauling_check_nav_to_buy_complete
-            -- (wired to gmcp.room.info) picks up its completion normally.
-        end,
-    })
-
-    -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
-    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling] Already at buy location, waiting for GMCP update")
-        tempTimer(0.5, function()
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            f2t_debug_log("[hauling] GMCP ready, proceeding to buy")
-            f2t_hauling_transition("buying")
-        end)
-    end
+    f2t_hauling_walk(destination,
+        function() f2t_hauling_transition("buying") end,
+        function(reason) pause_on_nav_failure(planet, reason) end)
 end
 
 -- Phase 3: buy commodity
@@ -737,28 +655,9 @@ function f2t_hauling_phase_navigate_to_sell()
     cecho(string.format("\n<green>[hauling]<reset> Navigating to sell location: <cyan>%s exchange<reset>\n", planet))
     f2t_debug_log("[hauling] Navigating to: %s", destination)
 
-    local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if not success then pause_on_nav_failure() end
-            -- success: a real speedwalk is now in flight; f2t_hauling_check_nav_to_sell_complete
-            -- (wired to gmcp.room.info) picks up its completion normally.
-        end,
-    })
-
-    -- false doesn't mean failure: it auto-retries via "look"; the GMCP handler confirms completion.
-    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling] Already at sell location, waiting for GMCP update")
-        tempTimer(0.5, function()
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            f2t_debug_log("[hauling] GMCP ready, proceeding to sell")
-            f2t_hauling_transition("selling")
-        end)
-    end
+    f2t_hauling_walk(destination,
+        function() f2t_hauling_transition("selling") end,
+        function(reason) pause_on_nav_failure(planet, reason) end)
 end
 
 -- Phase 5: sell commodity
@@ -889,91 +788,6 @@ function f2t_hauling_complete_commodity_cycle()
     }
 end
 
--- Exchange event handlers
-
-function f2t_hauling_check_nav_to_buy_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "navigating_to_buy" then
-        return
-    end
-
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        -- Capture immediately to avoid a race with the next speedwalk.
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling] Speedwalk stopped with result: %s", result or "unknown")
-
-        -- Exchange handlers act on the result immediately (no tempTimer, unlike AC
-        -- handlers) since they only transition phase; buying/selling verify location themselves.
-
-        if result == "completed" then
-            f2t_debug_log("[hauling] Navigation to buy location complete")
-            f2t_hauling_transition("buying")
-
-        elseif result == "stopped" then
-            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-            f2t_debug_log("[hauling] User stopped navigation, stopping hauling")
-            f2t_hauling_stop()
-
-        elseif result == "failed" then
-            -- Exchange mode stops on a blocked path (the chosen commodity/location was
-            -- the best option); AC mode instead fetches a new job since many exist.
-            local buy_loc = F2T_HAULING_STATE.buy_location
-            local location_str = buy_loc and string.format("%s:%s", buy_loc.system, buy_loc.planet) or "buy location"
-            cecho(string.format(
-                "\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
-            f2t_debug_log("[hauling] Navigation to buy failed after retries, stopping")
-            f2t_hauling_stop()
-
-        else
-            f2t_debug_log("[hauling] Unknown speedwalk result, using legacy behavior")
-            f2t_hauling_transition("buying")
-        end
-    end
-end
-
-function f2t_hauling_check_nav_to_sell_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "navigating_to_sell" then
-        return
-    end
-
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling] Speedwalk stopped with result: %s", result or "unknown")
-
-        -- (See the buy handler above for why Exchange navigation works this way.)
-
-        if result == "completed" then
-            f2t_debug_log("[hauling] Navigation to sell location complete")
-            f2t_hauling_transition("selling")
-
-        elseif result == "stopped" then
-            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-            f2t_debug_log("[hauling] User stopped navigation, stopping hauling")
-            f2t_hauling_stop()
-
-        elseif result == "failed" then
-            local sell_loc = F2T_HAULING_STATE.sell_location
-            local location_str = sell_loc and string.format("%s:%s", sell_loc.system, sell_loc.planet)
-                or "sell location"
-            cecho(string.format(
-                "\n<red>[hauling]<reset> Cannot reach %s (path blocked), stopping hauling\n", location_str))
-            f2t_debug_log("[hauling] Navigation to sell failed after retries, stopping")
-            f2t_hauling_stop()
-
-        else
-            f2t_debug_log("[hauling] Unknown speedwalk result, using legacy behavior")
-            f2t_hauling_transition("selling")
-        end
-    end
-end
-
 -- Find next sell location after partial sell
 function f2t_hauling_find_next_sell_location()
     if not F2T_HAULING_STATE.current_commodity then
@@ -1027,65 +841,6 @@ function f2t_hauling_find_next_sell_location()
             f2t_hauling_remove_current_commodity()
         end
     end)
-end
-
-function f2t_hauling_check_nav_to_dump_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    if F2T_HAULING_STATE.current_phase ~= "dumping_cargo" then
-        return
-    end
-
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling] Speedwalk stopped with result: %s", result or "unknown")
-
-        -- (See the buy handler above for why Exchange navigation works this way.)
-
-        if result == "completed" then
-            f2t_debug_log("[hauling] Navigation to dump location complete")
-            f2t_hauling_phase_dump_cargo()
-
-        elseif result == "stopped" then
-            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-            f2t_debug_log("[hauling] User stopped navigation, stopping hauling")
-            f2t_hauling_stop()
-
-        elseif result == "failed" then
-            cecho("\n<red>[hauling]<reset> Cannot reach dump location (path blocked), stopping hauling\n")
-            f2t_debug_log("[hauling] Navigation to dump failed after retries, stopping")
-            f2t_hauling_stop()
-
-        else
-            f2t_debug_log("[hauling] Unknown speedwalk result, using legacy behavior")
-            f2t_hauling_phase_dump_cargo()
-        end
-    end
-end
-
---- @return string Event handler ID
-function f2t_exchange_register_handlers()
-    local handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        -- Brief delay lets GMCP settle before checking navigation completion.
-        tempTimer(0.5, function()
-            f2t_hauling_check_nav_to_buy_complete()
-            f2t_hauling_check_nav_to_sell_complete()
-            f2t_hauling_check_nav_to_dump_complete()
-        end)
-    end)
-
-    f2t_debug_log("[hauling/exchange] Registered Exchange event handlers")
-    return handler_id
-end
-
---- @param handler_id string Event handler ID to kill
-function f2t_exchange_cleanup_handlers(handler_id)
-    if handler_id then
-        killAnonymousEventHandler(handler_id)
-        f2t_debug_log("[hauling/exchange] Cleaned up Exchange event handlers")
-    end
 end
 
 f2t_debug_log("[hauling] Phase implementations loaded")

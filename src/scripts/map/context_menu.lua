@@ -52,9 +52,9 @@ local function setDynamicEntry(id, label)
 end
 
 function f2tMapMenuRefresh()
-    local walking   = F2T_SPEEDWALK_ACTIVE
+    local walking   = f2tNav.status()
     local exploring = F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active
-    setDynamicEntry(WALK_PAUSE_ID, walking and (F2T_SPEEDWALK_PAUSED and "Resume walking" or "Pause walking"))
+    setDynamicEntry(WALK_PAUSE_ID, walking and (walking.paused and "Resume walking" or "Pause walking"))
     setDynamicEntry(WALK_STOP_ID, walking and "Stop walking")
     setDynamicEntry(EXPLORE_PAUSE_ID,
         exploring and (F2T_MAP_EXPLORE_STATE.paused and "Resume exploring" or "Pause exploring"))
@@ -167,7 +167,7 @@ end
 local ROOM_ACTIONS = {
     f2tMap_10_walk = function(rooms)
         if f2tControlBlocks("Navigation") then return end
-        f2t_map_navigate(tostring(rooms[1]), {interactive = true, compensate_incomplete_map = true})
+        f2tNav.go(rooms[1], { ask = true })
     end,
     f2tMap_r1_avoid        = toggleAvoid,
     f2tMap_r2_saveDest     = function(rooms)
@@ -196,9 +196,10 @@ local GENERAL_ACTIONS = {
     end,
     f2tMap_70_legend = function() f2tShowMapLegend() end,
     [WALK_PAUSE_ID] = function()
-        if F2T_SPEEDWALK_PAUSED then f2t_map_speedwalk_resume() else f2t_map_speedwalk_pause() end
+        local walking = f2tNav.status()
+        if walking and walking.paused then f2tNav.resume() else f2tNav.pause() end
     end,
-    [WALK_STOP_ID] = function() f2t_map_speedwalk_stop() end,
+    [WALK_STOP_ID] = function() f2tNav.stopAll() end,
     [EXPLORE_PAUSE_ID] = function()
         if F2T_MAP_EXPLORE_STATE.paused then f2t_map_explore_resume() else f2t_map_explore_pause() end
     end,

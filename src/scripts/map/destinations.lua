@@ -85,9 +85,3 @@ function f2t_map_destination_get(dest_name)
     dest_name = string.lower(dest_name)
     return ensureDestinations()[dest_name]
 end
-
-function f2t_map_count_destinations()
-    local count = 0
-    for _ in pairs(ensureDestinations()) do count = count + 1 end
-    return count
-end

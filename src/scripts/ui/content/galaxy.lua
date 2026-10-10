@@ -1505,8 +1505,7 @@ local LOCATION_SETTLE_SECONDS = 2
 local locationSettleTimer = nil
 
 local function navigationBusy()
-    return F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING
-        or (F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active)
+    return f2tNav.busy() or (F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active)
 end
 
 local function settleLocation()
@@ -1528,10 +1527,7 @@ registerAnonymousEventHandler("gmcp.room.info", function()
     f2t_galaxy_refresh_open()
 end)
 
--- settled is false when navigation is still working toward its destination.
-registerAnonymousEventHandler("f2tSpeedwalkFinished", function(_, _result, _roomId, settled)
-    if settled then restartLocationSettle() end
-end)
+registerAnonymousEventHandler("f2tNavFinished", function() restartLocationSettle() end)
 
 registerAnonymousEventHandler("f2tExploreStopped", restartLocationSettle)
 

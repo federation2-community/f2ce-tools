@@ -240,9 +240,9 @@ function f2t_akaturi_go_to_office(onArrive)
     end
     local destination, label = f2t_akaturi_office_target()
     cecho(string.format("\n<cyan>[akaturi]<reset> Heading to take a contract at %s\n", label))
-    f2t_map_walk_to(destination, function(arrived)
-        if onArrive then onArrive(arrived and f2t_akaturi_at_office()) end
-    end)
+    f2tNav.go(destination, { owner = "akaturi", onDone = function(result)
+        if onArrive then onArrive(result.status == "arrived" and f2t_akaturi_at_office()) end
+    end })
 end
 
 --- Go to an AC office if needed and ask for a contract

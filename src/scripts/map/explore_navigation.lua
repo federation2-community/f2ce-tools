@@ -162,7 +162,7 @@ function f2t_map_explore_navigate_to_next()
 
     if current_room ~= next_exit.room_id then
         F2T_MAP_EXPLORE_STATE.planned_exit = next_exit
-        local success = f2t_map_navigate_ok(f2t_map_navigate(tostring(next_exit.room_id)))
+        local success = f2t_map_walk_room(next_exit.room_id)
         if not success then
             cecho(string.format("\n<red>[map-explore]<reset> Failed to navigate to room %d\n", next_exit.room_id))
             F2T_MAP_EXPLORE_STATE.planned_exit = nil
@@ -189,7 +189,7 @@ function f2t_map_explore_return_to_start()
 
     if current_room ~= starting_room then
         cecho("\n<green>[map-explore]<reset> Returning to starting room...\n")
-        local success = f2t_map_navigate_ok(f2t_map_navigate(tostring(starting_room)))
+        local success = f2t_map_walk_room(starting_room)
         if not success then
             cecho(string.format("\n<red>[map-explore]<reset> Failed to return to starting room %d\n", starting_room))
             f2t_map_explore_complete()

@@ -115,14 +115,14 @@ function f2t_insurance_get_insured(onDone)
     local destination = broker or FALLBACK_BROKER
     cecho(string.format("\n<cyan>[insurance]<reset> Heading to %s to insure\n",
         broker and (getRoomName(broker) or "the nearest broker") or "Earth's Emergency Ward"))
-    f2t_map_walk_to(destination, function(arrived)
-        if arrived and atBroker() then
+    f2tNav.go(destination, { owner = "insurance", onDone = function(result)
+        if result.status == "arrived" and atBroker() then
             buyHere(onDone)
         else
             cecho("\n<red>[insurance]<reset> Couldn't reach an insurance broker; insure by hand.\n")
             if onDone then onDone(false) end
         end
-    end)
+    end })
 end
 
 -- ── The check ────────────────────────────────────────────────────────────────

@@ -10,11 +10,6 @@ function f2t_get_current_planet()
     return gmcp.room.info.area
 end
 
-function f2t_get_current_room_num()
-    if not gmcp or not gmcp.room or not gmcp.room.info then return nil end
-    return gmcp.room.info.num
-end
-
 function f2t_get_current_room_hash()
     if not gmcp or not gmcp.room or not gmcp.room.info then return nil end
     local info = gmcp.room.info
@@ -45,10 +40,6 @@ end
 
 function f2t_is_in_system(system_name)
     return f2t_get_current_system() == system_name
-end
-
-function f2t_is_at_planet(planet_name)
-    return f2t_get_current_planet() == planet_name
 end
 
 function f2t_map_lookup_planet(planet_name)

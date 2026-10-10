@@ -39,10 +39,6 @@ function f2t_is_rank_or_above(requiredRank)
     return currentLevel >= requiredLevel
 end
 
-function f2t_is_rank_below(rankName)
-    return not f2t_is_rank_or_above(rankName)
-end
-
 --- Whether a rank may buy and sell on the commodity exchanges. Not a range:
 --- Financiers rank above Merchants yet may not trade (server
 --- Player::TradingAllowedIgnoringLocation). Traders may, up to a daily gross

@@ -41,25 +41,6 @@ end
 -- it ~15% on web only. Desktop is unchanged. Helpers return a CSS size token.
 F2T_UI_FONT_SCALE = f2t_is_web() and 0.85 or 1.0
 function f2t_ui_pt(pt) return string.format("%gpt", pt * F2T_UI_FONT_SCALE) end
-function f2t_ui_px(px) return string.format("%gpx", math.floor(px * F2T_UI_FONT_SCALE + 0.5)) end
-
--- The same scale as a bare number, for Geyser.Label:setFontSize().
---
--- Use this — NOT a font-size in the widget's stylesheet — to size a Geyser
--- label. Geyser.Label:echo() re-wraps the message in `<div style="font-size:
--- <self.fontSize>pt">` on every single update, and that inline style beats
--- anything the stylesheet says. A font-size in setStyleSheet() on a label you
--- ever :echo() to is silently dead code.
-function f2t_ui_fs(pt) return math.max(6, math.floor(pt * F2T_UI_FONT_SCALE + 0.5)) end
-
--- ── Per-surface text size ─────────────────────────────────────────────────────
--- Muxlet's Text Size % for a pane or tab (1.0 = 100%). Content that opts in
--- sizes fonts, and the row/strip heights that hold text, through these.
-
-function f2tTextScale(target)
-    if target and Mux and Mux.textScale then return Mux.textScale(target) end
-    return 1
-end
 
 -- Pixel length (row height, strip height, px font size) at the surface's size.
 function f2tScaled(target, px) return math.floor(px * f2tTextScale(target) + 0.5) end
@@ -163,15 +144,6 @@ function f2t_has_tool(toolName)
     return f2t_get_tool(toolName) ~= nil
 end
 
-function f2t_check_tool_requirement(toolName, featureName, displayName)
-    if f2t_has_tool(toolName) then return true end
-    local name = displayName or toolName
-    cecho(string.format("\n<red>[f2ce-tools]<reset> %s requires the <cyan>%s<reset> tool\n",
-        featureName, name))
-    cecho("<dim_grey>See: https://federation2.com/guide/#sec-230.20<reset>\n")
-    return false
-end
-
 -- ── String helpers ────────────────────────────────────────────────────────────
 
 function f2t_strip_color_codes(str)
@@ -186,39 +158,6 @@ function f2t_clean_room_name(name)
     return cleaned
 end
 
-local function _dlen(s)
-    local n = 0
-    for i = 1, #s do
-        local b = s:byte(i)
-        if b < 0x80 or b >= 0xC0 then n = n + 1 end
-    end
-    return n
-end
-
-function f2t_padding(str, len, dir)
-    str = tostring(str)
-    local dlen = _dlen(str)
-    if dlen > len then
-        local n, i = 0, 1
-        while i <= #str and n < len do
-            local b = str:byte(i)
-            if b < 0x80 or b >= 0xC0 then n = n + 1 end
-            i = i + 1
-        end
-        return str:sub(1, i - 1)
-    end
-    local pad = len - dlen
-    if dir == "left" then
-        return str .. string.rep(" ", pad)
-    elseif dir == "right" then
-        return string.rep(" ", pad) .. str
-    elseif dir == "center" then
-        local left  = math.floor(pad / 2)
-        local right = pad - left
-        return string.rep(" ", left) .. str .. string.rep(" ", right)
-    end
-end
-
 -- ── Table helpers ─────────────────────────────────────────────────────────────
 
 function f2t_has_value(tab, val)
@@ -226,13 +165,6 @@ function f2t_has_value(tab, val)
         if value == val then return true end
     end
     return false
-end
-
-function f2t_table_get_sorted_keys(tbl)
-    local keys = {}
-    for k in pairs(tbl) do table.insert(keys, k) end
-    table.sort(keys)
-    return keys
 end
 
 function f2t_table_count_keys(tbl)

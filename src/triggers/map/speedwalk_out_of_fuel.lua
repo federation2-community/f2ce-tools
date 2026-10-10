@@ -13,29 +13,6 @@ end
 
 F2T_SPEEDWALK_WAITING_FOR_MOVE = false
 
-local auto_resume = true
-if F2T_SPEEDWALK_ON_INTERRUPT then
-    local success, result = pcall(F2T_SPEEDWALK_ON_INTERRUPT, "out_of_fuel")
-    if success then
-        if result and result.auto_resume == false then
-            auto_resume = false
-            f2t_debug_log("[map] Owner declined auto-resume after refuel")
-        else
-            f2t_debug_log("[map] Owner requested auto-resume after refuel")
-        end
-    else
-        f2t_debug_log("[map] Callback error during out-of-fuel: %s", tostring(result))
-        auto_resume = true
-    end
-else
-    f2t_debug_log("[map] Standalone navigation, will auto-resume after refuel")
-end
-
-if not auto_resume then
-    f2t_map_speedwalk_stop()
-    return
-end
-
 tempTimer(1.5, function()
     if F2T_SPEEDWALK_ACTIVE then
         f2t_debug_log("[map] Attempting to resume speedwalk after refuel")

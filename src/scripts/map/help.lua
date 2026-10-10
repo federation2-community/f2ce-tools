@@ -65,7 +65,8 @@ f2t_register_help("map", {
         {cmd="", desc=""},
         {cmd="Special Navigation:", desc=""},
         {cmd="map special arrival", desc="Configure on-arrival commands"},
-        {cmd="map special circuit", desc="Configure circuit travel"},
+        {cmd="map special transit [off]", desc="Mark this room as a ride's holding room"},
+        {cmd="map special list", desc="Show this room's special behaviors"},
     },
     examples = {
         "map dest add home                   # Save current room as 'home' destination",
@@ -136,7 +137,9 @@ f2t_register_help("map restyle", {
 })
 
 f2t_register_help("nav", {
-    description = "Navigate to a destination using speedwalk",
+    description = "Go to any real place. Where the map has no route yet, navigation finds one: "
+        .. "it asks the game where a place is, jumps through unmapped systems, and explores just enough "
+        .. "of a system or planet to carry on. It asks first before exploring for a place you typed.",
     usage = {
         {cmd="nav <destination>",         desc="Navigate to saved destination"},
         {cmd="nav <room_id>",             desc="Navigate to Mudlet room ID"},
@@ -146,12 +149,12 @@ f2t_register_help("nav", {
         {cmd="nav <flag>",                desc="Navigate to flag in current area"},
         {cmd="nav <area> <flag>",         desc="Navigate to flag in specified area"},
         {cmd="", desc=""},
-        {cmd="nav info <location>",                       desc="Get navigation info from current room"},
-        {cmd="nav info <locationA> to <locationB>",       desc="Get navigation info between two points"},
+        {cmd="nav info <location>",                       desc="Show the route, or the steps navigation would take"},
+        {cmd="nav info <locationA> to <locationB>",       desc="The same, between two points"},
         {cmd="", desc=""},
-        {cmd="nav stop",   desc="Stop active speedwalk"},
-        {cmd="nav pause",  desc="Pause active speedwalk"},
-        {cmd="nav resume", desc="Resume paused speedwalk"},
+        {cmd="nav stop",   desc="Stop navigating"},
+        {cmd="nav pause",  desc="Pause navigating"},
+        {cmd="nav resume", desc="Resume navigating"},
     },
     examples = {
         "nav earth_ex         # Navigate to saved 'earth_ex' destination",
@@ -161,16 +164,16 @@ f2t_register_help("nav", {
         "nav Earth exchange   # Navigate to Earth's exchange",
         "nav Coffee.Latte.459 # Navigate to specific Fed2 hash",
         "",
-        "nav stop   # Cancel speedwalk completely",
+        "nav stop   # Stop navigating",
     },
 })
 
-f2t_register_help("nav stop", {description="Stop active speedwalk navigation",
-    usage={{cmd="nav stop", desc="Stop speedwalk completely"}}, examples={"nav stop"}})
-f2t_register_help("nav pause", {description="Pause active speedwalk navigation",
-    usage={{cmd="nav pause", desc="Pause speedwalk (keeps path for resume)"}}, examples={"nav pause"}})
-f2t_register_help("nav resume", {description="Resume paused speedwalk navigation",
-    usage={{cmd="nav resume", desc="Resume paused speedwalk from current position"}}, examples={"nav resume"}})
+f2t_register_help("nav stop", {description="Stop navigating, including any exploring it was doing to get there",
+    usage={{cmd="nav stop", desc="Stop navigating"}}, examples={"nav stop"}})
+f2t_register_help("nav pause", {description="Pause navigating where you stand",
+    usage={{cmd="nav pause", desc="Pause navigating"}}, examples={"nav pause"}})
+f2t_register_help("nav resume", {description="Resume paused navigation from where you stand",
+    usage={{cmd="nav resume", desc="Resume navigating"}}, examples={"nav resume"}})
 
 f2t_register_help("map search", {
     description = "Search for rooms by name in the map database",
@@ -233,12 +236,13 @@ f2t_register_help("map import", {
 })
 
 f2t_register_help("map special", {
-    description = "Configure special navigation behaviors (on-arrival commands, circuit travel)",
+    description = "Configure special navigation behaviors (on-arrival commands, holding rooms)",
     usage = {
         {cmd="map special arrival", desc="Configure on-arrival commands"},
-        {cmd="map special circuit", desc="Configure circuit travel"},
+        {cmd="map special transit [off]", desc="Mark this room as a ride's holding room"},
+        {cmd="map special list", desc="Show this room's special behaviors"},
     },
-    examples = {"map special arrival wear tabi"},
+    examples = {"map special arrival wear tabi", "map special transit", "map special list"},
 })
 
 f2t_register_help("map special arrival", {
@@ -264,24 +268,15 @@ f2t_register_help("map special arrival", {
     },
 })
 
-f2t_register_help("map special circuit", {
-    description = "Configure circuit travel systems (trains, tubes, shuttles)",
+f2t_register_help("map special transit", {
+    description = "A ride that holds you in a room on the way (an airlock, a lift car) moves you on by "
+        .. "itself. Marking that room lets walks wait there instead of treating it as a wrong turn. "
+        .. "Sol's holding rooms are known already.",
     usage = {
-        {cmd="map special circuit create <id>", desc="Create new circuit"},
-        {cmd="map special circuit delete <id>", desc="Delete circuit"},
-        {cmd="map special circuit list", desc="List all circuits"},
-        {cmd="map special circuit show <id>", desc="Show circuit details"},
-        {cmd="map special circuit set <id> board <cmd>", desc="Set boarding command"},
-        {cmd="map special circuit set <id> exit <cmd>", desc="Set exit command"},
-        {cmd="map special circuit stop add <id> <name>", desc="Add stop to circuit"},
-        {cmd="map special circuit connect <id>", desc="Connect circuit stops"},
+        {cmd="map special transit", desc="Mark the room you're in as a holding room"},
+        {cmd="map special transit off", desc="Clear the mark"},
     },
-    examples = {
-        "map special circuit create metro",
-        "map special circuit set metro board 'board train'",
-        "map special circuit stop add metro exchange",
-        "map special circuit connect metro",
-    },
+    examples = {"map special transit", "map special transit off"},
 })
 
 f2t_register_help("map room", {

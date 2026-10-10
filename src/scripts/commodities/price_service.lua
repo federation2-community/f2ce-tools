@@ -317,13 +317,6 @@ registerAnonymousEventHandler("gmcp.exchange.commodity", function()
     finish(req, parsed, f2t_price_analyze_commodity(req.commodity, parsed), nil)
 end)
 
---- Queue a cartel-scope price check on behalf of a script or command
---- @param commodity string
---- @param callback function|nil fn(commodity, parsed, analysis, err)
-function f2t_price_check_commodity(commodity, callback)
-    f2t_price_check_for("command", commodity, callback)
-end
-
 --- True while any price request is queued, in flight, or a scan is running
 function f2tPriceServiceBusy()
     return F2T_PRICE.current ~= nil or #F2T_PRICE.queue > 0 or F2T_PRICE.scan ~= nil

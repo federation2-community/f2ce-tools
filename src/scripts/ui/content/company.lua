@@ -932,7 +932,7 @@ local function factoryCols()
                 cell:echo(string.format("<span style='%scolor:#ffffff;'>%s</span>", CELL_FONT, v))
                 cell:setToolTip("Navigate to " .. tostring(row.planet))
                 cell:setClickCallback(function()
-                    if row.planet and f2t_map_navigate then f2t_map_navigate(row.planet) end
+                    if row.planet then f2tNav.go(row.planet) end
                 end)
             end,
         },

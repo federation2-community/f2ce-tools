@@ -27,7 +27,7 @@ local function po_cycle_pause_and_rescan(message)
             cecho(string.format("\n<green>[hauling]<reset> %s, going to safe room for <yellow>%d seconds<reset>...\n",
                 message, cycle_pause))
             f2t_debug_log("[hauling/po] Navigating to safe room for cycle pause (%d seconds)", cycle_pause)
-            f2t_map_navigate(safe_room)
+            f2tNav.go(safe_room, { owner = "hauling" })
 
             -- Navigation will complete well within the cycle pause window
             F2T_HAULING_STATE.cycle_pause_timer_id = tempTimer(cycle_pause, function()
@@ -198,8 +198,15 @@ function f2t_hauling_phase_po_next_job()
     end
 
     local job = queue[index]
+    if job.type == "clear" then
+        -- A clearing job is only ever run where it is queued; one reached again has nothing left to do
+        F2T_HAULING_STATE.po_job_index = index + 1
+        f2t_hauling_phase_po_next_job()
+        return
+    end
     F2T_HAULING_STATE.po_current_job = job
     F2T_HAULING_STATE.po_sell_attempts = 0
+    F2T_HAULING_STATE.po_sell_unreachable = false
 
     f2t_debug_log("[hauling/po] Starting job %d/%d: %s %s (%s → %s)",
         index, #queue, job.type, job.commodity,
@@ -232,32 +239,19 @@ function f2t_hauling_phase_po_navigate_to_buy()
         return
     end
 
-    local destination = string.format("%s exchange", job.buy_planet)
     cecho(string.format("\n<green>[hauling]<reset> Navigating to buy location: <cyan>%s exchange<reset>\n",
         job.buy_planet))
-    f2t_debug_log("[hauling/po] Navigating to buy: %s", destination)
+    f2t_debug_log("[hauling/po] Navigating to buy: %s exchange", job.buy_planet)
 
-    local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if not success then
-                cecho(string.format(
-                    "\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
-                f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
-                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-                f2t_hauling_phase_po_next_job()
-            end
-            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
-            -- handler picks up its completion normally.
-        end,
-    })
-
-    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling/po] Already at buy location")
-        f2t_hauling_transition("po_buying")
-    end
+    f2t_hauling_walk(string.format("%s exchange", job.buy_planet),
+        function() f2t_hauling_transition("po_buying") end,
+        function()
+            cecho(string.format(
+                "\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.buy_planet))
+            f2t_debug_log("[hauling/po] Navigation to buy location failed, skipping job")
+            F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
+            f2t_hauling_phase_po_next_job()
+        end)
 end
 
 -- ========================================
@@ -298,16 +292,26 @@ function f2t_hauling_phase_po_buy()
             -- Check again after selling
             local still_has_cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo
             if still_has_cargo and #still_has_cargo > 0 then
+                -- Often bonded goods offered back to the exchange that sold them; a
+                -- clearing job ahead of this one carries them to a buyer elsewhere.
+                local here = gmcp.room and gmcp.room.info and gmcp.room.info.area or job.buy_planet
                 cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Still %d lots unsold, jettisoning to clear hold\n", #still_has_cargo))
-                f2t_debug_log("[hauling/po] Jettisoning %d unsellable lots", #still_has_cargo)
-                f2t_hauling_jettison_cargo(function()
-                    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                        return
-                    end
-                    -- Retry buy (counter already incremented)
-                    f2t_hauling_transition("po_buying")
-                end)
+                    "\n<yellow>[hauling]<reset> %d lots won't sell here, finding a buyer elsewhere first\n",
+                    #still_has_cargo))
+                f2t_debug_log("[hauling/po] %d lots unsellable at %s, queuing a clearing job",
+                    #still_has_cargo, here)
+                local clearJob = {
+                    type = "clear",
+                    commodity = still_has_cargo[1].commodity,
+                    lots = #still_has_cargo,
+                    buy_planet = here,
+                }
+                table.insert(F2T_HAULING_STATE.po_job_queue, F2T_HAULING_STATE.po_job_index, clearJob)
+                F2T_HAULING_STATE.po_current_job = clearJob
+                F2T_HAULING_STATE.po_sell_attempts = 0
+                F2T_HAULING_STATE.po_sell_unreachable = false
+                raiseEvent("f2tHaulingStatusChanged")
+                f2t_hauling_po_find_next_sell()
                 return
             end
             -- Cargo clear, reset counter and proceed
@@ -316,6 +320,7 @@ function f2t_hauling_phase_po_buy()
         end)
         return
     end
+    F2T_HAULING_STATE.cargo_clear_attempts = 0
 
     local commodity = job.commodity
     local lots = job.lots
@@ -409,33 +414,22 @@ function f2t_hauling_phase_po_bundled_buy_navigate()
         return
     end
 
-    local dest = string.format("%s exchange", job.bundled_buy_planet)
     cecho(string.format("\n<green>[hauling]<reset> Navigating to bundled buy: <cyan>%s exchange<reset>\n",
         job.bundled_buy_planet))
-    f2t_debug_log("[hauling/po] Navigating to bundled buy: %s", dest)
+    f2t_debug_log("[hauling/po] Navigating to bundled buy: %s exchange", job.bundled_buy_planet)
 
-    local nav_result = f2t_map_navigate(dest, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if not success then
-                cecho(string.format(
-                    "\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
-                    job.bundled_buy_planet))
-                f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
-                f2t_hauling_transition("po_navigating_to_sell")
-            end
-            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
-            -- handler picks up its completion normally.
+    f2t_hauling_walk(string.format("%s exchange", job.bundled_buy_planet),
+        function()
+            F2T_HAULING_STATE.current_phase = "po_buying"
+            f2t_hauling_phase_po_bundled_buy()
         end,
-    })
-
-    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-        -- Set phase to prevent GMCP handler re-entry during async buy
-        F2T_HAULING_STATE.current_phase = "po_buying"
-        f2t_hauling_phase_po_bundled_buy()
-    end
+        function()
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> Cannot navigate to %s exchange, skipping bundled buy\n",
+                job.bundled_buy_planet))
+            f2t_debug_log("[hauling/po] Bundled buy navigation failed, proceeding to sell")
+            f2t_hauling_transition("po_navigating_to_sell")
+        end)
 end
 
 --- Buy the second (bundled) commodity after navigating to its source
@@ -483,33 +477,19 @@ function f2t_hauling_phase_po_navigate_to_sell()
         return
     end
 
-    local destination = string.format("%s exchange", job.sell_planet)
     cecho(string.format("\n<green>[hauling]<reset> Navigating to sell location: <cyan>%s exchange<reset>\n",
         job.sell_planet))
-    f2t_debug_log("[hauling/po] Navigating to sell: %s", destination)
+    f2t_debug_log("[hauling/po] Navigating to sell: %s exchange", job.sell_planet)
 
-    local nav_result = f2t_map_navigate(destination, {
-        on_result = function(success)
-            if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-                return
-            end
-            if not success then
-                cecho(string.format(
-                    "\n<red>[hauling]<reset> Cannot navigate to %s exchange, skipping job\n", job.sell_planet))
-                f2t_debug_log("[hauling/po] Navigation to sell location failed, skipping job")
-                -- We have cargo but can't sell - skip to next job
-                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-                f2t_hauling_phase_po_next_job()
-            end
-            -- success: a real speedwalk is now in flight; the existing gmcp.room.info
-            -- handler picks up its completion normally.
-        end,
-    })
-
-    if f2t_map_navigate_ok(nav_result) and not F2T_SPEEDWALK_ACTIVE then
-        f2t_debug_log("[hauling/po] Already at sell location")
-        f2t_hauling_transition("po_selling")
-    end
+    f2t_hauling_walk(string.format("%s exchange", job.sell_planet),
+        function() f2t_hauling_transition("po_selling") end,
+        function()
+            cecho(string.format(
+                "\n<yellow>[hauling]<reset> Cannot reach %s exchange, looking for another buyer\n", job.sell_planet))
+            f2t_debug_log("[hauling/po] Navigation to sell location failed, trying another buyer")
+            F2T_HAULING_STATE.po_sell_unreachable = true
+            f2t_hauling_po_find_next_sell()
+        end)
 end
 
 -- ========================================
@@ -529,10 +509,10 @@ function f2t_hauling_phase_po_sell()
 
         f2t_debug_log("[hauling/po] Sell complete: lots=%d, status=%s", lots_sold, status)
 
-        if lots_sold > 0 then
+        local job = F2T_HAULING_STATE.po_current_job
+        if lots_sold > 0 and not (job and job.type == "clear") then
             -- Track cycle and type-specific counter
             F2T_HAULING_STATE.total_cycles = F2T_HAULING_STATE.total_cycles + 1
-            local job = F2T_HAULING_STATE.po_current_job
             if job and job.type == "deficit" then
                 F2T_HAULING_STATE.po_deficit_cycles = F2T_HAULING_STATE.po_deficit_cycles + 1
             else
@@ -540,6 +520,8 @@ function f2t_hauling_phase_po_sell()
             end
             cecho(string.format("\n<green>[hauling]<reset> Sold %d lots (cycle %d)\n",
                 lots_sold, F2T_HAULING_STATE.total_cycles))
+        elseif lots_sold > 0 then
+            cecho(string.format("\n<green>[hauling]<reset> Sold %d leftover lots\n", lots_sold))
         end
 
         -- Check if cargo is now empty
@@ -555,11 +537,11 @@ function f2t_hauling_phase_po_sell()
 
         -- Hold empty, reset sell attempts and advance
         F2T_HAULING_STATE.po_sell_attempts = 0
+        F2T_HAULING_STATE.po_sell_unreachable = false
 
         -- Only re-check deficits after selling excess production
         -- When filling deficits, go through the whole queue first to avoid wasted scans
-        local job = F2T_HAULING_STATE.po_current_job
-        if job and job.type == "deficit" then
+        if job and (job.type == "deficit" or job.type == "clear") then
             f2t_debug_log("[hauling/po] Deficit job complete, advancing to next job")
             F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
             f2t_hauling_phase_po_next_job()
@@ -573,6 +555,28 @@ end
 -- Partial Sell: Find Next Sell Location
 -- ========================================
 
+--- Out of buyers to try: jettison cargo that exchanges refused, but keep cargo
+--- that only failed to reach one, since it still has a buyer somewhere
+--- @param why string What ran out, for the message
+local function giveUpOnCargo(why)
+    if F2T_HAULING_STATE.po_sell_unreachable then
+        local cargo = gmcp.char and gmcp.char.ship and gmcp.char.ship.cargo or {}
+        cecho(string.format("\n<red>[hauling]<reset> %s and couldn't reach a buyer; stopping with %d lots " ..
+            "aboard. Sell them by hand, or fix the route and start hauling again\n", why, #cargo))
+        f2t_debug_log("[hauling/po] %s with an unreachable buyer, stopping with cargo aboard", why)
+        F2T_HAULING_STATE.po_sell_unreachable = false
+        f2t_hauling_do_stop()
+        return
+    end
+    cecho(string.format("\n<yellow>[hauling]<reset> %s, jettisoning remaining cargo\n", why))
+    f2t_debug_log("[hauling/po] %s, jettisoning", why)
+    f2t_hauling_jettison_cargo(function()
+        F2T_HAULING_STATE.po_sell_attempts = 0
+        F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
+        f2t_hauling_phase_po_next_job()
+    end)
+end
+
 --- Find next sell location when exchange stopped buying our cargo
 --- Uses price check to find any exchange that will buy, navigates there
 function f2t_hauling_po_find_next_sell()
@@ -581,14 +585,7 @@ function f2t_hauling_po_find_next_sell()
     local max_attempts = tonumber(f2t_settings_get("hauling", "po_max_sell_attempts")) or 3
 
     if F2T_HAULING_STATE.po_sell_attempts > max_attempts then
-        cecho(string.format("\n<yellow>[hauling]<reset> Tried %d sell locations, jettisoning remaining cargo\n",
-            max_attempts))
-        f2t_debug_log("[hauling/po] Max sell attempts reached, jettisoning")
-        f2t_hauling_jettison_cargo(function()
-            F2T_HAULING_STATE.po_sell_attempts = 0
-            F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-            f2t_hauling_phase_po_next_job()
-        end)
+        giveUpOnCargo(string.format("Tried %d sell locations", max_attempts))
         return
     end
 
@@ -644,13 +641,7 @@ function f2t_hauling_po_find_next_sell()
         end
 
         if not found then
-            cecho(string.format("\n<yellow>[hauling]<reset> No more exchanges buying %s, jettisoning remaining cargo\n",
-                commodity))
-            f2t_hauling_jettison_cargo(function()
-                F2T_HAULING_STATE.po_sell_attempts = 0
-                F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-                f2t_hauling_phase_po_next_job()
-            end)
+            giveUpOnCargo(string.format("No more exchanges buying %s", commodity))
         end
     end)
 end
@@ -715,89 +706,6 @@ function f2t_hauling_phase_po_check_deficits()
             f2t_hauling_phase_po_next_job()
         end
     end)
-end
-
--- ========================================
--- Event Handlers
--- ========================================
-
---- Check if PO navigation is complete (generic for all PO navigation phases)
-function f2t_hauling_check_po_nav_complete()
-    if not F2T_HAULING_STATE.active or F2T_HAULING_STATE.paused then
-        return
-    end
-
-    local phase = F2T_HAULING_STATE.current_phase
-
-    -- Only handle PO navigation phases
-    if phase ~= "po_navigating_to_buy" and phase ~= "po_navigating_to_sell" and
-       phase ~= "po_navigating_to_bundled_buy" then
-        return
-    end
-
-    -- Check if speedwalk completed
-    if not F2T_SPEEDWALK_ACTIVE and not F2T_SPEEDWALK_CUSTOMS_PENDING then
-        local result = F2T_SPEEDWALK_LAST_RESULT
-        f2t_debug_log("[hauling/po] Navigation completed in phase %s with result: %s",
-            phase, result or "unknown")
-
-        if result == "completed" then
-            if phase == "po_navigating_to_buy" then
-                f2t_hauling_transition("po_buying")
-            elseif phase == "po_navigating_to_sell" then
-                f2t_hauling_transition("po_selling")
-            elseif phase == "po_navigating_to_bundled_buy" then
-                -- Leave the navigating phase so a later room.info can't start a second overlapping buy
-                F2T_HAULING_STATE.current_phase = "po_buying"
-                f2t_hauling_phase_po_bundled_buy()
-            end
-
-        elseif result == "stopped" then
-            cecho("\n<yellow>[hauling]<reset> Navigation stopped by user, stopping hauling\n")
-            f2t_hauling_stop()
-
-        elseif result == "failed" then
-            cecho(string.format("\n<red>[hauling]<reset> Cannot reach destination (path blocked)\n"))
-            f2t_debug_log("[hauling/po] Skipping job due to navigation failure")
-            F2T_HAULING_STATE.po_job_index = F2T_HAULING_STATE.po_job_index + 1
-            f2t_hauling_phase_po_next_job()
-
-        else
-            -- Unknown result, proceed optimistically
-            f2t_debug_log("[hauling/po] Unknown result, using legacy behavior")
-            if phase == "po_navigating_to_buy" then
-                f2t_hauling_transition("po_buying")
-            elseif phase == "po_navigating_to_sell" then
-                f2t_hauling_transition("po_selling")
-            elseif phase == "po_navigating_to_bundled_buy" then
-                F2T_HAULING_STATE.current_phase = "po_buying"
-                f2t_hauling_phase_po_bundled_buy()
-            end
-        end
-    end
-end
-
---- Register PO-specific GMCP event handlers
---- @return string Event handler ID
-function f2t_po_register_handlers()
-    local handler_id = registerAnonymousEventHandler("gmcp.room.info", function()
-        -- Check navigation completion after brief delay for GMCP to settle
-        tempTimer(0.5, function()
-            f2t_hauling_check_po_nav_complete()
-        end)
-    end)
-
-    f2t_debug_log("[hauling/po] Registered PO event handlers")
-    return handler_id
-end
-
---- Cleanup PO event handlers
---- @param handler_id string Event handler ID to kill
-function f2t_po_cleanup_handlers(handler_id)
-    if handler_id then
-        killAnonymousEventHandler(handler_id)
-        f2t_debug_log("[hauling/po] Cleaned up PO event handlers")
-    end
 end
 
 f2t_debug_log("[hauling/po] Phases module loaded")

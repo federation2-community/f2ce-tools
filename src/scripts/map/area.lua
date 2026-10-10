@@ -68,10 +68,6 @@ function f2t_map_get_system_from_space_area(area_name)
     return string.match(area_name, "^(.+)%s+Space$")
 end
 
-function f2t_map_get_system_space_area(system)
-    return string.format("%s Space", system)
-end
-
 function f2t_map_get_system_space_area_actual(system_name)
     local areas = getAreaTable()
     local search_lower = string.lower(system_name)

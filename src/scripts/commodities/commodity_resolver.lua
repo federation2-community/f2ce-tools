@@ -90,35 +90,4 @@ function f2t_resolve_commodity(input)
     return input, false
 end
 
--- Get all valid commodity names (for validation/autocomplete)
-function f2t_get_all_commodities()
-    local cache = load_commodities()
-    if not cache then
-        return {}
-    end
-
-    local commodities = {}
-    for _, canonical in pairs(cache.name_to_canonical) do
-        table.insert(commodities, canonical)
-    end
-
-    table.sort(commodities)
-    return commodities
-end
-
--- Check if a commodity name is valid (full name or short name)
-function f2t_is_valid_commodity(input)
-    if not input or input == "" then
-        return false
-    end
-
-    local cache = load_commodities()
-    if not cache then
-        return true  -- Can't validate, assume valid
-    end
-
-    local lower_input = string.lower(input)
-    return cache.name_to_canonical[lower_input] ~= nil or cache.short_to_canonical[lower_input] ~= nil
-end
-
 f2t_debug_log("[shared] Commodity resolver loaded")

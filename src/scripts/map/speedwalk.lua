@@ -25,16 +25,8 @@ F2T_SPEEDWALK_FAILED_MOVES         = {}
 -- Jumps the game refused during this walk. Counted apart from failures: see
 -- f2t_map_speedwalk_handle_refusal.
 F2T_SPEEDWALK_REFUSALS             = 0
--- The navigate() call this walk came from, when that call was allowed to
--- compensate for an incomplete map. A planned route can evaporate mid-walk
--- (an exit gets corrected and the map turns out never to have had a real
--- route at all), and stopping there strands the user halfway; this is what
--- lets the walk hand back to navigation instead.
-F2T_SPEEDWALK_NAV_REQUEST          = nil
 F2T_SPEEDWALK_FAILED_EXIT_ROOM     = nil
 F2T_SPEEDWALK_FAILED_EXIT_DIR      = nil
-F2T_SPEEDWALK_OWNER                = nil
-F2T_SPEEDWALK_ON_INTERRUPT         = nil
 F2T_SPEEDWALK_BRIEF_SWITCHED       = false
 -- True between a customs interception stopping the old route and the
 -- recovery navigate being issued. Owners' nav-complete checks must not
@@ -50,16 +42,6 @@ F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
 -- a walk that has since been stopped. Not reset with the walk for that reason.
 F2T_SPEEDWALK_UNSURE_UNTIL          = 0
 local UNSURE_SECONDS_AFTER_TIMEOUT  = 30
-
-function f2t_map_set_nav_owner(owner, on_interrupt)
-    F2T_SPEEDWALK_OWNER        = owner
-    F2T_SPEEDWALK_ON_INTERRUPT = on_interrupt
-end
-
-function f2t_map_clear_nav_owner()
-    F2T_SPEEDWALK_OWNER        = nil
-    F2T_SPEEDWALK_ON_INTERRUPT = nil
-end
 
 -- Name of whoever holds a long-lived "stay in brief" claim (explore, hauling),
 -- or nil. While held, individual speedwalks skip their own brief/full toggling
@@ -99,6 +81,29 @@ function f2t_map_speedwalk_send_blind(commands)
     return doSpeedWalk(true)
 end
 
+--- Walk to a room over a route the map already has: the exploration engine's
+--- walking step and every trip's walk leg. Getting anywhere else is f2tNav's job.
+--- @return boolean true when walking or already there, false when the map has no route
+function f2t_map_walk_room(room_id)
+    local here = F2T_MAP_CURRENT_ROOM_ID
+    room_id = tonumber(room_id)
+    if not here or not room_id or not roomExists(room_id) then return false end
+    if here == room_id then
+        F2T_SPEEDWALK_LAST_RESULT = "completed"
+        return true
+    end
+    if not getPath(here, room_id) then
+        f2t_debug_log("[map/walk] no route %s -> %s", f2t_map_describe_room(here), f2t_map_describe_room(room_id))
+        return false
+    end
+    if #speedWalkDir == 0 then
+        F2T_SPEEDWALK_LAST_RESULT = "completed"
+        return true
+    end
+    doSpeedWalk()
+    return true
+end
+
 function doSpeedWalk(blind)
     if not speedWalkDir or #speedWalkDir == 0 then
         cecho("\n<red>[map]<reset> No path available - call getPath() first\n"); return false
@@ -132,15 +137,6 @@ function doSpeedWalk(blind)
 end
 
 function f2t_map_handle_special_movement(direction)
-    if direction:match("^__circuit:") then
-        if f2t_map_circuit_begin(direction) then
-            F2T_SPEEDWALK_LAST_COMMAND = nil
-        else
-            cecho("\n<red>[map]<reset> Circuit travel failed, stopping speedwalk\n")
-            f2t_map_speedwalk_stop()
-        end
-        return true
-    end
     if direction:match("^__move_no_op_%d+$") then
         F2T_SPEEDWALK_LAST_COMMAND = nil
         return true
@@ -175,15 +171,10 @@ end
 
 -- Every route teardown ends the same way, and the three that used to write it
 -- out longhand drifted apart over which globals they remembered to clear.
--- `result` is what owners read back as the last result; `abandonCircuit` is
--- for the two paths that give up on a circuit rather than finishing it.
-local function resetSpeedwalkState(result, abandonCircuit)
+-- `result` is what owners read back as the last result.
+local function resetSpeedwalkState(result)
     F2T_SPEEDWALK_LAST_RESULT = result
     f2t_map_speedwalk_restore_mode()
-    if abandonCircuit and F2T_MAP_CIRCUIT_STATE and F2T_MAP_CIRCUIT_STATE.active then
-        f2t_map_circuit_delete_triggers()
-        F2T_MAP_CIRCUIT_STATE = {active = false}
-    end
     F2T_SPEEDWALK_ACTIVE               = false
     F2T_SPEEDWALK_PAUSED               = false
     F2T_SPEEDWALK_PAUSED_FOR_DISCONNECT = false
@@ -204,8 +195,6 @@ local function resetSpeedwalkState(result, abandonCircuit)
     F2T_SPEEDWALK_CONSECUTIVE_FAILURES = 0
     F2T_SPEEDWALK_FAILED_MOVES         = {}
     F2T_SPEEDWALK_REFUSALS             = 0
-    F2T_SPEEDWALK_NAV_REQUEST          = nil
-    f2t_map_clear_nav_owner()
 
     -- Deferred so a recovery leg started by this teardown is already running;
     -- settled is false when navigation is still working toward the destination.
@@ -221,7 +210,7 @@ function f2t_map_speedwalk_complete()
     if not F2T_SPEEDWALK_ACTIVE then return end
     local dest_name = F2T_MAP_CURRENT_ROOM_ID and getRoomName(F2T_MAP_CURRENT_ROOM_ID)
     cecho(string.format("\n<green>[map]<reset> Arrived at <white>%s<reset>\n", dest_name or "destination"))
-    resetSpeedwalkState("completed", false)
+    resetSpeedwalkState("completed")
     local arrival_room = F2T_MAP_CURRENT_ROOM_ID
     if arrival_room then tempTimer(0.05, function() centerview(arrival_room) end) end
 end
@@ -229,7 +218,7 @@ end
 function f2t_map_speedwalk_stop()
     if not F2T_SPEEDWALK_ACTIVE then return false end
     cecho("\n<yellow>[map]<reset> Speedwalk stopped\n")
-    resetSpeedwalkState(F2T_SPEEDWALK_LAST_RESULT == "failed" and "failed" or "stopped", true)
+    resetSpeedwalkState(F2T_SPEEDWALK_LAST_RESULT == "failed" and "failed" or "stopped")
     return true
 end
 
@@ -291,7 +280,6 @@ end
 
 function f2t_map_speedwalk_on_room_change()
     if not F2T_SPEEDWALK_ACTIVE then return end
-    if F2T_MAP_CIRCUIT_STATE and F2T_MAP_CIRCUIT_STATE.active then return end
     if F2T_SPEEDWALK_WAITING_FOR_MOVE then
         if F2T_SPEEDWALK_MOVE_TIMEOUT_ID then
             killTimer(F2T_SPEEDWALK_MOVE_TIMEOUT_ID)
@@ -437,13 +425,6 @@ function f2t_map_speedwalk_on_room_change()
     end
 end
 
-function f2t_map_speedwalk_retry_last_command()
-    if not F2T_SPEEDWALK_ACTIVE or not F2T_SPEEDWALK_LAST_COMMAND then return false end
-    cecho("\n<yellow>[map]<reset> Retrying movement...\n")
-    send(F2T_SPEEDWALK_LAST_COMMAND)
-    return true
-end
-
 -- silent: skip the "recomputing.../recomputed..." messages. Used when
 -- re-verifying the remaining route on ordinary arrival at a link room (see
 -- f2t_map_speedwalk_on_room_change) rather than recovering from a failure —
@@ -473,17 +454,7 @@ function f2t_map_speedwalk_recompute_path(silent)
         success and string.format("%d steps (%s)", #speedWalkDir,
             table.concat(speedWalkDir, ", ")) or "NO ROUTE")
     if not success then
-        -- The route the walk set out on no longer exists. When the navigate
-        -- that started it was allowed to compensate, that is a job for
-        -- navigation - explore the gap - rather than a dead end to stop at.
-        local request = F2T_SPEEDWALK_NAV_REQUEST
-        if request and request.destination then
-            F2T_SPEEDWALK_NAV_REQUEST = nil
-            cecho("\n<yellow>[map]<reset> The mapped route no longer exists - re-planning\n")
-            f2t_map_speedwalk_stop()
-            f2t_map_navigate(request.destination, request.opts)
-            return false
-        end
+        -- The route the walk set out on no longer exists; a trip plans its next leg from here
         cecho("\n<red>[map]<reset> Unable to find path from current location\n")
         F2T_SPEEDWALK_LAST_RESULT     = "failed"
         F2T_SPEEDWALK_FAILED_EXIT_ROOM = current_room_id
@@ -534,7 +505,7 @@ function f2t_map_speedwalk_fail(reason, failed_room, failed_dir)
     F2T_SPEEDWALK_FAILED_EXIT_ROOM = failed_room or F2T_MAP_CURRENT_ROOM_ID
     F2T_SPEEDWALK_FAILED_EXIT_DIR  = failed_dir or F2T_SPEEDWALK_LAST_COMMAND
     cecho("\n<yellow>[map]<reset> Speedwalk stopped\n")
-    resetSpeedwalkState("failed", true)
+    resetSpeedwalkState("failed")
     tempTimer(0, function()
         if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then
             f2t_map_explore_on_room_change()

@@ -127,7 +127,7 @@ function f2tStaminaNearestBar(fromRoom)
     return f2t_map_nearest_room_with_flag("bar", fromRoom)
 end
 
--- Destination string for f2t_map_navigate plus a name to show the player.
+-- Destination for f2tNav.go plus a name to show the player.
 function f2tStaminaResolveFoodSource()
     local setting = f2t_settings_get("stamina", "food_source") or "nearest"
     if setting ~= "" and string.lower(setting) ~= "nearest" then
@@ -182,16 +182,6 @@ end
 
 -- Trip
 
-local function takeNavOwnership()
-    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
-    if f2t_map_set_nav_owner then
-        f2t_map_set_nav_owner("stamina", function(reason)
-            f2t_debug_log("[stamina] Navigation interrupted by %s", reason)
-            return { auto_resume = true }
-        end)
-    end
-end
-
 local function killBuyTimer()
     if state.buyTimer then killTimer(state.buyTimer); state.buyTimer = nil end
 end
@@ -215,7 +205,6 @@ end
 -- Ends the trip. On failure the client stays paused while stamina is at or
 -- below the threshold, since resuming would walk it into starvation.
 local function endTrip(failure)
-    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
     local wasPaused = state.clientPaused
     resetTrip()
 
@@ -249,20 +238,18 @@ local function goBack()
         return
     end
     setPhase("returning")
-    takeNavOwnership()
     cecho("\n<cyan>[stamina]<reset> Returning to where you were\n")
-    f2t_map_navigate(tostring(state.returnRoom), {
-        suppress_hint = true,
-        on_result = function(ok, status)
-            if state.phase ~= "returning" then return end
-            if not ok then
-                cecho("\n<yellow>[stamina]<reset> No way back from here; carrying on from this room\n")
-                finishTrip()
-            elseif status == "arrived" then
-                finishTrip()
-            end
-        end,
-    })
+    f2tNav.go(state.returnRoom, { owner = "stamina", onDone = function(result)
+        if state.phase ~= "returning" then return end
+        if result.status == "stopped" or result.status == "superseded" then
+            f2tStaminaCancelTrip()
+            return
+        end
+        if result.status ~= "arrived" then
+            cecho("\n<yellow>[stamina]<reset> No way back from here; carrying on from this room\n")
+        end
+        finishTrip()
+    end })
 end
 
 local function abortTrip(failure)
@@ -336,19 +323,17 @@ local function travel()
     local destination, name = f2tStaminaResolveFoodSource()
     state.destinationName = name
     setPhase("toFood")
-    takeNavOwnership()
     cecho(string.format("\n<cyan>[stamina]<reset> Heading to <white>%s<reset> to eat\n", name))
-    f2t_map_navigate(destination, {
-        suppress_hint = true,
-        on_result = function(ok, status)
-            if state.phase ~= "toFood" then return end
-            if not ok then
-                abortTrip(string.format("no route to %s", name))
-            elseif status == "arrived" then
-                startEating()
-            end
-        end,
-    })
+    f2tNav.go(destination, { owner = "stamina", onDone = function(result)
+        if state.phase ~= "toFood" then return end
+        if result.status == "arrived" then
+            startEating()
+        elseif result.status == "stopped" or result.status == "superseded" then
+            f2tStaminaCancelTrip()
+        else
+            abortTrip(string.format("couldn't reach %s (%s)", name, result.reason or "no route"))
+        end
+    end })
 end
 
 local function waitForClient()
@@ -378,7 +363,7 @@ end
 -- Starts a food run. manual is true for the Eat button and `stamina eat`.
 function f2tStaminaStartTrip(manual)
     if state.phase ~= "idle" then return false end
-    if not f2t_map_navigate then
+    if not f2tNav then
         cecho("\n<red>[stamina]<reset> The map component isn't loaded, so there's no way to walk to a bar\n")
         return false
     end
@@ -414,8 +399,7 @@ end
 function f2tStaminaCancelTrip(quiet)
     if state.phase == "idle" then return false end
     local walking = state.phase == "toFood" or state.phase == "returning"
-    if walking and F2T_SPEEDWALK_ACTIVE and f2t_map_speedwalk_stop then f2t_map_speedwalk_stop() end
-    if f2t_map_clear_nav_owner then f2t_map_clear_nav_owner() end
+    if walking then f2tNav.stop("stamina") end
     local wasPaused = state.clientPaused
     state.clientPaused = false
     resetTrip()
@@ -467,6 +451,10 @@ function f2t_stamina_register_client(config)
     return true
 end
 
+function f2t_stamina_has_client()
+    return state.client ~= nil
+end
+
 function f2t_stamina_unregister_client()
     state.client = nil
     f2t_debug_log("[stamina] Client unregistered")
@@ -486,26 +474,6 @@ local function onVitals()
     tempTimer(0.1, f2tStaminaCheck)
 end
 
--- A walk ended. A customs stop or a recompute leg is still under way when
--- either flag below is set, and finishes with its own event.
-local function onWalkFinished(_, result)
-    if state.phase ~= "toFood" and state.phase ~= "returning" then return end
-    if F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING then return end
-
-    if result == "stopped" then
-        f2tStaminaCancelTrip()
-    elseif state.phase == "toFood" then
-        if result == "completed" then
-            startEating()
-        else
-            abortTrip(string.format("couldn't reach %s (%s)", state.destinationName or "the bar", tostring(result)))
-        end
-    else
-        finishTrip()
-    end
-end
-
 state.vitalsHandlerId = registerAnonymousEventHandler("gmcp.char.vitals", onVitals)
-state.walkHandlerId   = registerAnonymousEventHandler("f2tSpeedwalkFinished", onWalkFinished)
 
 f2t_debug_log("[stamina] Stamina monitor initialized")

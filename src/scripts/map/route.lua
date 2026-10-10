@@ -134,35 +134,33 @@ function f2t_map_show_route_info(origin, destination)
     if not destination or destination == "" then
         cecho("\n<red>[map]<reset> No destination specified\n"); return
     end
-    local route_info, err = f2t_map_get_route_info(origin, destination)
-    if not route_info then
-        cecho(string.format("\n<red>[map]<reset> %s\n", err or "Could not calculate route")); return
+    local plan, err = f2tNav.plan(destination, origin)
+    if not plan then
+        cecho(string.format("\n<red>[map]<reset> Can't plan a route: %s\n", err or "unknown")); return
     end
-    local origin_name       = origin and origin ~= "" and origin or "Current location"
-    local origin_room_name  = getRoomName(route_info.origin_room_id) or "Unknown"
-    local dest_room_name    = getRoomName(route_info.dest_room_id)   or "Unknown"
-    local origin_area_id    = getRoomArea(route_info.origin_room_id)
-    local dest_area_id      = getRoomArea(route_info.dest_room_id)
-    local origin_area_name  = origin_area_id and getRoomAreaName(origin_area_id) or "Unknown"
-    local dest_area_name    = dest_area_id   and getRoomAreaName(dest_area_id)   or "Unknown"
+
+    local function describeRoom(roomId)
+        if not roomId then return "not on the map yet" end
+        local area = getRoomArea(roomId)
+        return string.format("%s <dim_grey>(%s, ID %d)<reset>", getRoomName(roomId) or "Unknown",
+            area and getRoomAreaName(area) or "Unknown", roomId)
+    end
 
     cecho("\n<cyan>═══════════════════════════════════════════════════════════<reset>\n")
     cecho("<cyan>                      Route Information<reset>\n")
     cecho("<cyan>═══════════════════════════════════════════════════════════<reset>\n\n")
-    cecho("<yellow>Origin:<reset>\n")
-    cecho(string.format("  <white>Query:<reset>    %s\n", origin_name))
-    cecho(string.format(
-        "  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", origin_room_name, route_info.origin_room_id))
-    cecho(string.format("  <white>Area:<reset>     %s\n\n", origin_area_name))
-    cecho("<yellow>Destination:<reset>\n")
-    cecho(string.format("  <white>Query:<reset>    %s\n", destination))
-    cecho(string.format(
-        "  <white>Room:<reset>     %s <dim_grey>(ID: %d)<reset>\n", dest_room_name, route_info.dest_room_id))
-    cecho(string.format("  <white>Area:<reset>     %s\n\n", dest_area_name))
-    cecho("<yellow>Route Statistics:<reset>\n")
-    cecho(string.format("  <white>Total Moves:<reset>  <green>%d<reset>\n", route_info.total_moves))
-    cecho(string.format(
-        "  <white>Space Moves:<reset>  <ansiCyan>%d<reset> <dim_grey>(GTU)<reset>\n", route_info.space_moves))
-    cecho(string.format("  <white>Ground Moves:<reset> %d\n", route_info.total_moves - route_info.space_moves))
+    cecho(string.format("<yellow>From:<reset> %s\n", describeRoom(plan.fromRoom)))
+    cecho(string.format("<yellow>To:<reset>   %s <dim_grey>(%s)<reset>\n\n", describeRoom(plan.toRoom), destination))
+    if plan.mapped then
+        cecho(string.format("  <white>Total Moves:<reset>  <green>%d<reset>\n", plan.moves))
+        cecho(string.format("  <white>Space Moves:<reset>  <ansiCyan>%d<reset> <dim_grey>(GTU)<reset>\n",
+            plan.spaceMoves))
+        cecho(string.format("  <white>Ground Moves:<reset> %d\n", plan.moves - plan.spaceMoves))
+    else
+        cecho("<yellow>No mapped route yet. Navigation would:<reset>\n")
+        for i, leg in ipairs(plan.legs) do
+            cecho(string.format("  %d. %s\n", i, leg))
+        end
+    end
     cecho("\n<cyan>═══════════════════════════════════════════════════════════<reset>\n")
 end

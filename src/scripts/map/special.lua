@@ -235,9 +235,26 @@ function f2t_map_special_list(room_id)
             end
         end
     end
-    if not arrival_cmd and (not exits or next(exits) == nil) then
+    local holding = f2t_map_special_is_transit(room_id)
+    if holding then
+        cecho("\n<cyan>Holding room:<reset> walks wait here to be moved on\n")
+    end
+    if not arrival_cmd and not holding and (not exits or next(exits) == nil) then
         cecho("\n<dim_grey>No special behaviors configured for this room.<reset>\n")
     end
+end
+
+-- A room a ride holds the player in on the way (an airlock, a lift car): the
+-- game moves them on by itself, so walks wait here instead of calling it a wrong
+-- turn. Sol's are known from the game files; elsewhere the player marks them.
+function f2t_map_special_is_transit(room_id)
+    return room_id and roomExists(room_id) and getRoomUserData(room_id, "fed2_transit") == "true" or false
+end
+
+function f2t_map_special_set_transit(room_id, holding)
+    if not room_id or not roomExists(room_id) then return false end
+    setRoomUserData(room_id, "fed2_transit", holding and "true" or "")
+    return true
 end
 
 -- `map special ...`. Kept beside the special-exit functions it drives
@@ -316,52 +333,19 @@ function f2t_map_special_command(args)
             end
         end
 
-    elseif special_subcmd == "circuit" then
-        local circuit_rest = string.match(args, "^special%s+circuit%s*(.*)") or ""
+    elseif special_subcmd == "list" then
+        f2t_map_special_list(current_room)
 
-        if circuit_rest == "" or f2t_handle_help("map special circuit", circuit_rest) then
-            if circuit_rest == "" then f2t_show_registered_help("map special circuit") end
-            return
-        end
-
-        local circuit_subcmd = words[2]
-
-        if circuit_subcmd == "create" then
-            f2t_map_circuit_cmd_create(words[3])
-
-        elseif circuit_subcmd == "set" then
-            local value = string.match(rest, "^circuit%s+set%s+%S+%s+%S+%s+(.+)$")
-            f2t_map_circuit_cmd_set(words[3], words[4], value)
-
-        elseif circuit_subcmd == "stop" then
-            local stop_action = words[3]
-            if not stop_action then
-                cecho("\n<red>[map]<reset> Usage: map special circuit stop add <id> <name>\n")
-                return
-            end
-            if stop_action == "add" then
-                f2t_map_circuit_cmd_stop_add(words[4], words[5])
-            elseif stop_action == "set" then
-                local value = string.match(rest, "^circuit%s+stop%s+set%s+%S+%s+%S+%s+arrival_pattern%s+(.+)$")
-                f2t_map_circuit_cmd_stop_set(words[4], words[5], words[6], value)
-            else
-                cecho(string.format("\n<red>[map]<reset> Unknown stop command: %s\n", stop_action))
-            end
-
-        elseif circuit_subcmd == "connect" then
-            f2t_map_circuit_cmd_connect(words[3])
-
-        elseif circuit_subcmd == "list" then
-            f2t_map_circuit_cmd_list()
-
-        elseif circuit_subcmd == "show" then
-            f2t_map_circuit_cmd_show(words[3])
-
-        elseif circuit_subcmd == "delete" then
-            f2t_map_circuit_cmd_delete(words[3])
-
+    elseif special_subcmd == "transit" then
+        local transit_rest = string.match(rest, "^transit%s*(.*)$") or ""
+        if f2t_handle_help("map special transit", transit_rest) then return end
+        local clearing = string.lower(transit_rest) == "off"
+        f2t_map_special_set_transit(current_room, not clearing)
+        if clearing then
+            cecho("\n<green>[map]<reset> No longer a holding room\n")
         else
-            cecho(string.format("\n<red>[map]<reset> Unknown circuit command: %s\n", circuit_subcmd))
+            cecho(string.format("\n<green>[map]<reset> <white>%s<reset> marked as a holding room: " ..
+                "walks wait here for the ride to move them on\n", getRoomName(current_room) or "This room"))
         end
 
     else
