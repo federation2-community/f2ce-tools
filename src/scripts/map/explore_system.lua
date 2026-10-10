@@ -408,6 +408,7 @@ function f2t_map_explore_system_space_complete()
                     planet.orbit_room_id)
             if all_flags_found then
                 already_explored = already_explored + 1
+                f2t_map_explore_mark_planet_explored(planet_area_id, "brief")
             else
                 table.insert(planets_to_explore, planet)
             end

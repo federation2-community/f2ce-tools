@@ -321,6 +321,9 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         end
         f2t_map_explore_brief_check_room_flags(current_room)
         if F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count == 0 and not F2T_MAP_EXPLORE_STATE.target_room_name then
+            -- Everything it looks for was already found (a planet with no exchange
+            -- has only its landing pad), and that is as explored as it gets
+            f2t_map_explore_mark_planet_explored(current_area, "brief")
             if on_complete_callback then on_complete_callback()
             else f2t_map_explore_complete()
             end
