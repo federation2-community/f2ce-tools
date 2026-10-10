@@ -42,6 +42,24 @@ end
 F2T_UI_FONT_SCALE = f2t_is_web() and 0.85 or 1.0
 function f2t_ui_pt(pt) return string.format("%gpt", pt * F2T_UI_FONT_SCALE) end
 
+-- The same scale as a bare number, for Geyser.Label:setFontSize().
+--
+-- Use this — NOT a font-size in the widget's stylesheet — to size a Geyser
+-- label. Geyser.Label:echo() re-wraps the message in `<div style="font-size:
+-- <self.fontSize>pt">` on every single update, and that inline style beats
+-- anything the stylesheet says. A font-size in setStyleSheet() on a label you
+-- ever :echo() to is silently dead code.
+function f2t_ui_fs(pt) return math.max(6, math.floor(pt * F2T_UI_FONT_SCALE + 0.5)) end
+
+-- ── Per-surface text size ─────────────────────────────────────────────────────
+-- Muxlet's Text Size % for a pane or tab (1.0 = 100%). Content that opts in
+-- sizes fonts, and the row/strip heights that hold text, through these.
+
+function f2tTextScale(target)
+    if target and Mux and Mux.textScale then return Mux.textScale(target) end
+    return 1
+end
+
 -- Pixel length (row height, strip height, px font size) at the surface's size.
 function f2tScaled(target, px) return math.floor(px * f2tTextScale(target) + 0.5) end
 
