@@ -15,6 +15,7 @@
 F2T_MAP_EXPLORE_JUST_RESET = F2T_MAP_EXPLORE_JUST_RESET or {}
 
 function f2t_map_explore_system_start(system_mode, system_name, on_complete_callback)
+    if not on_complete_callback and f2t_map_explore_refuse_if_busy() then return false end
     if not system_name or system_name == "" then
         -- Default to the system we are standing in, if detectable.
         system_name = f2t_get_current_system()

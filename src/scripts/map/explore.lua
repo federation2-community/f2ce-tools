@@ -135,6 +135,19 @@ function f2t_map_explore_init_area(area_id, mode_fields)
     return #F2T_MAP_EXPLORE_STATE.frontier_stack
 end
 
+-- A new explore started by the player (no completion callback) while one is
+-- running, or still travelling to where it starts, would take over the explorer
+-- and end the running one. Says so and returns true when it must be refused.
+function f2t_map_explore_refuse_if_busy()
+    local travelling = f2tNav.status()
+    if F2T_MAP_EXPLORE_STATE.active or (travelling and travelling.owner == "explore") then
+        cecho("\n<yellow>[map-explore]<reset> An exploration is already running. Use " ..
+            "<white>map explore stop<reset> first, or <white>map explore status<reset> to see it\n")
+        return true
+    end
+    return false
+end
+
 -- Get somewhere before a sweep starts. A standalone sweep travels as an
 -- ordinary trip before it claims its run, so navigation can explore its way
 -- there; a sweep nested in a bigger one travels inside that run.
@@ -195,6 +208,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         cecho(string.format("\n<red>[map-explore]<reset> Error: Invalid planet mode '%s'\n", tostring(planet_mode)))
         return false
     end
+    if not on_complete_callback and f2t_map_explore_refuse_if_busy() then return false end
 
     -- A planet sweep finishes once. Two ways of finishing can both fire (flags
     -- found, frontier exhausted), and a second would move a system sweep on twice.
@@ -546,9 +560,7 @@ function f2t_map_explore_start(mode, name)
     if mode ~= "full" and mode ~= "brief" then
         cecho(string.format("\n<red>[map-explore]<reset> Error: Invalid mode '%s'\n", mode)); return false
     end
-    if F2T_MAP_EXPLORE_STATE.active then
-        cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n"); return false
-    end
+    if f2t_map_explore_refuse_if_busy() then return false end
     if not gmcp or not gmcp.room or not gmcp.room.info then
         cecho("\n<red>[map-explore]<reset> Error: GMCP room data unavailable\n"); return false
     end

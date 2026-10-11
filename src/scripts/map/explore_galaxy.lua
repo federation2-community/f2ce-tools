@@ -39,10 +39,7 @@ function f2t_map_explore_syndicate_start(syndicate_name)
 end
 
 function f2t_map_explore_galaxy_start_with_filter(syndicate_filter)
-    if F2T_MAP_EXPLORE_STATE.active then
-        cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
-        return false
-    end
+    if f2t_map_explore_refuse_if_busy() then return false end
 
     if syndicate_filter then
         cecho(string.format(

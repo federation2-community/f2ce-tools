@@ -11,10 +11,7 @@ F2T_MAP_EXPLORE_CARTEL_CAPTURE = F2T_MAP_EXPLORE_CARTEL_CAPTURE or {
 }
 
 function f2t_map_explore_cartel_start(cartel_name, on_complete_callback)
-    if not on_complete_callback and F2T_MAP_EXPLORE_STATE.active then
-        cecho("\n<yellow>[map-explore]<reset> Exploration already in progress\n")
-        return false
-    end
+    if not on_complete_callback and f2t_map_explore_refuse_if_busy() then return false end
 
     if not cartel_name or cartel_name == "" then
         -- Default to the cartel we are standing in, if detectable.
