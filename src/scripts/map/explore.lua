@@ -1130,9 +1130,13 @@ function f2t_map_explore_on_room_change()
             end)
             return
         elseif F2T_MAP_EXPLORE_STATE.phase == "boarding_planet" then
+            -- Landed. The game resends the room when another player comes or goes,
+            -- so leave this phase now or each resend starts another sweep of the planet.
+            F2T_MAP_EXPLORE_STATE.phase = "landed"
             local planet_name = F2T_MAP_EXPLORE_STATE.brief_target_planet
+            local planet_index = F2T_MAP_EXPLORE_STATE.current_planet_index
             tempTimer(0.5, function()
-                if not F2T_MAP_EXPLORE_STATE.active then return end
+                if not F2T_MAP_EXPLORE_STATE.active or F2T_MAP_EXPLORE_STATE.phase ~= "landed" then return end
                 if F2T_MAP_EXPLORE_STATE.system_phase == "running_brief" then
                     local override_flags = nil
                     if F2T_MAP_EXPLORE_STATE.planets_without_exchange and
@@ -1141,6 +1145,8 @@ function f2t_map_explore_on_room_change()
                         cecho("  <yellow>Note:<reset> Planet has no exchange, skipping exchange flag\n")
                     end
                     f2t_map_explore_planet_start("brief", planet_name, function()
+                        -- Only the sweep of the planet still being explored moves on
+                        if F2T_MAP_EXPLORE_STATE.current_planet_index ~= planet_index then return end
                         f2t_map_explore_system_brief_next_planet()
                     end, override_flags)
                 end
