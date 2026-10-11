@@ -18,6 +18,7 @@
 -- board in fed2-community and never appear as a live console line, so there
 -- is nothing for a console capture to catch for those.
 local RANK_SHAPES = {
+    "^(%S+) has (promoted to Captain)!$",
     "^(%S+) has (promoted to Commander)!$",
     "^(%S+) has (earned membership in the Adventurer's Guild and become an? Adventurer)!$",
     "^(%S+) has (earned membership in the Adventurer's Guild and become an? Adventuress)!$",

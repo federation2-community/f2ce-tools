@@ -37,6 +37,8 @@ local function onVitals()
     lfs.mkdir(f2t_get_char_persistent_dir())
 
     if prev ~= name then
+        -- Each character keeps its own Events (capture) history.
+        if Mux and Mux.setCaptureHistoryScope then Mux.setCaptureHistoryScope(name:lower()) end
         raiseEvent("f2tCharacterChanged", name, prev)
     end
 

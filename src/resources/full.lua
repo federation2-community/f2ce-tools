@@ -309,17 +309,18 @@ Mux.registerWorkspace("f2ce-tools", {
                                         {
                                             enabled = true,
                                             gag = true,
-                                            mode = "substring",
+                                            mode = "regex",
                                             name = "SypnetReport",
-                                            pattern = "SPYNET REPORT: ",
+                                            pattern = "^SPYNET REPORT: .+ has (?:entered|left) .+\\.$",
                                             transformAction = "f2t.captureTransform.spynetReport"
                                         },
                                         {
+                                            attention = true,
                                             enabled = true,
                                             gag = true,
                                             mode = "regex",
                                             name = "Promotion",
-                                            pattern = "\\S+ has (?:promoted to Commander"
+                                            pattern = "^\\S+ has (?:promoted to (?:Captain|Commander)"
                                                 .. "|earned membership in the Adventurer's Guild and become "
                                                 .. "an? (?:Adventurer|Adventuress)"
                                                 .. "|joined the Galactic Trading Guild and become a Merchant"
@@ -329,11 +330,62 @@ Mux.registerWorkspace("f2ce-tools", {
                                                 .. "|been acclaimed as Founder of .+ in the .+ system"
                                                 .. "|promoted .+ in the .+ system to .+ level and gained the "
                                                 .. "rank of (?:Engineer|Mogul|Technocrat|Magnate)"
-                                                .. "|gained promotion to Gengineer)!",
+                                                .. "|gained promotion to Gengineer)!$",
                                             transformAction = "f2t.captureTransform.promotion"
+                                        },
+                                        {
+                                            attention = true,
+                                            enabled = true,
+                                            gag = true,
+                                            mode = "regex",
+                                            name = "Arrival",
+                                            pattern = "^\\S+ is a new arrival in Fed2 Community Edition!$"
+                                        },
+                                        {
+                                            attention = true,
+                                            enabled = true,
+                                            gag = true,
+                                            mode = "regex",
+                                            name = "Galaxy",
+                                            pattern = "^(?:The galaxy welcomes the .+ system, claimed by .+!"
+                                                .. "|A scintillating array of lights illuminates the sky overhead, "
+                                                .. "before gradually fading into the cosmic background radiation\\. "
+                                                .. "The galaxy cheers for its newest Plutocrat \\S+!"
+                                                .. "|The .+ system has just become the hub of the newly formed "
+                                                .. ".+ cartel!)$"
+                                        },
+                                        {
+                                            attention = true,
+                                            enabled = true,
+                                            gag = true,
+                                            mode = "regex",
+                                            name = "Mission",
+                                            pattern = "^(?:If you want to kick off a new round of .+, the mission "
+                                                .. "has now been reopened! Type DISPLAY MISSIONS to see how to "
+                                                .. "take part\\."
+                                                .. "|The galaxy-wide effort on mission: .+ has reached \\d+%! "
+                                                .. "Type DISPLAY MISSIONS to see how to take part\\."
+                                                .. "|Fedders across the galaxy have completed mission: .+! "
+                                                .. "Well done to all who took part\\.)$"
+                                        },
+                                        {
+                                            attention = true,
+                                            enabled = true,
+                                            gag = false,
+                                            mode = "regex",
+                                            name = "Announcement",
+                                            pattern = "^(?:Federation II (?:will be closing down for a short while "
+                                                .. "in (?:ten|six) minutes time|is about to close down for a "
+                                                .. "short while)\\."
+                                                .. "|Your comm unit crackles with a public service announcement "
+                                                .. "from \\S+, \".*\")$"
                                         }
                                     },
-                                    filter = ""
+                                    filter = "",
+                                    history = {
+                                        enabled = true,
+                                        key = "f2ce_events"
+                                    }
                                 },
                                 contentable = false,
                                 movable = true,
