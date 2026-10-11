@@ -10,7 +10,7 @@
 --- @return table Array of {type="deficit", commodity=string, target_planet=string, sell_planet=string}
 function f2t_po_hauling_find_deficits(planet_exchange_data)
     local deficits = {}
-    local threshold = tonumber(f2t_settings_get("hauling", "po_deficit_threshold")) or -525
+    local threshold = tonumber(f2t_settings_get("po", "haul_deficit_threshold")) or -525
 
     f2t_debug_log("[hauling/po-queue] Deficit threshold: %d", threshold)
 
@@ -45,7 +45,7 @@ end
 --- @return table Array of {type="excess", commodity=string, target_planet=string, buy_planet=string}
 function f2t_po_hauling_find_excesses(planet_exchange_data)
     local excesses = {}
-    local threshold = tonumber(f2t_settings_get("hauling", "po_excess_threshold")) or 20000
+    local threshold = tonumber(f2t_settings_get("po", "haul_excess_threshold")) or 20000
 
     f2t_debug_log("[hauling/po-queue] Excess threshold: %d", threshold)
 
@@ -144,8 +144,8 @@ end
 --- @return table|nil Chosen candidate
 --- @return number Tons to reserve against it
 local function pickDeficitSource(candidates, job, reserved)
-    local minSourceStock = tonumber(f2t_settings_get("hauling", "po_min_source_stock")) or 0
-    local preferOwned = f2t_settings_get("hauling", "po_prefer_owned_sources") and true or false
+    local minSourceStock = tonumber(f2t_settings_get("po", "haul_min_source_stock")) or 0
+    local preferOwned = f2t_settings_get("po", "haul_prefer_owned_sources") and true or false
     local tonsNeeded = job.lots * LOT_TONS
 
     table.sort(candidates, function(a, b)
@@ -264,7 +264,7 @@ function f2t_po_hauling_resolve_jobs(jobs, planet_exchange_data, callback)
         if job.type == "deficit" then
             -- Deficit: need a source (where to buy). Owned-first mode skips the
             -- price check when an owned planet can cover the job.
-            if f2t_settings_get("hauling", "po_prefer_owned_sources") then
+            if f2t_settings_get("po", "haul_prefer_owned_sources") then
                 local ownedCandidates = collectDeficitSources(job, planet_exchange_data, nil, nil)
                 local candidate, tons = pickDeficitSource(ownedCandidates, job, reserved)
                 if candidate and tons >= job.lots * LOT_TONS then

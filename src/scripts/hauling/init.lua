@@ -160,58 +160,93 @@ f2t_settings_register("hauling", "excluded_commodities", {
     default     = "",
 })
 
-f2t_settings_register("hauling", "po_deficit_threshold", {
-    label       = "PO deficit threshold",
-    description = "Stock level at or below which deficit hauling triggers",
+-- Planet Owner strategy tuning lives in the po namespace so it shows on the
+-- Planet Owner tab instead of to every rank on the Hauling tab.
+f2t_settings_register("po", "haul_deficit_threshold", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul deficit threshold",
+    description = "Planet hauling supplies a commodity once its stock is at or below this level",
     default     = -525,
     min = -525, max = -75,
 })
 
-f2t_settings_register("hauling", "po_excess_threshold", {
-    label       = "PO excess threshold",
-    description = "Stock level at or above which excess selling triggers",
+f2t_settings_register("po", "haul_excess_threshold", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul excess threshold",
+    description = "Planet hauling sells off a commodity once its stock is at or above this level",
     default     = 20000,
     min = 750, max = 20000,
 })
 
-f2t_settings_register("hauling", "po_prefer_owned_sources", {
-    label       = "Prefer owned sources",
-    description = "Source deficits from your own planets first; off = buy wherever is cheapest in the cartel",
+f2t_settings_register("po", "haul_prefer_owned_sources", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul from owned planets first",
+    description = "Planet hauling sources deficits from your own planets first; " ..
+        "off = buy wherever is cheapest in the cartel",
     default     = true,
 })
 
-f2t_settings_register("hauling", "po_min_source_stock", {
-    label       = "Min source stock (tons)",
-    description = "Skip deficit sources with fewer tons for sale than this (0 = any that can fill a lot)",
+f2t_settings_register("po", "haul_min_source_stock", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul min source stock (tons)",
+    description = "Planet hauling skips sources with fewer tons for sale than this (0 = any that can fill a lot)",
     default     = 0,
     min = 0, max = 20000,
 })
 
-f2t_settings_register("hauling", "po_max_resource_attempts", {
-    label       = "Max re-source attempts",
-    description = "Alternative sources to try when a deficit buy gets nothing before skipping the job",
+f2t_settings_register("po", "haul_max_resource_attempts", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul re-source attempts",
+    description = "Alternative sources planet hauling tries when a deficit buy gets nothing, before skipping the job",
     default     = 2,
     min = 0, max = 10,
 })
 
-f2t_settings_register("hauling", "po_max_sell_attempts", {
-    label       = "Max sell attempts",
-    description = "Maximum sell locations to try before jettisoning cargo",
+f2t_settings_register("po", "haul_max_sell_attempts", {
+    tab         = "F2CE-Tools/Planet Owner",
+    label       = "Haul sell attempts",
+    description = "Sell locations planet hauling tries before jettisoning excess cargo",
     default     = 3,
     min = 1, max = 10,
 })
 
--- The retired po_mode setting ("both"/"deficit") becomes hauling/mode, then is
--- dropped so it cannot shadow a later mode change.
-local function migratePoMode()
-    local stored = Mux and Mux.settings and Mux.settings._data and Mux.settings._data.hauling
-    if not (stored and stored.po_mode ~= nil) then return end
-    if stored.po_mode == "deficit" and stored.mode == nil
-        and not Mux.settings.set("hauling", "mode", "deficit") then
-        return
+local RELOCATED_PO_SETTINGS = {
+    po_deficit_threshold     = "haul_deficit_threshold",
+    po_excess_threshold      = "haul_excess_threshold",
+    po_prefer_owned_sources  = "haul_prefer_owned_sources",
+    po_min_source_stock      = "haul_min_source_stock",
+    po_max_resource_attempts = "haul_max_resource_attempts",
+    po_max_sell_attempts     = "haul_max_sell_attempts",
+}
+
+-- Retired hauling keys are carried over once, then dropped so they cannot
+-- shadow a later change: po_mode ("both"/"deficit") becomes hauling/mode, and
+-- the PO tuning keys move to the po namespace.
+local function migrateRetiredSettings()
+    local data = Mux and Mux.settings and Mux.settings._data
+    local stored = data and data.hauling
+    if not stored then return end
+    local changed = false
+
+    if stored.po_mode ~= nil then
+        if stored.po_mode == "deficit" and stored.mode == nil
+            and not Mux.settings.set("hauling", "mode", "deficit") then
+            return
+        end
+        stored.po_mode = nil
+        changed = true
     end
-    stored.po_mode = nil
-    Mux.settings.save()
+
+    for oldKey, newKey in pairs(RELOCATED_PO_SETTINGS) do
+        if stored[oldKey] ~= nil then
+            data.po = data.po or {}
+            if data.po[newKey] == nil then data.po[newKey] = stored[oldKey] end
+            stored[oldKey] = nil
+            changed = true
+        end
+    end
+
+    if changed then Mux.settings.save() end
 end
 
 -- Strip and status displays follow a mode change made from any surface.
@@ -224,11 +259,11 @@ local function hookModeSetting()
 end
 
 registerAnonymousEventHandler("muxletReady", function()
-    migratePoMode()
+    migrateRetiredSettings()
     hookModeSetting()
 end)
 if Mux and Mux._ready then
-    migratePoMode()
+    migrateRetiredSettings()
     hookModeSetting()
 end
 

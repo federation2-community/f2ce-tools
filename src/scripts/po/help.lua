@@ -9,7 +9,7 @@ f2t_register_help("po", {
         {cmd = "", desc = ""},
         {cmd = "po stockpile", desc = "Plan and apply exchange stock levels and spreads (po stockpile help)"},
         {cmd = "", desc = ""},
-        {cmd = "po settings", desc = "Manage po settings"}
+        {cmd = "po settings", desc = "Manage po settings (stockpile_* and planet hauling haul_*)"}
     },
     examples = {
         "po economy",

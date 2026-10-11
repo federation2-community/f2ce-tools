@@ -340,7 +340,7 @@ function f2t_hauling_phase_po_buy()
             cecho(string.format("\n<red>[hauling]<reset> Buy failed for %s: %s\n",
                 commodity, error_msg or "unknown error"))
 
-            local maxResourceAttempts = tonumber(f2t_settings_get("hauling", "po_max_resource_attempts")) or 2
+            local maxResourceAttempts = tonumber(f2t_settings_get("po", "haul_max_resource_attempts")) or 2
             if job.type == "deficit" and (job.resourceAttempts or 0) < maxResourceAttempts then
                 job.resourceAttempts = (job.resourceAttempts or 0) + 1
                 job.failedSources = job.failedSources or {}
@@ -582,7 +582,7 @@ end
 function f2t_hauling_po_find_next_sell()
     F2T_HAULING_STATE.po_sell_attempts = F2T_HAULING_STATE.po_sell_attempts + 1
 
-    local max_attempts = tonumber(f2t_settings_get("hauling", "po_max_sell_attempts")) or 3
+    local max_attempts = tonumber(f2t_settings_get("po", "haul_max_sell_attempts")) or 3
 
     if F2T_HAULING_STATE.po_sell_attempts > max_attempts then
         giveUpOnCargo(string.format("Tried %d sell locations", max_attempts))
