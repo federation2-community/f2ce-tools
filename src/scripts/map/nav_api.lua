@@ -58,9 +58,16 @@ local function ownsExplore(t)
 end
 
 local function engineMoving(t)
+    -- A sweep can take a moment to begin (a system sweep asks "di system" first).
+    -- Wait for it to start, but once it has, it is over the moment it stops,
+    -- whichever way it ends.
     if t.sweepStartedAt then
-        if exploreActive() or os.time() - t.sweepStartedAt < SWEEP_START_SECONDS then return true end
-        t.sweepStartedAt = nil
+        if exploreActive() then
+            t.sweepRunning = true
+            return true
+        end
+        if not t.sweepRunning and os.time() - t.sweepStartedAt < SWEEP_START_SECONDS then return true end
+        t.sweepStartedAt, t.sweepRunning = nil, nil
     end
     return F2T_SPEEDWALK_ACTIVE or F2T_SPEEDWALK_CUSTOMS_PENDING or ownsExplore(t)
 end
@@ -722,6 +729,7 @@ F2T_NAV_HANDLER_IDS = {
     -- The player stopped an exploration that was this trip's sweep: that stops the trip.
     registerAnonymousEventHandler("f2tExploreStopped", function(_, reason)
         local t = trip
+        if t and not t.exploreAtStart then t.sweepStartedAt, t.sweepRunning = nil, nil end
         if t and reason == nil and not t.exploreAtStart then
             trip = nil
             if F2T_SPEEDWALK_ACTIVE then f2t_map_speedwalk_stop() end
