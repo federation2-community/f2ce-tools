@@ -1152,21 +1152,6 @@ function f2t_map_explore_on_room_change()
                 end
             end)
             return
-        elseif F2T_MAP_EXPLORE_STATE.phase == "planet_complete" then
-            local planet = F2T_MAP_EXPLORE_STATE.planet_list[F2T_MAP_EXPLORE_STATE.current_planet_index]
-            if planet then cecho(string.format("  <green>Exchange found on %s!<reset>\n", planet.name)) end
-            local sys_stats = F2T_MAP_EXPLORE_STATE.system_stats
-            sys_stats.planets_explored = sys_stats.planets_explored + 1
-            sys_stats.exchanges_found  = sys_stats.exchanges_found  + 1
-            if F2T_MAP_EXPLORE_STATE.mode == "cartel" or F2T_MAP_EXPLORE_STATE.mode == "galaxy" then
-                local c_stats = F2T_MAP_EXPLORE_STATE.cartel_stats
-                c_stats.total_planets   = c_stats.total_planets   + 1
-                c_stats.total_exchanges = c_stats.total_exchanges + 1
-            end
-            tempTimer(0.5, function()
-                if F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_system_next_planet() end
-            end)
-            return
         end
     end
 

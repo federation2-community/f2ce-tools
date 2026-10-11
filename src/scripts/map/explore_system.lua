@@ -551,15 +551,6 @@ function f2t_map_explore_system_space_complete()
     continueCompletion()
 end
 
-function f2t_map_explore_system_next_planet()
-    if not F2T_MAP_EXPLORE_STATE.active then return end
-    local mode = F2T_MAP_EXPLORE_STATE.mode
-    if mode ~= "system" and mode ~= "cartel" and mode ~= "galaxy" then return end
-    -- Brief workflow is the only supported per-planet path; route back into it.
-    F2T_MAP_EXPLORE_STATE.system_phase = "running_brief"
-    f2t_map_explore_system_brief_next_planet()
-end
-
 function f2t_map_explore_system_board_planet()
     if not F2T_MAP_EXPLORE_STATE.active then return end
     if F2T_MAP_EXPLORE_STATE.phase ~= "at_orbit" then return end
