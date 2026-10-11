@@ -20,14 +20,26 @@ function f2t_map_explore_is_exit_valid(room_id, direction)
     return true
 end
 
+-- How many rooms out from where a brief sweep started (its landing pad) it
+-- finishes first. What a brief sweep looks for, the exchange above all, is
+-- nearly always within a few rooms of the pad.
+local BRIEF_RING = 3
+
+-- Exits in the order a sweep takes them. A full sweep visits everything, so
+-- it always takes the nearest exit from where the player stands, which keeps
+-- it from crossing back and forth. A brief sweep first finishes the ring
+-- around its start, nearest to the start first, and only then goes down
+-- branches nearest-first: a long branch it would otherwise follow to the end
+-- usually holds nothing it is looking for, and can be a way in with no way back.
 function f2t_map_explore_recompute_frontier()
     local area_id      = F2T_MAP_EXPLORE_STATE.starting_area_id
     local current_room = F2T_MAP_CURRENT_ROOM_ID
     if not area_id or not current_room then return end
 
-    -- Nearest from where the player stands, so the sweep works outward from
-    -- here instead of crossing the planet and back between neighbouring exits
     local reference_room = current_room
+    local start_room = F2T_MAP_EXPLORE_STATE.brief_flags_remaining_count ~= nil
+        and F2T_MAP_EXPLORE_STATE.starting_room_id or nil
+    if start_room and not roomExists(start_room) then start_room = nil end
 
     local candidates = {}
     for _, room_id in ipairs(f2t_map_area_room_list(area_id)) do
@@ -44,8 +56,16 @@ function f2t_map_explore_recompute_frontier()
         if #directions > 0 then
             local success, weight = getPath(reference_room, room_id)
             if success then
+                -- An exit from a room fewer than BRIEF_RING steps from the start
+                -- leads at most BRIEF_RING rooms out
+                local ring
+                if start_room then
+                    local fromStart, startWeight = getPath(start_room, room_id)
+                    if room_id == start_room then fromStart, startWeight = true, 0 end
+                    if fromStart and startWeight < BRIEF_RING then ring = startWeight end
+                end
                 for _, direction in ipairs(directions) do
-                    table.insert(candidates, {room_id=room_id, direction=direction, distance=weight})
+                    table.insert(candidates, {room_id=room_id, direction=direction, distance=weight, ring=ring})
                 end
             end
         end
@@ -60,6 +80,9 @@ function f2t_map_explore_recompute_frontier()
         for i, dir in ipairs({"e","n","sw","w","s","ne","nw","se","in","u","d","out"}) do rank[dir] = i end
     end
     table.sort(candidates, function(a, b)
+        -- The ring around a brief sweep's start comes first, nearest the start first
+        if (a.ring ~= nil) ~= (b.ring ~= nil) then return a.ring ~= nil end
+        if a.ring and a.ring ~= b.ring then return a.ring < b.ring end
         if a.distance ~= b.distance then return a.distance < b.distance end
         return (rank[a.direction] or 99) < (rank[b.direction] or 99)
     end)
