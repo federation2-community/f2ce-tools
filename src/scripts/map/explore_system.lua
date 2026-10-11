@@ -258,6 +258,9 @@ function f2t_map_explore_system_start_with_planets(system_mode, system_name, exp
         F2T_MAP_EXPLORE_STATE.starting_room_id = current_room
         F2T_MAP_EXPLORE_STATE.starting_area_id = space_area_id
         F2T_MAP_EXPLORE_STATE.visited_rooms = {[current_room] = true}
+        F2T_MAP_EXPLORE_STATE.seen_rooms = {[current_room] = true}
+        F2T_MAP_EXPLORE_STATE.exits_refreshed = nil
+        F2T_MAP_EXPLORE_STATE.refresh_announced = nil
         F2T_MAP_EXPLORE_STATE.frontier_stack = {}
     else
         f2t_map_explore_register_safety_hooks()
@@ -329,9 +332,70 @@ function f2t_map_explore_system_check_room_for_planets(room_id)
     end
 end
 
+-- A room the map already had shows only the exits it had when it was mapped. A
+-- planet added since hangs off an exit no stub records, so with expected planets
+-- still missing, revisit every space room this sweep hasn't been in, nearest
+-- first: arriving refreshes its exits, and any new one is explored as usual.
+local function nextStaleRoom()
+    local state = F2T_MAP_EXPLORE_STATE
+    local here = F2T_MAP_CURRENT_ROOM_ID
+    local seen = state.seen_rooms or {}
+    local best, bestCost
+    for _, room_id in ipairs(f2t_map_area_room_list(state.space_area_id)) do
+        if not seen[room_id] and room_id ~= here and not roomLocked(room_id) then
+            local ok, cost = getPath(here, room_id)
+            if ok and (not bestCost or cost < bestCost) then best, bestCost = room_id, cost end
+        end
+    end
+    return best
+end
+
+function f2t_map_explore_system_refresh_step()
+    local state = F2T_MAP_EXPLORE_STATE
+    if not state.active then return end
+    if (state.expected_planets_remaining or 0) == 0 then
+        state.exits_refreshed = true
+        f2t_map_explore_system_space_complete()
+        return
+    end
+
+    -- The room just reached showed an exit the map didn't have: explore it
+    f2t_map_explore_recompute_frontier()
+    if #state.frontier_stack > 0 then
+        state.phase = "navigating"
+        f2t_map_explore_next_step()
+        return
+    end
+
+    local room = nextStaleRoom()
+    if not room then
+        state.exits_refreshed = true
+        f2t_map_explore_system_space_complete()
+        return
+    end
+    -- Counted as seen now, so a walk that fails moves on instead of retrying it
+    state.seen_rooms[room] = true
+    state.phase = "refreshing_exits"
+    if not f2t_map_walk_room(room) then
+        tempTimer(0, f2t_map_explore_system_refresh_step)
+    end
+end
+
 function f2t_map_explore_system_space_complete()
     local space_area_id = F2T_MAP_EXPLORE_STATE.space_area_id
     local planets = {}
+
+    if F2T_MAP_EXPLORE_STATE.system_mode == "brief" and not F2T_MAP_EXPLORE_STATE.exits_refreshed
+        and (F2T_MAP_EXPLORE_STATE.expected_planets_remaining or 0) > 0 then
+        if not F2T_MAP_EXPLORE_STATE.refresh_announced then
+            F2T_MAP_EXPLORE_STATE.refresh_announced = true
+            cecho(string.format("\n<cyan>[map-explore]<reset> %d expected planet(s) not found yet - revisiting " ..
+                "mapped rooms for exits added since they were mapped\n",
+                F2T_MAP_EXPLORE_STATE.expected_planets_remaining))
+        end
+        f2t_map_explore_system_refresh_step()
+        return
+    end
 
     -- Clean up whatever this sweep just proved stale before doing anything
     -- else with the area: a system rebuild (Dyson Sphere, etc.) can leave old

@@ -61,6 +61,13 @@ function f2t_map_handle_gmcp_room()
 
     if not moved then return end
 
+    -- Every room an exploration passes through has its exits refreshed by
+    -- arriving, walked through or not; a system sweep revisits only the rest
+    local exploreState = F2T_MAP_EXPLORE_STATE
+    if exploreState and exploreState.active and exploreState.seen_rooms then
+        exploreState.seen_rooms[room_id] = true
+    end
+
     if F2T_MAP_PENDING_SPECIAL_EXIT then
         f2t_map_special_exit_discovery_complete(room_id)
     end

@@ -11,7 +11,8 @@ local function engineFields()
         paused_reason = nil, paused_destination = nil,
         phase = nil, planet_mode = nil,
         starting_room_id = nil, starting_area_id = nil,
-        visited_rooms = {}, frontier_stack = {}, planned_exit = nil,
+        visited_rooms = {}, seen_rooms = {}, frontier_stack = {}, planned_exit = nil,
+        exits_refreshed = nil, refresh_announced = nil,
         suspected_special_exits = {}, temp_locked_exits = {}, escape_state = nil,
         refuel_state = nil, refuel_declined = nil, refuel_detours = 0,
         stop_when = nil, stop_reason = nil, on_stop_early = nil,
@@ -123,6 +124,7 @@ function f2t_map_explore_init_area(area_id, mode_fields)
     state.starting_room_id = current_room
     state.starting_area_id = area_id
     state.visited_rooms = {[current_room] = true}
+    state.seen_rooms = {[current_room] = true}
     state.stats.rooms_discovered = 1
     state.stop_when = stopWhen
     state.stop_reason = stopReason
@@ -303,6 +305,7 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         F2T_MAP_EXPLORE_STATE.starting_room_id = current_room
         F2T_MAP_EXPLORE_STATE.starting_area_id = current_area
         F2T_MAP_EXPLORE_STATE.visited_rooms = {[current_room]=true}
+        F2T_MAP_EXPLORE_STATE.seen_rooms = {[current_room]=true}
         F2T_MAP_EXPLORE_STATE.frontier_stack = {}
         F2T_MAP_EXPLORE_STATE.planned_exit = nil
         for k, v in pairs(brief_fields) do F2T_MAP_EXPLORE_STATE[k] = v end
@@ -1010,9 +1013,10 @@ function f2t_map_explore_next_step()
     elseif phase == "discovering_special" then
         F2T_MAP_EXPLORE_STATE.phase = "navigating"
         f2t_map_explore_next_step()
-    -- system-specific phases (navigating_to_orbit, finding_exchange,
-    -- planet_complete, finding_flags, navigating_to_flag) are handled in
-    -- on_room_change
+    -- Other system phases (navigating_to_orbit, boarding_planet) are driven by
+    -- on_room_change; a refresh walk that failed lands here instead
+    elseif phase == "refreshing_exits" then
+        f2t_map_explore_system_refresh_step()
     elseif phase == "returning" then
         f2t_map_explore_return_to_start()
     end
@@ -1128,6 +1132,17 @@ function f2t_map_explore_on_room_change()
         if F2T_MAP_EXPLORE_STATE.phase == "navigating" and not F2T_MAP_EXPLORE_STATE.planned_exit then
             f2t_map_explore_recompute_frontier()
         end
+    end
+
+    -- A refresh walk arrived; the room's exits are current now
+    if F2T_MAP_EXPLORE_STATE.phase == "refreshing_exits" then
+        F2T_MAP_EXPLORE_STATE.phase = "refresh_arrived"
+        tempTimer(0.3, function()
+            if F2T_MAP_EXPLORE_STATE.active and F2T_MAP_EXPLORE_STATE.phase == "refresh_arrived" then
+                f2t_map_explore_system_refresh_step()
+            end
+        end)
+        return
     end
 
     -- System/Cartel phase transitions
