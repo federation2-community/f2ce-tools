@@ -196,6 +196,17 @@ function f2t_map_explore_planet_start(planet_mode, planet_name, on_complete_call
         return false
     end
 
+    -- A planet sweep finishes once. Two ways of finishing can both fire (flags
+    -- found, frontier exhausted), and a second would move a system sweep on twice.
+    if on_complete_callback then
+        local finish, finished = on_complete_callback, false
+        on_complete_callback = function(...)
+            if finished then return end
+            finished = true
+            return finish(...)
+        end
+    end
+
     -- A named target we aren't already standing on has to be reached first -
     -- otherwise this would silently explore wherever we happen to be instead.
     if planet_name and planet_name ~= "" then
@@ -378,8 +389,15 @@ function f2t_map_explore_brief_check_room_flags(room_id)
                             c_stats.total_exchanges = c_stats.total_exchanges + 1
                         end
                     end
+                    -- Only for this planet's sweep: a system sweep may have moved on
+                    -- to the next planet before the timer fires
+                    local planetFlagsFound = F2T_MAP_EXPLORE_STATE.brief_flags_found
                     tempTimer(0.5, function()
-                        if not F2T_MAP_EXPLORE_STATE.active then return end
+                        local state = F2T_MAP_EXPLORE_STATE
+                        if not state.active or state.brief_flags_found ~= planetFlagsFound
+                            or state.phase ~= "navigating" then
+                            return
+                        end
                         f2t_map_explore_brief_return_to_shuttlepad()
                     end)
                     return
