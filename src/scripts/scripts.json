@@ -8,6 +8,7 @@
   {"name": "connection"},
   {"name": "char"},
   {"name": "player_db"},
+  {"name": "traffic"},
   {"name": "rank"},
   {"name": "control"},
   {"name": "status"},
