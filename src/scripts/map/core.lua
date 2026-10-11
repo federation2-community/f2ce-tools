@@ -19,10 +19,12 @@ function f2t_map_handle_gmcp_room()
 
     local room_id    = f2t_map_get_room_by_hash(hash)
     local is_new_room = (room_id == nil)
+    -- The game resends the room when another player comes or goes (and the map
+    -- pane re-runs this on a rebuild). Only an actual arrival moves anything on.
+    local moved = is_new_room or room_id ~= F2T_MAP_CURRENT_ROOM_ID
 
     -- Ignore same-room GMCP events during movement wait
-    if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE and
-       room_id and room_id == F2T_MAP_CURRENT_ROOM_ID then
+    if F2T_SPEEDWALK_ACTIVE and F2T_SPEEDWALK_WAITING_FOR_MOVE and not moved then
         return
     end
 
@@ -56,6 +58,8 @@ function f2t_map_handle_gmcp_room()
     if type(f2t_map_info_snap_to_current) == "function" then
         f2t_map_info_snap_to_current()
     end
+
+    if not moved then return end
 
     if F2T_MAP_PENDING_SPECIAL_EXIT then
         f2t_map_special_exit_discovery_complete(room_id)

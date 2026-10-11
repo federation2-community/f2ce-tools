@@ -37,6 +37,12 @@ function f2t_refuel_on_room_change()
 
     local room_info = gmcp.room and gmcp.room.info
     if not room_info or not room_info.flags then return end
+    -- Arrivals only: the game resends the room as other players come and go,
+    -- and buying again before the fuel reading updates would buy twice
+    local roomKey = string.format("%s.%s.%s", tostring(room_info.system), tostring(room_info.area),
+        tostring(room_info.num))
+    if roomKey == F2T_REFUEL_LAST_ROOM then return end
+    F2T_REFUEL_LAST_ROOM = roomKey
     if not f2t_has_value(room_info.flags, "shuttlepad") then return end
 
     f2t_debug_log("[refuel] At shuttlepad, checking fuel level")

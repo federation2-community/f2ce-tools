@@ -26,15 +26,19 @@ if saved_destination then
 
         tempTimer(1.0, function()
             F2T_SPEEDWALK_CUSTOMS_PENDING = false
+            -- The exploration that owned the walk carries on from where customs left it
+            local function resumeExplore()
+                if F2T_MAP_EXPLORE_STATE and F2T_MAP_EXPLORE_STATE.active then f2t_map_explore_on_room_change() end
+            end
             local current_room = F2T_MAP_CURRENT_ROOM_ID
             if not current_room then
                 cecho("\n<yellow>[map]<reset> Cannot determine current location after customs\n")
-                raiseEvent("gmcp.room.info")
+                resumeExplore()
                 return
             end
             if current_room == saved_destination then
                 F2T_SPEEDWALK_LAST_RESULT = "completed"
-                raiseEvent("gmcp.room.info")
+                resumeExplore()
                 return
             end
             cecho("\n<yellow>[map]<reset> Resuming navigation after customs...\n")
