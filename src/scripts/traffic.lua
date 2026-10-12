@@ -41,6 +41,22 @@ f2t_settings_register("traffic", "console_style", {
     choices     = {"full", "condensed"},
 })
 
+f2t_settings_register("traffic", "arrival_seconds", {
+    label       = "Arrivals stay (seconds)",
+    description = "How long a new arrival stays highlighted at the top of Local Players before joining "
+               .. "everyone else",
+    default     = 15,
+    min = 5, max = 60,
+})
+
+f2t_settings_register("traffic", "departure_seconds", {
+    label       = "Departures stay (seconds)",
+    description = "How long someone who left stays under Just left in Local Players, along with their "
+               .. "crossed-out arrival if they were only passing through",
+    default     = 15,
+    min = 5, max = 60,
+})
+
 function f2tTrafficInPlayers()
     local showIn = f2t_settings_get("traffic", "show_in")
     return showIn == "players" or showIn == "both"

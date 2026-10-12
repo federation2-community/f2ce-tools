@@ -31,9 +31,15 @@ local LOG_ROW_H    = 18
 local LOG_SHOWN    = 10
 
 local FLASH_SECONDS   = 1.5
-local FRESH_SECONDS   = 20
-local ARRIVAL_SECONDS = 30   -- how long an arrival stays at the top
-local LINGER_SECONDS  = 25   -- how long a departure (and the arrival it cut short) stays
+-- How long an arrival stays at the top, and how long a departure (and the
+-- arrival it cut short) stays, from the Movement settings.
+local function arrivalSeconds()
+    return tonumber(f2t_settings_get("traffic", "arrival_seconds")) or 15
+end
+
+local function departureSeconds()
+    return tonumber(f2t_settings_get("traffic", "departure_seconds")) or 15
+end
 local PULSE_SECONDS  = 1.1
 
 local RC_DEFAULT = "#c8c8c8"
@@ -41,11 +47,9 @@ local RC_DEFAULT = "#c8c8c8"
 local NAME_CSS = [[
     QLabel {
         background: transparent; border: none;
-        font-weight: bold;
         font-family: "Consolas","Monaco",monospace;
         padding-left: 2px;
     }
-    QLabel::hover { color: white; }
 ]]
 
 local EYE_CSS = [[
@@ -114,6 +118,7 @@ end
 -- A row's expiresAt is when it moves section or disappears.
 local function trafficRows()
     local now, list = getEpoch(), {}
+    local arrivalFor, departureFor = arrivalSeconds(), departureSeconds()
     local arrivals    = F2T_TRAFFIC.arrivals or {}
     local departures  = F2T_TRAFFIC.departures or {}
     local present, shown = {}, {}
@@ -121,7 +126,7 @@ local function trafficRows()
     local function departureShown(key)
         local departure, arrival = departures[key], arrivals[key]
         return departure and (not arrival or departure.at > arrival.at)
-            and now - departure.at < LINGER_SECONDS
+            and now - departure.at < departureFor
     end
 
     for _, player in ipairs(roomPlayers() or {}) do
@@ -130,12 +135,12 @@ local function trafficRows()
 
     for key, arrival in pairs(arrivals) do
         local stale = departureShown(key)
-        if stale or (now - arrival.at < ARRIVAL_SECONDS and present[key]) then
+        if stale or (now - arrival.at < arrivalFor and present[key]) then
             local player = present[key]
             list[#list + 1] = {
                 section = 1, name = arrival.name, rank = player and player.rank or arrival.rank or "",
                 movement = arrival, state = stale and "stale" or "arriving",
-                expiresAt = stale and (departures[key].at + LINGER_SECONDS) or (arrival.at + ARRIVAL_SECONDS),
+                expiresAt = stale and (departures[key].at + departureFor) or (arrival.at + arrivalFor),
             }
             shown[key] = true
         end
@@ -155,7 +160,7 @@ local function trafficRows()
             list[#list + 1] = { section = 3, name = departure.name,
                                 rank = player and player.rank or departure.rank or "",
                                 movement = departure, state = "leaving",
-                                expiresAt = departure.at + LINGER_SECONDS }
+                                expiresAt = departure.at + departureFor }
         end
     end
 
@@ -174,6 +179,13 @@ end
 -- only runs when the list actually differs from what's on screen.
 local function playersFingerprint(gid)
     local parts = {}
+    local target = targets[gid]
+    if target and target._f2tCollapsed then
+        local players = roomPlayers()
+        local activity = trafficShown() and F2T_TRAFFIC.version ~= target._f2tCollapsedVersion
+        return table.concat({ "collapsed", tostring(trafficShown()), tostring(players and #players or 0),
+                              tostring(activity) }, "\2")
+    end
     if trafficShown() then
         parts[1] = "traffic"
         for i, row in ipairs(trafficRows()) do
@@ -203,17 +215,33 @@ local function clearRows(gid)
     animated[gid] = {}
 end
 
+-- Clicking the header collapses the pane to just this strip, and back. While
+-- collapsed, a dot marks comings and goings since it was collapsed.
 local function buildHeader(target, count, hdrH, labelPt)
     local header = Geyser.Label:new({
         name = target._gid .. "_lphdr", x = 0, y = 0, width = "100%", height = hdrH, fontSize = labelPt,
     }, target.content)
     header:setStyleSheet([[
-        background-color: rgba(15, 18, 30, 200);
-        border: none;
-        border-bottom: 1px solid rgba(70, 75, 110, 150);
+        QLabel {
+            background-color: rgba(15, 18, 30, 200);
+            border: none;
+            border-bottom: 1px solid rgba(70, 75, 110, 150);
+        }
+        QLabel::hover { background-color: rgba(30, 36, 58, 220); }
     ]])
+    local collapsed = target._f2tCollapsed
+    local activity = collapsed and trafficShown() and F2T_TRAFFIC.version ~= target._f2tCollapsedVersion
     header:echo(string.format(
-        "<font color='#8c96c3'>&nbsp;&nbsp;Local Players (%d)</font>", count))
+        "<font color='#8c96c3'>&nbsp;%s&nbsp;Local Players (%d)%s</font>",
+        collapsed and "▸" or "▾", count, activity and "&nbsp;●" or ""))
+    header:setToolTip(collapsed and "Show the player list" or "Collapse to this bar")
+    header:setCursor("PointingHand")
+    header:setClickCallback(function()
+        target._f2tCollapsed = not target._f2tCollapsed or nil
+        target._f2tCollapsedVersion = F2T_TRAFFIC.version
+        if f2tLocalPlayersRefresh then f2tLocalPlayersRefresh() end
+        if Mux and Mux._scheduleAutoSave then Mux._scheduleAutoSave() end
+    end)
     headers[target._gid] = header
 end
 
@@ -241,7 +269,10 @@ local function buildEye(target, i, rowBg, name, rowH, eyeW, labelPt)
     eyeLbl:setClickCallback(function() send("ex " .. name, false) end)
 end
 
-local function bindNameClick(nameLbl, name, rank)
+-- html is what the label shows; hovering re-echoes it bold so it keeps its color.
+local function bindNameClick(nameLbl, name, rank, html)
+    nameLbl:setOnEnter(function() nameLbl:echo("<b>" .. html .. "</b>") end)
+    nameLbl:setOnLeave(function() nameLbl:echo(html) end)
     nameLbl:setToolTip(rank ~= "" and (rank .. " " .. name) or name)
     nameLbl:setClickCallback(function()
         if f2tPlayerCardShowOrRaiseByName then f2tPlayerCardShowOrRaiseByName(name) end
@@ -279,8 +310,9 @@ local function renderCompact(target, hdrH, rowH, eyeW, labelPt)
             x = 6, y = 2, width = "-" .. (eyeW + 12), height = rowH - 4, fontSize = labelPt,
         }, rowBg)
         nameLbl:setStyleSheet(NAME_CSS)
-        nameLbl:echo(string.format("<font color='%s'>%s</font>", rc, name))
-        bindNameClick(nameLbl, name, rank)
+        local nameHtml = string.format("<font color='%s'>%s</font>", rc, name)
+        nameLbl:echo(nameHtml)
+        bindNameClick(nameLbl, name, rank, nameHtml)
 
         buildEye(target, i, rowBg, name, rowH, eyeW, labelPt)
         table.insert(rows[target._gid], rowBg)
@@ -298,7 +330,7 @@ local function paintRow(entry, now)
     local rowCss, chipColor, nameAlpha = "", CHIP_FAINT, 1
     local railCss = string.format("background-color: rgba(%s,0.45);", ARRIVE_RGB)
 
-    if state == "arriving" and age < FRESH_SECONDS then
+    if state == "arriving" and age < arrivalSeconds() then
         local flash = math.max(0, 1 - age / FLASH_SECONDS) * 0.42
         rowCss    = string.format("background-color: rgba(%s,%.3f);", ARRIVE_RGB, flash)
         railCss   = string.format("background-color: rgb(%s);", ARRIVE_RGB)
@@ -314,7 +346,7 @@ local function paintRow(entry, now)
             .. "stop:0 rgba(%s,0.30), stop:0.55 rgba(0,0,0,0));", LEAVE_RGB)
         railCss   = string.format("background-color: rgba(%s,%.3f);", LEAVE_RGB, pulse)
         chipColor = "rgb(" .. LEAVE_RGB .. ")"
-        nameAlpha = math.max(0.28, 1 - 0.72 * math.min(1, age / LINGER_SECONDS))
+        nameAlpha = math.max(0.28, 1 - 0.72 * math.min(1, age / departureSeconds()))
     end
 
     local r, g, b = hexToRgb(entry.nameColor)
@@ -409,8 +441,9 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
 
         local nameLbl = child("name", railW + modeW + 4, nameW)
         local gone = row.state == "leaving" or row.state == "stale"
-        nameLbl:echo(gone and ("<s>" .. row.name .. "</s>") or row.name, "nocolor")
-        bindNameClick(nameLbl, row.name, row.rank)
+        local nameHtml = gone and ("<s>" .. row.name .. "</s>") or row.name
+        nameLbl:echo(nameHtml, "nocolor")
+        bindNameClick(nameLbl, row.name, row.rank, nameHtml)
 
         local chipX = railW + modeW + nameW + 8
         local chip = child("chip", chipX, "-" .. (ageW + eyeW + 16))
@@ -512,11 +545,20 @@ local function render(target)
 
     local trafficWidth = f2tScaled(target, TRAFFIC_W)
     local isWide = target.floatW and target.floatW >= trafficWidth
+    local width
     if trafficShown() then
         if not isWide then target._f2tCompactWidth = target.floatW end
-        return renderTraffic(target, hdrH, rowH, eyeW, labelPt), trafficWidth
+        width = trafficWidth
+    else
+        width = isWide and (target._f2tCompactWidth or COMPACT_W) or nil
     end
-    local width = isWide and (target._f2tCompactWidth or COMPACT_W) or nil
+
+    if target._f2tCollapsed then
+        local players = roomPlayers()
+        buildHeader(target, players and #players or 0, hdrH, labelPt)
+        return hdrH, width
+    end
+    if trafficShown() then return renderTraffic(target, hdrH, rowH, eyeW, labelPt), width end
     return renderCompact(target, hdrH, rowH, eyeW, labelPt), width
 end
 
@@ -544,7 +586,7 @@ local function holdOpen(target)
     end
     local need = false
     if trafficShown() then
-        need = drawerOpen[target._gid] or false
+        need = (drawerOpen[target._gid] and not target._f2tCollapsed) or false
         for _, entry in ipairs(animated[target._gid] or {}) do
             if entry.state == "leaving" or entry.state == "stale" then need = true end
         end
@@ -658,8 +700,12 @@ local function buildLocalPlayersDef()
             drawerOpen[gid] = nil
         end,
         resize    = function(target) render(target) end,
-        serialize = function(_t) return {} end,
-        restore   = function(_t, _d) end,
+        serialize = function(target) return { collapsed = target._f2tCollapsed or nil } end,
+        restore   = function(target, data)
+            target._f2tCollapsed = data and data.collapsed or nil
+            rendered[target._gid] = nil
+            refreshAll()
+        end,
         onReveal  = function(target) render(target) end,
         onTextScale = function(target)
             local height, width = render(target)
@@ -697,6 +743,13 @@ registerAnonymousEventHandler("f2tTrafficChanged", refreshAndTick)
 local function hookTrafficSetting()
     if not (Mux and Mux.settings and Mux.settings.onChange) then return end
     Mux.settings.onChange("traffic", "show_in", refreshAndTick)
+    -- rows already drawn carry expiry times from the old setting
+    local function rebuild()
+        for gid in pairs(rendered) do rendered[gid] = nil end
+        refreshAndTick()
+    end
+    Mux.settings.onChange("traffic", "arrival_seconds", rebuild)
+    Mux.settings.onChange("traffic", "departure_seconds", rebuild)
 end
 
 hookTrafficSetting()
