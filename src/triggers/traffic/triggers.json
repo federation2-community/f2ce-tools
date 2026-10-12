@@ -3,11 +3,11 @@
     "name": "movement",
     "patterns": [
       {
-        "pattern": "^\\w+'s (?:space)?ship.* (?:has just entered the sector|has left the sector|has just limped into the sector|has fled the sector|appears from the hyperspace link|disappears into the hyperspace link)",
+        "pattern": "^\\w+'s (?:space)?ship\\b",
         "type": "regex"
       },
       {
-        "pattern": "^.*\\w has (?:just arrived|left|departed|arrived in|arrived with|boarded a shuttle)",
+        "pattern": "^.*\\w has (?:just arrived|left|departed|arrived|boarded)",
         "type": "regex"
       }
     ]

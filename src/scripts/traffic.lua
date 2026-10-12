@@ -279,25 +279,106 @@ end
 
 local SIGN_DECHO = { ["+"] = "<79,210,122>+", ["-"] = "<229,163,61>−" }
 local NAME_DEFAULT_DECHO = "<200,200,200>"
+local NAME_COLUMN = 15   -- longest character name the game allows
+local TEXT_COLUMN = 23   -- longest movement text ("shuttled down to planet")
 
+-- Fixed-width columns so names, movement text and ship names line up.
 function f2tTrafficConsoleLine(movement)
     local nameColor = movement.rank and f2t_rank_color_decho(movement.rank) or NAME_DEFAULT_DECHO
+    local text = movement.ship and string.format("%-" .. TEXT_COLUMN .. "s", movement.text) or movement.text
     local tail = movement.ship and ("<95,100,128> · " .. movement.ship) or ""
-    return string.format("%s %s %s%s<150,156,178> %s%s<r>",
-        SIGN_DECHO[movement.sign], movement.icon, nameColor, movement.name, movement.text, tail)
+    return string.format("%s %s %s%-" .. NAME_COLUMN .. "s<150,156,178> %s%s<r>",
+        SIGN_DECHO[movement.sign], movement.icon, nameColor, movement.name, text, tail)
 end
 
--- Body of the movement trigger: record the line, then keep, condense or remove it.
-function f2tTrafficHandleLine()
-    local movement = f2tTrafficParse(line)
-    if not movement then return end
+-- The game hard-wraps long lines at your console width, so a movement can
+-- arrive split over two or three lines. These are how one can begin.
+local SHIP_PHRASES = {
+    "has just entered the sector", "has left the sector", "has just limped into the sector",
+    "has fled the sector", "appears from the hyperspace link", "disappears into the hyperspace link",
+}
+local PERSON_PHRASES = {
+    "has just arrived", "has left", "has departed", "has arrived in", "has arrived with",
+    "has boarded a shuttle",
+}
+local MAX_SEGMENTS = 3
+
+local function startsPhrase(tail, phrases)
+    for _, phrase in ipairs(phrases) do
+        if phrase:sub(1, #tail) == tail or tail:sub(1, #phrase) == phrase then return true end
+    end
+    return false
+end
+
+-- True for the first part of a movement line the game wrapped.
+local function wrappedStart(text)
+    if text:match("[%.!]$") then return false end
+    if text:match("^%u%w*'s ship, [^,]*$") or text:match("^%u%w*'s spaceship, [^,]*$") then return true end
+    local tail = text:match("^%u%w*'s ship, .-, (.*)$") or text:match("^%u%w*'s spaceship, .-, (.*)$")
+        or text:match("^%u%w*'s ship (.*)$") or text:match("^%u%w*'s spaceship (.*)$")
+    if tail then return startsPhrase(tail, SHIP_PHRASES) end
+    tail = text:match("^.-%u%w* (has .*)$")
+    return tail ~= nil and startsPhrase(tail, PERSON_PHRASES)
+end
+
+local held = nil   -- { text, segments } while a wrapped movement line is being joined
+
+-- The game sometimes follows a movement line with an empty one; drop it.
+local function dropBlankAfter()
+    tempLineTrigger(1, 1, function()
+        if line:match("^%s*$") then deleteLine() end
+    end)
+end
+
+-- Records a complete movement, then keeps, condenses or removes the current
+-- line. A joined wrapped line is shown whole on this, its last, line.
+local function finish(movement, joinedText)
     f2tTrafficSyncRoom()
     f2tTrafficRecord(movement)
-
     if f2t_settings_get("traffic", "show_in") == "players" then
         deleteLine()
     elseif f2t_settings_get("traffic", "console_style") == "condensed" then
         dreplaceLine("main", f2tTrafficConsoleLine(movement))
+    elseif joinedText then
+        dreplaceLine("main", "<0,179,0>" .. joinedText .. "<r>")
+    end
+    dropBlankAfter()
+end
+
+local function continueWrapped()
+    tempLineTrigger(1, 1, function()
+        local joined = held.text .. " " .. line:gsub("%s+$", "")
+        F2T_TRAFFIC.consumedLine = line
+        local movement = f2tTrafficParse(joined)
+        if movement then
+            held = nil
+            finish(movement, joined)
+        elseif held.segments < MAX_SEGMENTS and not joined:match("[%.!]$") then
+            held.text, held.segments = joined, held.segments + 1
+            deleteLine()
+            continueWrapped()
+        else
+            -- not a movement after all: give back the text held from earlier lines
+            held = nil
+            dreplaceLine("main", joined)
+        end
+    end)
+end
+
+-- Body of the movement trigger.
+function f2tTrafficHandleLine()
+    if held or F2T_TRAFFIC.consumedLine == line then
+        F2T_TRAFFIC.consumedLine = nil
+        return
+    end
+    local text = line:gsub("%s+$", "")
+    local movement = f2tTrafficParse(text)
+    if movement then
+        finish(movement, nil)
+    elseif wrappedStart(text) then
+        held = { text = text, segments = 1 }
+        deleteLine()
+        continueWrapped()
     end
 end
 

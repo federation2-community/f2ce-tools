@@ -24,6 +24,7 @@ local RAIL_W       = 3
 local MODE_W       = 22
 local NAME_W       = 112
 local AGE_W        = 36
+local LEFT_DIVIDER_H = 16
 local DRAWER_H     = 22
 local LOG_ROW_H    = 18
 local LOG_SHOWN    = 10
@@ -102,9 +103,9 @@ local function hexToRgb(hex)
     return tonumber(hex:sub(2, 3), 16), tonumber(hex:sub(4, 5), 16), tonumber(hex:sub(6, 7), 16)
 end
 
--- The rows to draw with traffic shown: everyone GMCP lists, plus anyone whose
--- departure is still fading. Newest arrivals first; a departing row keeps its
--- place, and people already here when you arrived sit at the bottom.
+-- The rows to draw with traffic shown: everyone GMCP lists, newest arrivals
+-- first and people already here when you arrived after them, then anyone whose
+-- departure is still fading, newest first.
 local function trafficRows()
     local now, list, listed = getEpoch(), {}, {}
     local movements = F2T_TRAFFIC and F2T_TRAFFIC.movements or {}
@@ -123,8 +124,10 @@ local function trafficRows()
         end
     end
     table.sort(list, function(a, b)
-        local orderA = a.movement and a.movement.order or 0
-        local orderB = b.movement and b.movement.order or 0
+        local goneA, goneB = a.state == "leaving", b.state == "leaving"
+        if goneA ~= goneB then return goneB end
+        local orderA = a.movement and (goneA and a.movement.at or a.movement.order) or 0
+        local orderB = b.movement and (goneB and b.movement.at or b.movement.order) or 0
         if orderA ~= orderB then return orderA > orderB end
         return a.name < b.name
     end)
@@ -251,12 +254,14 @@ local function renderCompact(target, hdrH, rowH, eyeW, labelPt)
     return hdrH + count * rowH
 end
 
--- Repaints one traffic row for the current moment: the arrival flash and green
--- rail, the departure pulse and fade, and the age column.
+-- Repaints one traffic row for the current moment: the arrival flash, the
+-- steady green rail of someone still here, the departure pulse and fade, and
+-- the age column.
 local function paintRow(entry, now)
     local widgets, movement, state = entry.widgets, entry.movement, entry.state
     local age = movement and (now - movement.at) or nil
-    local rowCss, railCss, chipColor, nameAlpha = "", "background: transparent;", CHIP_FAINT, 1
+    local rowCss, chipColor, nameAlpha = "", CHIP_FAINT, 1
+    local railCss = string.format("background-color: rgba(%s,0.45);", ARRIVE_RGB)
 
     if state == "arriving" and age < FRESH_SECONDS then
         local flash = math.max(0, 1 - age / FLASH_SECONDS) * 0.42
@@ -309,6 +314,18 @@ local function logLineHtml(entry, now)
         entry.icon, nameColor, entry.name, CHIP_DIM, entry.text)
 end
 
+local function buildLeftDivider(target, y, labelPt)
+    local height = f2tScaled(target, LEFT_DIVIDER_H)
+    local divider = Geyser.Label:new({
+        name = target._gid .. "_lpleft", x = 0, y = y, width = "100%", height = height, fontSize = labelPt,
+    }, target.content)
+    divider:setStyleSheet(PLAIN_CSS .. " QLabel { background-color: rgba(0,0,0,0.35);"
+        .. " border-top: 1px solid rgba(" .. LEAVE_RGB .. ",0.35); }")
+    divider:echo(string.format("&nbsp;<font color='rgb(%s)'>Just left</font>", LEAVE_RGB))
+    table.insert(rows[target._gid], divider)
+    return height
+end
+
 local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
     local gid  = target._gid
     local list = trafficRows()
@@ -325,7 +342,12 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
 
     local railW, modeW, nameW, ageW = f2tScaled(target, RAIL_W), f2tScaled(target, MODE_W),
         f2tScaled(target, NAME_W), f2tScaled(target, AGE_W)
+    local dividerShown = false
     for i, row in ipairs(list) do
+        if row.state == "leaving" and not dividerShown then
+            dividerShown = true
+            y = y + buildLeftDivider(target, y, labelPt)
+        end
         local rowBg = buildRowBackground(target, i, y, rowH)
         local function child(suffix, x, width)
             local label = Geyser.Label:new({
@@ -341,7 +363,7 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
         mode:echo("<center>" .. (row.movement and row.movement.icon or "·") .. "</center>")
 
         local nameLbl = child("name", railW + modeW + 4, nameW)
-        nameLbl:echo(row.name, "nocolor")
+        nameLbl:echo(row.state == "leaving" and ("<s>" .. row.name .. "</s>") or row.name, "nocolor")
         bindNameClick(nameLbl, row.name, row.rank)
 
         local chipX = railW + modeW + nameW + 8
