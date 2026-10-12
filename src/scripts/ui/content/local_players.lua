@@ -30,9 +30,10 @@ local DRAWER_H     = 22
 local LOG_ROW_H    = 18
 local LOG_SHOWN    = 10
 
-local FLASH_SECONDS  = 1.5
-local FRESH_SECONDS  = 20
-local LINGER_SECONDS = 15
+local FLASH_SECONDS   = 1.5
+local FRESH_SECONDS   = 20
+local ARRIVAL_SECONDS = 30   -- how long an arrival stays at the top
+local LINGER_SECONDS  = 25   -- how long a departure (and the arrival it cut short) stays
 local PULSE_SECONDS  = 1.1
 
 local RC_DEFAULT = "#c8c8c8"
@@ -104,31 +105,64 @@ local function hexToRgb(hex)
     return tonumber(hex:sub(2, 3), 16), tonumber(hex:sub(4, 5), 16), tonumber(hex:sub(6, 7), 16)
 end
 
--- The rows to draw with traffic shown: everyone GMCP lists, newest arrivals
--- first and people already here when you arrived after them, then anyone whose
--- departure is still fading, newest first.
+-- The rows to draw with traffic shown, in three sections:
+--   1. recent arrivals, newest first. Someone who has since left stays here
+--      crossed out ("stale") for as long as their departure shows below.
+--   2. everyone else GMCP lists as here, latest arrival first, then people
+--      already here when you arrived.
+--   3. departures still fading, newest first. Coming back retires a departure.
+-- A row's expiresAt is when it moves section or disappears.
 local function trafficRows()
-    local now, list, listed = getEpoch(), {}, {}
-    local movements = F2T_TRAFFIC and F2T_TRAFFIC.movements or {}
-    for _, player in ipairs(roomPlayers() or {}) do
-        local name = player.name or "Unknown"
-        listed[name:lower()] = true
-        local movement = movements[name:lower()]
-        local state = "settled"
-        if movement then state = movement.sign == "+" and "arriving" or "leaving" end
-        list[#list + 1] = { name = name, rank = player.rank or "", movement = movement, state = state }
+    local now, list = getEpoch(), {}
+    local arrivals    = F2T_TRAFFIC.arrivals or {}
+    local departures  = F2T_TRAFFIC.departures or {}
+    local present, shown = {}, {}
+
+    local function departureShown(key)
+        local departure, arrival = departures[key], arrivals[key]
+        return departure and (not arrival or departure.at > arrival.at)
+            and now - departure.at < LINGER_SECONDS
     end
-    for key, movement in pairs(movements) do
-        if not listed[key] and movement.sign == "-" and now - movement.at < LINGER_SECONDS then
-            list[#list + 1] = { name = movement.name, rank = movement.rank or "", movement = movement,
-                                state = "leaving" }
+
+    for _, player in ipairs(roomPlayers() or {}) do
+        present[(player.name or ""):lower()] = player
+    end
+
+    for key, arrival in pairs(arrivals) do
+        local stale = departureShown(key)
+        if stale or (now - arrival.at < ARRIVAL_SECONDS and present[key]) then
+            local player = present[key]
+            list[#list + 1] = {
+                section = 1, name = arrival.name, rank = player and player.rank or arrival.rank or "",
+                movement = arrival, state = stale and "stale" or "arriving",
+                expiresAt = stale and (departures[key].at + LINGER_SECONDS) or (arrival.at + ARRIVAL_SECONDS),
+            }
+            shown[key] = true
         end
     end
+
+    for key, player in pairs(present) do
+        if not shown[key] and not departureShown(key) then
+            local arrival = arrivals[key]
+            list[#list + 1] = { section = 2, name = player.name or "Unknown", rank = player.rank or "",
+                                movement = arrival, state = arrival and "arriving" or "settled" }
+        end
+    end
+
+    for key, departure in pairs(departures) do
+        if departureShown(key) then
+            local player = present[key]
+            list[#list + 1] = { section = 3, name = departure.name,
+                                rank = player and player.rank or departure.rank or "",
+                                movement = departure, state = "leaving",
+                                expiresAt = departure.at + LINGER_SECONDS }
+        end
+    end
+
     table.sort(list, function(a, b)
-        local goneA, goneB = a.state == "leaving", b.state == "leaving"
-        if goneA ~= goneB then return goneB end
-        local orderA = a.movement and (goneA and a.movement.at or a.movement.order) or 0
-        local orderB = b.movement and (goneB and b.movement.at or b.movement.order) or 0
+        if a.section ~= b.section then return a.section < b.section end
+        local orderA = a.movement and (a.section == 2 and a.movement.order or a.movement.at) or 0
+        local orderB = b.movement and (b.section == 2 and b.movement.order or b.movement.at) or 0
         if orderA ~= orderB then return orderA > orderB end
         return a.name < b.name
     end)
@@ -143,7 +177,7 @@ local function playersFingerprint(gid)
     if trafficShown() then
         parts[1] = "traffic"
         for i, row in ipairs(trafficRows()) do
-            parts[i + 1] = row.name .. "\1" .. row.rank .. "\1" .. row.state .. "\1"
+            parts[i + 1] = row.section .. "\1" .. row.name .. "\1" .. row.rank .. "\1" .. row.state .. "\1"
                 .. tostring(row.movement and row.movement.at)
         end
         parts[#parts + 1] = tostring(#F2T_TRAFFIC.log) .. "\1" .. tostring(F2T_TRAFFIC.unseen > 0)
@@ -256,8 +290,8 @@ local function renderCompact(target, hdrH, rowH, eyeW, labelPt)
 end
 
 -- Repaints one traffic row for the current moment: the arrival flash, the
--- steady green rail of someone still here, the departure pulse and fade, and
--- the age column.
+-- steady green rail of someone still here, the faded arrival of someone who
+-- has since left, the departure pulse and fade, and the age column.
 local function paintRow(entry, now)
     local widgets, movement, state = entry.widgets, entry.movement, entry.state
     local age = movement and (now - movement.at) or nil
@@ -271,6 +305,9 @@ local function paintRow(entry, now)
         chipColor = "rgb(" .. ARRIVE_RGB .. ")"
     elseif state == "arriving" then
         chipColor = CHIP_DIM
+    elseif state == "stale" then
+        railCss   = string.format("background-color: rgba(%s,0.15);", ARRIVE_RGB)
+        nameAlpha = 0.45
     elseif state == "leaving" then
         local pulse = 0.15 + 0.85 * (0.5 + 0.5 * math.cos(2 * math.pi * age / PULSE_SECONDS))
         rowCss    = string.format("background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
@@ -339,9 +376,8 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
     local gid  = target._gid
     local list = trafficRows()
     local now  = getEpoch()
-    local here = 0
-    for _, row in ipairs(list) do if row.state ~= "leaving" then here = here + 1 end end
-    buildHeader(target, here, hdrH, labelPt)
+    local players = roomPlayers()
+    buildHeader(target, players and #players or 0, hdrH, labelPt)
 
     local y = hdrH
     if #list == 0 then
@@ -353,7 +389,7 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
         f2tScaled(target, NAME_W), f2tScaled(target, AGE_W)
     local dividerShown = false
     for i, row in ipairs(list) do
-        if row.state == "leaving" and not dividerShown then
+        if row.section == 3 and not dividerShown then
             dividerShown = true
             y = y + buildLeftDivider(target, y, labelPt)
         end
@@ -372,12 +408,14 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
         mode:echo("<center>" .. (row.movement and row.movement.icon or "·") .. "</center>")
 
         local nameLbl = child("name", railW + modeW + 4, nameW)
-        nameLbl:echo(row.state == "leaving" and ("<s>" .. row.name .. "</s>") or row.name, "nocolor")
+        local gone = row.state == "leaving" or row.state == "stale"
+        nameLbl:echo(gone and ("<s>" .. row.name .. "</s>") or row.name, "nocolor")
         bindNameClick(nameLbl, row.name, row.rank)
 
         local chipX = railW + modeW + nameW + 8
         local chip = child("chip", chipX, "-" .. (ageW + eyeW + 16))
-        chip:echo(row.movement and row.movement.text or "here when you arrived", "nocolor")
+        local chipText = row.movement and row.movement.text or "here when you arrived"
+        chip:echo(gone and ("<s>" .. chipText .. "</s>") or chipText, "nocolor")
         if row.movement and row.movement.ship then chip:setToolTip("Ship: " .. row.movement.ship) end
 
         local age = child("age", "-" .. (ageW + eyeW + 12), ageW)
@@ -386,6 +424,7 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
         local entry = {
             movement  = row.movement,
             state     = row.state,
+            expiresAt = row.expiresAt,
             nameColor = f2t_rank_color_hex(row.rank) or RC_DEFAULT,
             widgets   = { row = rowBg, rail = rail, name = nameLbl, chip = chip, age = age },
             painted   = {},
@@ -507,7 +546,7 @@ local function holdOpen(target)
     if trafficShown() then
         need = drawerOpen[target._gid] or false
         for _, entry in ipairs(animated[target._gid] or {}) do
-            if entry.state == "leaving" then need = true end
+            if entry.state == "leaving" or entry.state == "stale" then need = true end
         end
     end
     if need and target._conditionHidden and target._conditionShow and hiddenOnlyForEmptyRoom(target) then
@@ -562,8 +601,8 @@ end
 f2tLocalPlayersRefresh = refreshAll
 
 -- Drives the flash, pulse and fade, and ages. Runs fast only while something is
--- animating; a departure that has finished fading triggers the rebuild that
--- folds its row away.
+-- animating; a row reaching its expiresAt triggers the rebuild that moves it
+-- to its next section or folds it away.
 local function tick()
     tickTimer = nil
     if not trafficShown() or next(targets) == nil then return end
@@ -572,9 +611,9 @@ local function tick()
         for _, entry in ipairs(entries) do
             any = true
             local age = entry.movement and (now - entry.movement.at) or 0
-            if entry.state == "leaving" then
-                if age >= LINGER_SECONDS then expired = true else fast = true end
-            elseif entry.state == "arriving" and age < FLASH_SECONDS then
+            if entry.expiresAt and now >= entry.expiresAt then
+                expired = true
+            elseif entry.state == "leaving" or (entry.state == "arriving" and age < FLASH_SECONDS) then
                 fast = true
             end
             pcall(paintRow, entry, now)

@@ -2,16 +2,23 @@
 -- record of who came and went (read by the Local Players pane), and decides how
 -- each line shows in the main console (kept, condensed, or removed).
 
-F2T_TRAFFIC = F2T_TRAFFIC or {
-    roomKey   = nil,
-    movements = {},   -- lowercased name → latest movement in this room
-    departed  = {},   -- lowercased name → time they last left this room
-    log       = {},   -- newest first: movements and room-change dividers
-    version   = 0,
-    unseen    = 0,    -- log entries added since the drawer was last opened
-    history   = {},   -- oldest first: every movement this session, for the full log window
-    nextId    = 1,
+-- Kept across package reloads; fields are filled in individually so a reload
+-- that adds a field still finds it on the surviving table.
+F2T_TRAFFIC = F2T_TRAFFIC or {}
+local defaults = {
+    movements  = {},   -- lowercased name → latest movement in this room
+    departed   = {},   -- lowercased name → time they last left this room
+    arrivals   = {},   -- lowercased name → their last arrival in this room
+    departures = {},   -- lowercased name → their last departure from this room
+    log        = {},   -- newest first: movements and room-change dividers
+    version    = 0,
+    unseen     = 0,    -- log entries added since the drawer was last opened
+    history    = {},   -- oldest first: every movement this session, for the full log window
+    nextId     = 1,
 }
+for field, value in pairs(defaults) do
+    if F2T_TRAFFIC[field] == nil then F2T_TRAFFIC[field] = value end
+end
 
 local LOG_LIMIT     = 50
 local HISTORY_LIMIT = 2000
@@ -269,8 +276,10 @@ function f2tTrafficSyncRoom()
     if key == F2T_TRAFFIC.roomKey then return end
     local hadRoom = F2T_TRAFFIC.roomKey ~= nil
     F2T_TRAFFIC.roomKey   = key
-    F2T_TRAFFIC.movements = {}
-    F2T_TRAFFIC.departed  = {}
+    F2T_TRAFFIC.movements  = {}
+    F2T_TRAFFIC.departed   = {}
+    F2T_TRAFFIC.arrivals   = {}
+    F2T_TRAFFIC.departures = {}
     if hadRoom and #F2T_TRAFFIC.log > 0 and not F2T_TRAFFIC.log[1].roomBreak then
         table.insert(F2T_TRAFFIC.log, 1, { roomBreak = true, at = getEpoch(), text = info.name or info.area or "" })
     end
@@ -303,6 +312,11 @@ function f2tTrafficRecord(movement)
     movement.ship = movement.ship or (previous and previous.ship)
 
     F2T_TRAFFIC.movements[key] = movement
+    if movement.sign == "+" then
+        F2T_TRAFFIC.arrivals[key] = movement
+    else
+        F2T_TRAFFIC.departures[key] = movement
+    end
     pushLog({ at = now, sign = movement.sign, icon = movement.icon, name = movement.name,
               rank = movement.rank, text = movement.text })
     pushHistory(movement)
