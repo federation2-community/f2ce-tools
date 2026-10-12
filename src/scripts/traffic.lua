@@ -22,7 +22,7 @@ f2t_settings_register("traffic", "show_in", {
     label       = "Show comings and goings in",
     description = "Where other players arriving and leaving appear: the main console, the Local Players "
                .. "pane (with a flash on arrival, a fade on departure and a recent-traffic list), or both",
-    default     = "both",
+    default     = "players",
     choices     = {"console", "players", "both"},
 })
 
