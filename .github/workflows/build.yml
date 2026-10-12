@@ -21,6 +21,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.released.outputs.released }}
 
     steps:
       - name: Checkout
@@ -271,6 +273,11 @@ jobs:
           files: build/f2ce-tools.mpackage
           fail_on_unmatched_files: true
 
+      - name: Mark release published
+        id: released
+        if: steps.version.outputs.is_release == 'true'
+        run: echo "released=true" >> "$GITHUB_OUTPUT"
+
       - name: Submit to Mudlet package repository
         if: steps.version.outputs.is_release == 'true'
         env:
@@ -361,3 +368,26 @@ jobs:
               --title "Update f2ce-tools to v${VERSION}" \
               --body-file /tmp/pr_body.md
           fi
+
+  # Separate job so a failed MPR submission never holds back the web client.
+  deploy-web:
+    needs: build
+    if: ${{ !cancelled() && needs.build.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch f2ce-web-client update
+        env:
+          # Fine-grained PAT with Actions: read and write on
+          # federation2-community/f2ce-web-client (GITHUB_TOKEN cannot dispatch
+          # workflows in another repo).
+          GH_TOKEN: ${{ secrets.WEB_CLIENT_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::WEB_CLIENT_DISPATCH_TOKEN is not set; run f2ce-web-client's 'Update f2ce-tools' workflow by hand"
+            exit 1
+          fi
+          # No version passed: the web client takes the highest production
+          # release, so re-releasing an older line never rolls it back.
+          gh workflow run update-f2ce-tools.yml \
+            --repo federation2-community/f2ce-web-client --ref master
+          echo "Dispatched f2ce-web-client 'Update f2ce-tools'." >> "$GITHUB_STEP_SUMMARY"

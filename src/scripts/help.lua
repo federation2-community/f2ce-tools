@@ -79,7 +79,8 @@ f2t_register_help("f2t", {
         {cmd = "System Commands:", desc = ""},
         {cmd = "f2t", desc = "Show this help"},
         {cmd = "f2t status", desc = "Show component states"},
-        {cmd = "f2t version", desc = "Show package version and check for updates"},
+        {cmd = "f2t version", desc = f2t_is_web() and "Show package version"
+            or "Show package version and check for updates"},
         {cmd = "f2t credits", desc = "Show acknowledgments"},
         {cmd = "f2t debug on/off", desc = "Toggle debug logging"},
         {cmd = "f2t on/off", desc = "Start/stop the Muxlet UI (won't auto-start next login if off)"},
@@ -102,7 +103,8 @@ f2t_register_help("f2t", {
     },
     examples = {
         "f2t status              # Check which components are enabled",
-        "f2t version             # Show current package version and check for updates",
+        f2t_is_web() and "f2t version             # Show current package version"
+            or "f2t version             # Show current package version and check for updates",
         "f2t debug on            # Enable debug logging",
         "f2t settings            # View system settings",
         "map help                # Get help for map component"

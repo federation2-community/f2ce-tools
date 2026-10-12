@@ -104,7 +104,8 @@ elseif subcommand == "version" then
     local info = getPackageInfo("f2ce-tools")
     cecho(string.format(
         "\n<green>[f2ce-tools]<reset> Version: <white>%s<reset>\n", (info and info.version) or "unknown"))
-    if Mux and Mux.checkForUpdates then Mux.checkForUpdates(false) end
+    -- Web has no updateRepo, so this would poll Muxlet's own releases instead
+    if not f2t_is_web() and Mux and Mux.checkForUpdates then Mux.checkForUpdates(false) end
 
 elseif subcommand == "credits" then
     cecho("\n<green>[f2ce-tools]<reset> Acknowledgments\n\n")

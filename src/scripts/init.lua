@@ -221,6 +221,9 @@ local function bootHostOpts()
         -- releases and would offer to update away from the version we pin.
         checkForUpdates = false,
 
+        -- Web: the page owns installs, so no check, button or Update tab at all
+        updatesEnabled = not f2t_is_web(),
+
         -- Fed2 negotiates GMCP during the telnet handshake, long before the
         -- Login:/Password: prompts, so Muxlet's default "GMCP means ready" marks
         -- the game connected while it is still unusable and tears the Connecting
