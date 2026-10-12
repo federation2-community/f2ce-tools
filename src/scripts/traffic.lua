@@ -9,9 +9,12 @@ F2T_TRAFFIC = F2T_TRAFFIC or {
     log       = {},   -- newest first: movements and room-change dividers
     version   = 0,
     unseen    = 0,    -- log entries added since the drawer was last opened
+    history   = {},   -- oldest first: every movement this session, for the full log window
+    nextId    = 1,
 }
 
-local LOG_LIMIT   = 50
+local LOG_LIMIT     = 50
+local HISTORY_LIMIT = 2000
 local BACK_WINDOW = 600   -- seconds after leaving that a return reads as "back"
 
 f2t_settings_register("traffic", "show_in", {
@@ -176,34 +179,35 @@ end
 
 -- ── Wording ──────────────────────────────────────────────────────────────────
 
--- icon, arrival (+) or departure (-), and wording fresh / on a return
+-- icon, arrival (+) or departure (-), and how they travelled (route) when the
+-- direction alone doesn't say
 local KINDS = {
     walkIn      = { icon = "🚶", sign = "+" },
     walkOut     = { icon = "🚶", sign = "-" },
     shipIn      = { icon = "🚀", sign = "+" },
     shipOut     = { icon = "🚀", sign = "-" },
-    shuttleDown = { icon = "🛬", sign = "-", text = "shuttled down to planet" },
-    shuttleUp   = { icon = "🛫", sign = "+", text = "shuttled up from planet", back = "back up from planet" },
-    landed      = { icon = "🛬", sign = "+", text = "landed from orbit", back = "landed back from orbit" },
-    launched    = { icon = "🛫", sign = "-", text = "launched to orbit" },
-    teleportIn  = { icon = "✨", sign = "+", text = "teleported in", back = "teleported back in" },
-    teleportOut = { icon = "✨", sign = "-", text = "teleported out" },
-    linkIn      = { icon = "🌀", sign = "+", text = "came through the link", back = "back through the link" },
-    linkOut     = { icon = "🌀", sign = "-", text = "left through the link" },
-    limpIn      = { icon = "💨", sign = "+", text = "limped in", back = "limped back in" },
-    fleeOut     = { icon = "💨", sign = "-", text = "fled the sector" },
+    shuttleDown = { icon = "🛬", sign = "-", route = "by shuttle to planet" },
+    shuttleUp   = { icon = "🛫", sign = "+", route = "by shuttle from planet" },
+    landed      = { icon = "🛬", sign = "+", route = "by shuttle from orbit" },
+    launched    = { icon = "🛫", sign = "-", route = "by shuttle to orbit" },
+    teleportIn  = { icon = "✨", sign = "+", route = "by teleport" },
+    teleportOut = { icon = "✨", sign = "-", route = "by teleport" },
+    linkIn      = { icon = "🌀", sign = "+", route = "via hyperspace link" },
+    linkOut     = { icon = "🌀", sign = "-", route = "via hyperspace link" },
+    limpIn      = { icon = "💨", sign = "+", route = "limping in" },
+    fleeOut     = { icon = "💨", sign = "-", route = "fleeing" },
 }
 
+-- Splits a movement into a verb ("arrived", "back" or "left") and where or how
+-- ("from S", "up", "via hyperspace link"; "" when the game doesn't say).
 local function describe(movement, returning)
     local kind = KINDS[movement.kind]
-    if kind.text then return returning and kind.back or kind.text end
+    local verb = kind.sign == "-" and "left" or (returning and "back" or "arrived")
+    if kind.route then return verb, kind.route end
     local direction = movement.direction or ""
-    if kind.sign == "+" then
-        local verb = returning and "back" or "arrived"
-        return direction == "" and verb or (verb .. " from " .. direction)
-    end
-    return direction == "" and "left" or (TO_WORDS[direction .. "wards"] and ("left " .. direction)
-        or ("left to " .. direction))
+    if direction == "" then return verb, "" end
+    if kind.sign == "+" then return verb, "from " .. direction end
+    return verb, TO_WORDS[direction .. "wards"] and direction or ("to " .. direction)
 end
 
 function f2tTrafficRankOf(name)
@@ -217,10 +221,38 @@ end
 
 -- ── Record ───────────────────────────────────────────────────────────────────
 
+-- Each player has one entry per room: a new movement replaces their last one
+-- (a return retires the departure).
 local function pushLog(entry)
-    table.insert(F2T_TRAFFIC.log, 1, entry)
+    local log = F2T_TRAFFIC.log
+    for i = 1, #log do
+        if log[i].roomBreak then break end
+        if log[i].name == entry.name then
+            table.remove(log, i)
+            break
+        end
+    end
+    table.insert(log, 1, entry)
     while #F2T_TRAFFIC.log > LOG_LIMIT do table.remove(F2T_TRAFFIC.log) end
     F2T_TRAFFIC.unseen = F2T_TRAFFIC.unseen + 1
+end
+
+-- Appends to the full session history, starting a new room section when the
+-- movement happened somewhere other than the previous one.
+local function pushHistory(movement)
+    local history = F2T_TRAFFIC.history
+    local last = history[#history]
+    local info = gmcp and gmcp.room and gmcp.room.info or {}
+    if not last or last.roomKey ~= F2T_TRAFFIC.roomKey then
+        history[#history + 1] = { id = F2T_TRAFFIC.nextId, roomBreak = true, roomKey = F2T_TRAFFIC.roomKey,
+            at = movement.at, text = info.name or info.area or "" }
+        F2T_TRAFFIC.nextId = F2T_TRAFFIC.nextId + 1
+    end
+    history[#history + 1] = { id = F2T_TRAFFIC.nextId, roomKey = F2T_TRAFFIC.roomKey, at = movement.at,
+        sign = movement.sign, icon = movement.icon, name = movement.name, rank = movement.rank,
+        verb = movement.verb, route = movement.route, ship = movement.ship }
+    F2T_TRAFFIC.nextId = F2T_TRAFFIC.nextId + 1
+    while #history > HISTORY_LIMIT do table.remove(history, 1) end
 end
 
 local function changed()
@@ -258,37 +290,62 @@ function f2tTrafficRecord(movement)
     if kind.sign == "+" then
         local leftAt = F2T_TRAFFIC.departed[key]
         local returning = (previous and previous.sign == "-") or (leftAt and now - leftAt <= BACK_WINDOW)
-        movement.text = describe(movement, returning)
+        movement.verb, movement.route = describe(movement, returning)
         movement.order = now
         F2T_TRAFFIC.departed[key] = nil
     else
-        movement.text = describe(movement, false)
+        movement.verb, movement.route = describe(movement, false)
         -- a departing row keeps its place in the list while it fades
         movement.order = previous and previous.order or 0
         F2T_TRAFFIC.departed[key] = now
     end
+    movement.text = movement.route == "" and movement.verb or (movement.verb .. " " .. movement.route)
     movement.ship = movement.ship or (previous and previous.ship)
 
     F2T_TRAFFIC.movements[key] = movement
     pushLog({ at = now, sign = movement.sign, icon = movement.icon, name = movement.name,
               rank = movement.rank, text = movement.text })
+    pushHistory(movement)
     changed()
 end
 
 -- ── Main console ─────────────────────────────────────────────────────────────
 
-local SIGN_DECHO = { ["+"] = "<79,210,122>+", ["-"] = "<229,163,61>−" }
+-- ASCII signs: a wider glyph (e.g. U+2212 minus) knocks the columns after it out of line.
+local SIGN_DECHO = { ["+"] = "<79,210,122>+", ["-"] = "<229,163,61>-" }
 local NAME_DEFAULT_DECHO = "<200,200,200>"
-local NAME_COLUMN = 15   -- longest character name the game allows
-local TEXT_COLUMN = 23   -- longest movement text ("shuttled down to planet")
+local NAME_COLUMN  = 15   -- longest character name the game allows
+local VERB_COLUMN  = 7    -- "arrived"
+local ROUTE_COLUMN = 22   -- "by shuttle from planet"
 
--- Fixed-width columns so names, movement text and ship names line up.
-function f2tTrafficConsoleLine(movement)
+-- A movement as decho pieces in fixed-width columns (sign and icon, name,
+-- then verb, route and ship), so every line's columns line up. The name is
+-- separate so a caller can make it a link.
+function f2tTrafficLineParts(movement)
     local nameColor = movement.rank and f2t_rank_color_decho(movement.rank) or NAME_DEFAULT_DECHO
-    local text = movement.ship and string.format("%-" .. TEXT_COLUMN .. "s", movement.text) or movement.text
-    local tail = movement.ship and ("<95,100,128> · " .. movement.ship) or ""
-    return string.format("%s %s %s%-" .. NAME_COLUMN .. "s<150,156,178> %s%s<r>",
-        SIGN_DECHO[movement.sign], movement.icon, nameColor, movement.name, text, tail)
+    local route = movement.route
+    local tail = ""
+    if movement.ship then
+        route = string.format("%-" .. ROUTE_COLUMN .. "s", route)
+        tail = "<95,100,128>  " .. movement.ship
+    end
+    local verb = route == "" and movement.verb or string.format("%-" .. VERB_COLUMN .. "s", movement.verb)
+    return SIGN_DECHO[movement.sign] .. " " .. movement.icon .. " ",
+        nameColor .. string.format("%-" .. NAME_COLUMN .. "s", movement.name),
+        string.format("<150,156,178> %s %s%s<r>", verb, route, tail)
+end
+
+function f2tTrafficConsoleLine(movement)
+    local lead, name, rest = f2tTrafficLineParts(movement)
+    return lead .. name .. rest
+end
+
+-- Turns the first occurrence of the name in the current line into a link to
+-- their player card.
+local function linkName(name)
+    if selectString(name, 1) == -1 then return end
+    setLink(string.format("f2tPlayerCardShowOrRaiseByName(%q)", name), "Open " .. name .. "'s player card")
+    deselect()
 end
 
 -- The game hard-wraps long lines at your console width, so a movement can
@@ -337,11 +394,14 @@ local function finish(movement, joinedText)
     f2tTrafficRecord(movement)
     if f2t_settings_get("traffic", "show_in") == "players" then
         deleteLine()
+        dropBlankAfter()
+        return
     elseif f2t_settings_get("traffic", "console_style") == "condensed" then
         dreplaceLine("main", f2tTrafficConsoleLine(movement))
     elseif joinedText then
         dreplaceLine("main", "<0,179,0>" .. joinedText .. "<r>")
     end
+    linkName(movement.name)
     dropBlankAfter()
 end
 

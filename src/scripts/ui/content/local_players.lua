@@ -25,6 +25,7 @@ local MODE_W       = 22
 local NAME_W       = 112
 local AGE_W        = 36
 local LEFT_DIVIDER_H = 16
+local FULL_LOG_W   = 80
 local DRAWER_H     = 22
 local LOG_ROW_H    = 18
 local LOG_SHOWN    = 10
@@ -300,6 +301,14 @@ local function paintRow(entry, now)
     end
 end
 
+local LOG_AGE_COLUMN  = 4
+local LOG_NAME_COLUMN = 16
+
+-- Pads with non-breaking spaces so the recent-traffic columns line up.
+local function padded(text, width)
+    return text .. string.rep("&nbsp;", math.max(1, width - #text))
+end
+
 local function logLineHtml(entry, now)
     if entry.roomBreak then
         return string.format("<center><i><font color='%s'>you moved to %s</font></i></center>", CHIP_FAINT,
@@ -308,10 +317,10 @@ local function logLineHtml(entry, now)
     local signColor = entry.sign == "+" and ("rgb(" .. ARRIVE_RGB .. ")") or ("rgb(" .. LEAVE_RGB .. ")")
     local nameColor = f2t_rank_color_hex(entry.rank) or RC_DEFAULT
     return string.format(
-        "&nbsp;<font color='%s'>%s</font>&nbsp;<b><font color='%s'>%s</font></b>&nbsp;%s&nbsp;"
-            .. "<b><font color='%s'>%s</font></b>&nbsp;<font color='%s'>%s</font>",
-        CHIP_FAINT, ageText(now - entry.at), signColor, entry.sign == "+" and "+" or "−",
-        entry.icon, nameColor, entry.name, CHIP_DIM, entry.text)
+        "&nbsp;<font color='%s'>%s</font><b><font color='%s'>%s</font></b>&nbsp;%s&nbsp;"
+            .. "<b><font color='%s'>%s</font></b><font color='%s'>%s</font>",
+        CHIP_FAINT, padded(ageText(now - entry.at), LOG_AGE_COLUMN), signColor, entry.sign,
+        entry.icon, nameColor, padded(entry.name, LOG_NAME_COLUMN), CHIP_DIM, entry.text)
 end
 
 local function buildLeftDivider(target, y, labelPt)
@@ -406,6 +415,18 @@ local function renderTraffic(target, hdrH, rowH, eyeW, labelPt)
         f2tLocalPlayersRefresh()
     end)
     table.insert(rows[gid], drawer)
+
+    local fullLogW = f2tScaled(target, FULL_LOG_W)
+    local fullLog = Geyser.Label:new({
+        name = gid .. "_lpfulllog", x = "-" .. (fullLogW + 4), y = 0, width = fullLogW, height = drawerH,
+        fontSize = labelPt,
+    }, drawer)
+    fullLog:setStyleSheet(PLAIN_CSS .. " QLabel::hover { background-color: rgba(255,255,255,0.08); }")
+    fullLog:echo(string.format("<p align='right'><font color='#8c96c3'>Full log ⤢</font></p>"))
+    fullLog:setToolTip("Open every arrival and departure this session in its own window (or type traffic)")
+    fullLog:setClickCallback(function()
+        if f2tShowTrafficLog then f2tShowTrafficLog() end
+    end)
     y = y + drawerH
 
     if drawerOpen[gid] then

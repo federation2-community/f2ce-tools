@@ -4,5 +4,6 @@
   {"name": "haul", "regex": "^haul(?:\\s+(.+))?$"},
   {"name": "po", "regex": "^po(?:\\s+(.+))?$"},
   {"name": "stamina", "regex": "^stamina(?:\\s+(.+))?$"},
-  {"name": "suicide", "regex": "^suicide$"}
+  {"name": "suicide", "regex": "^suicide$"},
+  {"name": "traffic", "regex": "^traffic$"}
 ]
