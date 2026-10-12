@@ -10,7 +10,9 @@ function f2t_map_di_system_capture_start(system_name, callback)
         active = true, system_name = system_name,
         planet_names = {}, callback = callback,
     }
-    send(string.format("di system %s", system_name), false)
+    -- "fullsystem" keeps the per-planet layout the triggers parse; plain
+    -- "di system" is now a compact table meant for reading.
+    send(string.format("di fullsystem %s", system_name), false)
     -- Arm before the first line rather than on it, so a server that answers
     -- with nothing at all still closes the capture instead of hanging it.
     f2t_map_di_system_reset_timer()
