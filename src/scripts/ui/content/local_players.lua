@@ -578,19 +578,23 @@ local function hiddenOnlyForEmptyRoom(target)
     return true
 end
 
+-- Keeps the pane up, collapsed or not, while a departure or a cut-short
+-- arrival is still counting down. Once nobody is here and nothing is left
+-- counting down, a collapsed pane is reset so it next appears expanded:
+-- collapsing is for riding out a busy spell, not a lasting choice.
 local function holdOpen(target)
     local players = roomPlayers()
-    if players and #players > 0 then
+    local occupied = players and #players > 0
+    local counting = trafficShown() and #trafficRows() > 0
+    if not occupied and not counting and target._f2tCollapsed then
+        target._f2tCollapsed = nil
+        rendered[target._gid] = nil
+    end
+    if occupied then
         target._f2tHeld = nil
         return
     end
-    local need = false
-    if trafficShown() then
-        need = (drawerOpen[target._gid] and not target._f2tCollapsed) or false
-        for _, entry in ipairs(animated[target._gid] or {}) do
-            if entry.state == "leaving" or entry.state == "stale" then need = true end
-        end
-    end
+    local need = counting or (trafficShown() and drawerOpen[target._gid] and not target._f2tCollapsed) or false
     if need and target._conditionHidden and target._conditionShow and hiddenOnlyForEmptyRoom(target) then
         target._f2tHeld = true
         target:_conditionShow()
@@ -659,6 +663,12 @@ local function tick()
                 fast = true
             end
             pcall(paintRow, entry, now)
+        end
+    end
+    -- a collapsed pane draws no rows, so watch the countdowns it is hiding
+    for _, target in pairs(targets) do
+        if target._f2tCollapsed and #trafficRows() > 0 then
+            any, expired = true, true
         end
     end
     if expired then refreshAll() end
@@ -731,6 +741,8 @@ local function refreshAndTick()
     refreshAll()
     if trafficShown() then ensureTicking() end
 end
+
+f2tLocalPlayersRefresh = refreshAndTick
 
 -- Room changes (and player arrivals/departures) arrive as gmcp.room.info pushes.
 registerAnonymousEventHandler("gmcp.room.info", function()
