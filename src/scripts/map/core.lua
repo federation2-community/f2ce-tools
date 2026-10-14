@@ -48,8 +48,9 @@ function f2t_map_handle_gmcp_room()
 
     local area_id = getRoomArea(room_id)
     if area_id then
-        local zoom = f2t_settings_get("map", "area_zoom")
-        setMapZoom(zoom, area_id)
+        -- nil until f2tInit registers settings, which waits on the pinned Muxlet
+        local zoom = tonumber(f2t_settings_get("map", "area_zoom"))
+        if zoom then setMapZoom(zoom, area_id) end
     end
 
     centerview(room_id)

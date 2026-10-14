@@ -16,8 +16,9 @@ function f2t_map_get_or_create_area(area_name, area_data)
         f2t_debug_log("[map] ERROR: Failed to create area: %s", area_name)
         return nil
     end
-    local zoom = f2t_settings_get("map", "area_zoom")
-    setMapZoom(zoom, area_id)
+    -- nil until f2tInit registers settings, which waits on the pinned Muxlet
+    local zoom = tonumber(f2t_settings_get("map", "area_zoom"))
+    if zoom then setMapZoom(zoom, area_id) end
     f2t_debug_log("[map] Area created: %s (ID: %d, zoom: %d)", area_name, area_id, zoom)
     if area_data then
         if area_data.system then setAreaUserData(area_id, "fed2_system", area_data.system) end

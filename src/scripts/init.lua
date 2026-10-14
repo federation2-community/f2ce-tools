@@ -16,6 +16,19 @@
 
 local MUXLET_PKG = "Muxlet"
 
+-- Anonymous handlers outlive an uninstall, so an in-place update would leave the
+-- previous copy's boot handlers live, still pinned to its own Muxlet version.
+for _, handlerId in ipairs(F2T_BOOT_HANDLER_IDS or {}) do
+    pcall(killAnonymousEventHandler, handlerId)
+end
+F2T_BOOT_HANDLER_IDS = {}
+
+local function registerBootHandler(event, handler)
+    local handlerId = registerAnonymousEventHandler(event, handler)
+    F2T_BOOT_HANDLER_IDS[#F2T_BOOT_HANDLER_IDS + 1] = handlerId
+    return handlerId
+end
+
 -- build-injected: exact Muxlet version this f2ce-tools build is pinned to
 local F2T_REQUIRED_MUXLET = nil
 -- build-injected: GitHub release URL (bare tag = prerelease; v-tag = production)
@@ -54,7 +67,7 @@ end)
 
 -- ── Install handler ───────────────────────────────────────────────────────────
 -- sysInstall fires during installation only, not on normal session start.
-registerAnonymousEventHandler("sysInstall", function(_, pkg)
+registerBootHandler("sysInstall", function(_, pkg)
     if pkg ~= "f2ce-tools" then return end
 
     -- Apply preferred mapper defaults only on the very first install so user
@@ -295,7 +308,7 @@ local function onMuxletReady()
     end)
 end
 
-registerAnonymousEventHandler("muxletReady", onMuxletReady)
+registerBootHandler("muxletReady", onMuxletReady)
 
 -- Downloads to our own file and installs from disk instead of using
 -- installPackage(url). An install that arrives during a profile save is
@@ -366,7 +379,7 @@ end
 -- its own uninstall, so this has to live here, not in Muxlet.
 local MUXLET_REINSTALL_GRACE_SECONDS = 10
 
-registerAnonymousEventHandler("sysUninstallPackage", function(_, name)
+registerBootHandler("sysUninstallPackage", function(_, name)
     if name ~= MUXLET_PKG then return end
     if MUDDLET_DEP_UNINSTALL_PENDING then return end
     if not MUXLET_URL then return end
